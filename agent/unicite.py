@@ -71,6 +71,14 @@ def uniquiser_image(source: str, dest: str | None = None, filtre: bool = False) 
     img = Image.open(source)
     img = ImageOps.exif_transpose(img)      # applique l'orientation aux pixels
     img = img.convert("RGB")
+    # Réduction à la taille utile pour Instagram (max 1080 x 1920) : beaucoup plus
+    # rapide et fichiers plus légers, sans perte visible (Instagram plafonne à
+    # ~1080 px de large de toute façon). Les images plus petites ne changent pas.
+    MAX_L, MAX_H = 1080, 1920
+    w0, h0 = img.size
+    if w0 > MAX_L or h0 > MAX_H:
+        ratio = min(MAX_L / w0, MAX_H / h0)
+        img = img.resize((max(1, round(w0 * ratio)), max(1, round(h0 * ratio))), Image.LANCZOS)
     largeur, hauteur = img.size
 
     # 1) Miroir horizontal (optionnel, visible)
@@ -92,16 +100,16 @@ def uniquiser_image(source: str, dest: str | None = None, filtre: bool = False) 
     d = random.randint(1, 4); b = random.randint(1, 4)
     img = img.crop((g, h, largeur - d, hauteur - b)).resize((largeur, hauteur))
 
-    # 4) Bruit très léger (sigma ~1.5 sur 0-255 : invisible)
+    # 4) Bruit très léger (±2 sur 0-255 : invisible) — randint = rapide.
     arr = np.asarray(img).astype(np.int16)
-    bruit = np.random.normal(0, 1.5, arr.shape).astype(np.int16)
+    bruit = np.random.randint(-2, 3, arr.shape, dtype=np.int16)
     arr = np.clip(arr + bruit, 0, 255).astype(np.uint8)
     img = Image.fromarray(arr, "RGB")
 
-    # 5) Ré-encodage JPEG, qualité variable, SANS EXIF.
+    # 5) Ré-encodage JPEG, qualité variable, SANS EXIF (optimize off = plus rapide).
     if os.path.splitext(dest)[1].lower() not in {".jpg", ".jpeg"}:
         dest = os.path.splitext(dest)[0] + ".jpg"
-    img.save(dest, "JPEG", quality=random.randint(90, 96), optimize=True)
+    img.save(dest, "JPEG", quality=random.randint(90, 96))
 
     # 6) Nouvelle date de fichier (modifie une métadonnée du fichier).
     #    Décalage aléatoire dans les ~30 derniers jours.
@@ -142,7 +150,7 @@ def uniquiser_video(source: str, dest: str | None = None) -> str:
         _ffmpeg_exe(), "-y", "-i", source,
         "-map_metadata", "-1",                    # supprime toutes les métadonnées
         "-vf", f"eq=brightness={b}:contrast={c}",
-        "-c:v", "libx264", "-crf", str(crf), "-preset", "veryfast",
+        "-c:v", "libx264", "-crf", str(crf), "-preset", "ultrafast",
         "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
         sortie,
     ]
