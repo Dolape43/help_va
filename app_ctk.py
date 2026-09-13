@@ -125,8 +125,6 @@ class App(ctk.CTk):
         # modale devant.
         self.bind("<FocusIn>", self._ramener_modale, add="+")
 
-        self.modele = self.params.get("modele", "")
-        self.genre = self.params.get("genre", "feminin")
         self.statut = {"ok": False, "raison": "pas_active"}
         self.page = "accueil"
 
@@ -161,13 +159,19 @@ class App(ctk.CTk):
 
         self._router_licence()
 
-    def dossier_modele(self) -> str:
+    def dossier_sortie(self) -> str:
         bureau = os.path.join(os.path.expanduser("~"), "Desktop")
         if not os.path.isdir(bureau):
             bureau = os.path.expanduser("~")
-        d = os.path.join(bureau, "HelpVA", self.modele or "SansNom")
+        d = os.path.join(bureau, "HelpVA")
         os.makedirs(d, exist_ok=True)
         return d
+
+    def _ouvrir_dossier_sortie(self):
+        try:
+            os.startfile(self.dossier_sortie())   # ouvre l'explorateur (Windows)
+        except Exception as e:
+            self._notifier("Dossier de sortie", str(e), erreur=True)
 
     # ----------------------------------------------------------- utilitaires
     def _vider(self, widget=None):
@@ -338,7 +342,7 @@ class App(ctk.CTk):
             pass
         ctk.CTkLabel(c, text="Bienvenue sur HelpVA", font=(POLICE, 26, "bold"),
                      text_color=TEXT).pack(pady=(0, 6))
-        ctk.CTkLabel(c, text="Votre assistant pour préparer et publier\ntes contenus sur Instagram.",
+        ctk.CTkLabel(c, text="Votre assistant pour préparer\nvos contenus Instagram.",
                      font=(POLICE, 15), text_color=MUTED, justify="center").pack(pady=(0, 24))
         ctk.CTkButton(c, text="Commencer", command=self._commencer, height=48, width=220,
                       fg_color=ACCENT_HOVER, hover_color="#4A3FCC", corner_radius=12,
@@ -488,7 +492,7 @@ class App(ctk.CTk):
 
         self._nav_boutons = {}
         self._nav_icones = {}
-        nav = [("accueil", "Accueil", "grid"), ("parametres", "Paramètres", "gear")]
+        nav = [("accueil", "Accueil", "accueil"), ("parametres", "Paramètres", "parametres")]
         for cle, lib, ic in nav:
             img = self._icone(ic, 22)
             self._nav_icones[cle] = img
@@ -499,7 +503,7 @@ class App(ctk.CTk):
                 kw["image"] = img
                 kw["compound"] = "left"
             else:
-                kw["text"] = ("▦   " if ic == "grid" else "⚙   ") + lib
+                kw["text"] = ("▦   " if ic == "accueil" else "⚙   ") + lib
             b = ctk.CTkButton(self.sidebar, **kw)
             b.pack(fill="x", padx=14, pady=3)
             self._nav_boutons[cle] = b
@@ -513,7 +517,12 @@ class App(ctk.CTk):
         av = ctk.CTkFrame(uc, fg_color=ACCENT_SOFT, corner_radius=17, width=34, height=34)
         av.pack_propagate(False)
         av.grid(row=0, column=0, padx=10, pady=10)
-        ctk.CTkLabel(av, text="👤", font=(POLICE, 14)).place(relx=0.5, rely=0.5, anchor="center")
+        _av_img = self._icone("profil", 20)
+        if _av_img is not None:
+            self._avatar_img = _av_img
+            ctk.CTkLabel(av, image=_av_img, text="").place(relx=0.5, rely=0.5, anchor="center")
+        else:
+            ctk.CTkLabel(av, text="👤", font=(POLICE, 14)).place(relx=0.5, rely=0.5, anchor="center")
         info = ctk.CTkFrame(uc, fg_color="transparent")
         info.grid(row=0, column=1, sticky="w", pady=10)
         ctk.CTkLabel(info, text=((self.statut or {}).get("nom") or "HelpVA"),
@@ -570,12 +579,11 @@ class App(ctk.CTk):
         return e
 
     def _page_accueil(self):
-        genre = "Féminin" if self.genre == "feminin" else "Masculin"
         nom_det = (self.statut or {}).get("nom")
         self._entete(f"Bonjour {nom_det}" if nom_det else "Bonjour",
-                     "Préparez, enrichissez et publiez votre modèle en quelques étapes.")
+                     "Préparez vos contenus en quelques étapes.")
 
-        # Rangée cartes info (modèle + conseil)
+        # Rangée cartes info (dossier de sortie + conseil)
         r = ctk.CTkFrame(self.contenu, fg_color="transparent")
         r.pack(fill="x", padx=36)
         r.grid_columnconfigure(0, weight=3, uniform="a")
@@ -586,13 +594,15 @@ class App(ctk.CTk):
         mci = ctk.CTkFrame(mc, fg_color="transparent")
         mci.pack(fill="x", padx=22, pady=20)
         gm = ctk.CTkFrame(mci, fg_color="transparent")
-        gm.pack(side="left")
-        ctk.CTkLabel(gm, text="MODÈLE ACTIF", font=(POLICE, 11, "bold"),
+        gm.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(gm, text="DOSSIER DE SORTIE", font=(POLICE, 11, "bold"),
                      text_color=ACCENT_HOVER).pack(anchor="w")
-        ctk.CTkLabel(gm, text=(f"{self.modele} ({genre})" if self.modele else "Aucun modèle"),
-                     font=(POLICE, 20, "bold"), text_color=TEXT).pack(anchor="w", pady=(2, 0))
-        ctk.CTkButton(mci, text=("🔄  Changer" if self.modele else "＋  Choisir"),
-                      command=self._modal_modele, fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER,
+        ctk.CTkLabel(gm, text="Bureau · HelpVA", font=(POLICE, 20, "bold"),
+                     text_color=TEXT).pack(anchor="w", pady=(2, 0))
+        ctk.CTkLabel(gm, text="Vos fichiers préparés sont enregistrés ici.",
+                     font=(POLICE, 12), text_color=MUTED).pack(anchor="w")
+        ctk.CTkButton(mci, text="Ouvrir", command=self._ouvrir_dossier_sortie,
+                      fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER,
                       hover_color="#E1DDFA", corner_radius=10, height=38,
                       font=(POLICE, 13, "bold")).pack(side="right")
 
@@ -605,11 +615,11 @@ class App(ctk.CTk):
         gt.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(gt, text="Conseil", font=(POLICE, 14, "bold"),
                      text_color=ACCENT_HOVER, anchor="w").pack(anchor="w")
-        ctk.CTkLabel(gt, text="Change d'abord les métadonnées, puis range\ntes médias selon le calendrier.",
+        ctk.CTkLabel(gt, text="Changez d'abord les métadonnées, puis rangez\nvos médias selon le calendrier.",
                      font=(POLICE, 13), text_color=MUTED, justify="left", anchor="w").pack(anchor="w")
 
-        # Section 1 : préparer le contenu (2 colonnes)
-        self._section("Contenu du modèle")
+        # Section : préparer le contenu (2 colonnes)
+        self._section("Préparer le contenu")
         g1 = ctk.CTkFrame(self.contenu, fg_color="transparent")
         g1.pack(fill="x", padx=36)
         for i in range(2):
@@ -619,13 +629,13 @@ class App(ctk.CTk):
                   ("tag", "Changer les métadonnées", "Uniquifie vos photos et vidéos", "metadonnees"),
                   ("folder", "Ranger les médias", "Organise vos images et vidéos", "ranger")]
         for i, (emo, t, s, k) in enumerate(feats1):
-            self._carte_fonction(g1, emo, t, s, k, row=i // 2, col=i % 2, besoin_modele=True)
+            self._carte_fonction(g1, emo, t, s, k, row=i // 2, col=i % 2)
 
     def _section(self, titre):
         ctk.CTkLabel(self.contenu, text=titre, font=(POLICE, 20, "bold"),
                      text_color=TEXT).pack(anchor="w", padx=38, pady=(28, 14))
 
-    def _carte_fonction(self, parent, emoji, titre, sous, cle, col, besoin_modele, row=0):
+    def _carte_fonction(self, parent, emoji, titre, sous, cle, col, row=0):
         carte = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=16,
                              border_width=1, border_color=BORDER)
         carte.grid(row=row, column=col, sticky="ew", padx=8, pady=8)
@@ -639,12 +649,9 @@ class App(ctk.CTk):
         ctk.CTkLabel(body, text=sous, font=(POLICE, 13), text_color=MUTED,
                      anchor="w").pack(anchor="w", pady=(2, 0))
         ctk.CTkLabel(inner, text="›", font=(POLICE, 24), text_color="#C7C9D6").pack(side="right")
-        self._cliquable(carte, lambda k=cle, bm=besoin_modele: self._ouvrir_fonction(k, bm))
+        self._cliquable(carte, lambda k=cle: self._ouvrir_fonction(k))
 
-    def _ouvrir_fonction(self, cle, besoin_modele):
-        if besoin_modele and not self.modele:
-            self._modal_modele()
-            return
+    def _ouvrir_fonction(self, cle):
         self.page = ""
         self.log = None
         self.journal_est_auto = False
@@ -654,124 +661,6 @@ class App(ctk.CTk):
                  "metadonnees": self._page_metadonnees,
                  "convertir": self._page_convertir}
         pages.get(cle, self._page_accueil)()
-
-    # ----------------------------------------------------------- modale modèle
-    def _enregistrer_modele_liste(self, nom, genre):
-        """Garde l'historique des modèles (le plus récent en tête, sans doublon)."""
-        modeles = [m for m in self.params.get("modeles", []) if m.get("nom") != nom]
-        modeles.insert(0, {"nom": nom, "genre": genre})
-        self.params["modeles"] = modeles
-
-    def _modal_modele(self):
-        top = ctk.CTkToplevel(self)
-        top.title("Modèle")
-        top.geometry("440x560")
-        top.configure(fg_color=BG)
-        top.transient(self)
-        self._modale_devant(top)
-        top.after(200, lambda: top.winfo_exists() and top.grab_set())
-        c = ctk.CTkFrame(top, fg_color=CARD, corner_radius=18, border_width=1, border_color=BORDER)
-        c.pack(fill="both", expand=True, padx=16, pady=16)
-        ctk.CTkLabel(c, text="Choisir un modèle", font=(POLICE, 20, "bold"),
-                     text_color=TEXT).pack(anchor="w", padx=24, pady=(22, 6))
-
-        self._modele_edit = None   # nom en cours de modification (renommage)
-        modeles = list(self.params.get("modeles", []))
-        if self.modele and not any(m.get("nom") == self.modele for m in modeles):
-            modeles.insert(0, {"nom": self.modele, "genre": self.genre})
-
-        def choisir(m):
-            self.modele = m["nom"]
-            self.genre = m.get("genre", "feminin")
-            self.params["modele"] = self.modele
-            self.params["genre"] = self.genre
-            self._enregistrer_modele_liste(self.modele, self.genre)
-            parametres.sauver(self.params)
-            top.destroy()
-            self._construire_app()
-
-        def editer(m):
-            # Charge le modèle dans le formulaire du bas pour le renommer/changer.
-            self._modele_edit = m["nom"]
-            champ.delete(0, "end")
-            champ.insert(0, m["nom"])
-            seg.set("Féminin" if m.get("genre") == "feminin" else "Masculin")
-            lbl_form.configure(text=f"Modifier « {m['nom']} » :")
-            btn_creer.configure(text="Enregistrer")
-            champ.focus()
-
-        def supprimer(m):
-            if not messagebox.askyesno("Supprimer", f"Supprimer le modèle « {m['nom']} » ?\n"
-                                       "(le dossier sur le Bureau n'est PAS supprimé)"):
-                return
-            self.params["modeles"] = [x for x in self.params.get("modeles", [])
-                                      if x.get("nom") != m["nom"]]
-            if self.modele == m["nom"]:
-                self.modele = ""
-                self.params["modele"] = ""
-            parametres.sauver(self.params)
-            top.destroy()
-            self._modal_modele()   # ré-ouvre la liste à jour
-
-        if modeles:
-            ctk.CTkLabel(c, text="Vos modèles (cliquez pour l'activer) :",
-                         font=(POLICE, 12, "bold"), text_color=MUTED).pack(
-                         anchor="w", padx=24, pady=(0, 6))
-            liste = ctk.CTkScrollableFrame(c, fg_color="transparent", height=150)
-            liste.pack(fill="x", padx=18)
-            for m in modeles:
-                actif = m.get("nom") == self.modele
-                g = "Féminin" if m.get("genre") == "feminin" else "Masculin"
-                row = ctk.CTkFrame(liste, fg_color="transparent")
-                row.pack(fill="x", pady=3)
-                ctk.CTkButton(row, text=f"{'●  ' if actif else ''}{m['nom']}   ({g})",
-                              anchor="w", command=lambda mm=m: choisir(mm),
-                              fg_color=(ACCENT_SOFT if actif else "#F5F5FA"),
-                              text_color=(ACCENT_HOVER if actif else TEXT),
-                              hover_color="#E1DDFA", height=40, corner_radius=10,
-                              font=(POLICE, 14, "bold" if actif else "normal")).pack(
-                              side="left", fill="x", expand=True)
-                ctk.CTkButton(row, text="✎", width=40, height=40, command=lambda mm=m: editer(mm),
-                              fg_color=("#F5F5FA", "#20222E"), text_color=TEXT, hover_color="#E1DDFA",
-                              corner_radius=10, font=(POLICE, 15)).pack(side="left", padx=(6, 0))
-                ctk.CTkButton(row, text="×", width=40, height=40, command=lambda mm=m: supprimer(mm),
-                              fg_color=("#FDECEA", "#3A1E1E"), text_color="#E5484D", hover_color="#F8D7D5",
-                              corner_radius=10, font=(POLICE, 16, "bold")).pack(side="left", padx=(6, 0))
-
-        lbl_form = ctk.CTkLabel(c, text="Ou créer un nouveau modèle :", font=(POLICE, 12, "bold"),
-                                text_color=MUTED)
-        lbl_form.pack(anchor="w", padx=24, pady=(14, 6))
-        champ = ctk.CTkEntry(c, height=44, font=(POLICE, 15), placeholder_text="Ex : Olivia")
-        champ.pack(fill="x", padx=24)
-        seg = ctk.CTkSegmentedButton(c, values=["Féminin", "Masculin"],
-                                     font=(POLICE, 13), selected_color=ACCENT_HOVER,
-                                     selected_hover_color="#4A3FCC")
-        seg.set("Féminin")
-        seg.pack(fill="x", padx=24, pady=(8, 0))
-
-        def creer():
-            nom = champ.get().strip()
-            for ch in '<>:"/\\|?*':
-                nom = nom.replace(ch, "")
-            nom = nom.strip()
-            if not nom:
-                champ.focus()
-                return
-            # Renommage : on retire l'ancien nom si on éditait.
-            if self._modele_edit and self._modele_edit != nom:
-                self.params["modeles"] = [x for x in self.params.get("modeles", [])
-                                          if x.get("nom") != self._modele_edit]
-            choisir({"nom": nom, "genre": "feminin" if seg.get() == "Féminin" else "masculin"})
-
-        actions = ctk.CTkFrame(c, fg_color="transparent")
-        actions.pack(fill="x", padx=24, pady=20, side="bottom")
-        ctk.CTkButton(actions, text="Fermer", command=top.destroy, width=90,
-                      fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER, hover_color="#E1DDFA",
-                      corner_radius=10).pack(side="right", padx=(8, 0))
-        btn_creer = ctk.CTkButton(actions, text="Créer et activer", command=creer, width=150,
-                                  fg_color=ACCENT_HOVER, hover_color="#4A3FCC", corner_radius=10,
-                                  font=(POLICE, 13, "bold"))
-        btn_creer.pack(side="right")
 
     # ----------------------------------------------------------- placeholder
     def _page_placeholder(self, titre, emoji, texte):
@@ -1231,7 +1120,7 @@ class App(ctk.CTk):
         if not dossier:
             messagebox.showwarning("Carrousels", "Importe d'abord le dossier carrousel.")
             return
-        sortie = os.path.join(self.dossier_modele(), "ranger")
+        sortie = os.path.join(self.dossier_sortie(), "ranger")
         if not os.path.isdir(sortie):
             if not messagebox.askyesno(
                     "Carrousels",
@@ -1260,7 +1149,7 @@ class App(ctk.CTk):
                 msg += f"\n• {len(infos['vid_dans_images'])} vidéo(s) dans « images »"
             if not messagebox.askyesno("Fichiers mal placés", msg + "\n\nContinuer quand même ?"):
                 return
-        sortie = os.path.join(self.dossier_modele(), "ranger")
+        sortie = os.path.join(self.dossier_sortie(), "ranger")
         existe = os.path.exists(sortie)
         msg = (f"{infos['nb_videos']} vidéo(s) et {infos['nb_images']} image(s) vont être rangées.\n\n"
                f"Destination :\n{sortie}\n")
@@ -1338,7 +1227,7 @@ class App(ctk.CTk):
         if not self.fichiers_uniq_src and not self.dossier_uniq_src:
             messagebox.showwarning("Métadonnées", "Importe d'abord un dossier ou des images.")
             return
-        sortie = os.path.join(self.dossier_modele(), "media (métadonnées changées)")
+        sortie = os.path.join(self.dossier_sortie(), "media (métadonnées changées)")
         renommer = bool(self.chk_renommer.get())
         filtre = bool(self.chk_filtre.get())
         fichiers = list(self.fichiers_uniq_src) if self.fichiers_uniq_src else None
@@ -1413,7 +1302,7 @@ class App(ctk.CTk):
         if not self.fichiers_convert_src and not self.dossier_convert_src:
             messagebox.showwarning("Convertir", "Importe d'abord un dossier ou des vidéos.")
             return
-        sortie = os.path.join(self.dossier_modele(), "media (mp4)")
+        sortie = os.path.join(self.dossier_sortie(), "media (mp4)")
         fichiers = list(self.fichiers_convert_src) if self.fichiers_convert_src else None
         dossier = self.dossier_convert_src
 
@@ -1566,7 +1455,7 @@ class App(ctk.CTk):
                 messagebox.showwarning("Nombre", "Entre un nombre valide (ex : 35), ou laisse vide pour tout.")
                 return
             limite = int(txt_nb)
-        sortie = os.path.join(self.dossier_modele(), "telechargement drive")
+        sortie = os.path.join(self.dossier_sortie(), "telechargement drive")
         tri = "recent" if self.seg_tri_drive.get() == "Plus récents" else "nom"
 
         def job():
@@ -1602,38 +1491,7 @@ class App(ctk.CTk):
     #  Page : Paramètres
     # ==================================================================
     def _page_parametres(self):
-        self._entete_page("Paramètres", "Réglages du modèle, de la connexion et de la licence.")
-
-        # --- Modèle ---
-        inner = self._carte()
-        genre = "Féminin" if self.genre == "feminin" else "Masculin"
-        ctk.CTkLabel(inner, text="Modèle actif", font=(POLICE, 14, "bold"),
-                     text_color=ACCENT_HOVER).pack(anchor="w")
-        ligne = ctk.CTkFrame(inner, fg_color="transparent")
-        ligne.pack(fill="x", pady=(10, 0))
-        ctk.CTkLabel(ligne, text=(f"{self.modele} ({genre})" if self.modele else "Aucun modèle"),
-                     font=(POLICE, 18, "bold"), text_color=TEXT).pack(side="left")
-        self._btn(ligne, "Changer le modèle", self._modal_modele).pack(side="right")
-
-        # --- Apparence ---
-        ap = self._carte()
-        ctk.CTkLabel(ap, text="Apparence", font=(POLICE, 14, "bold"),
-                     text_color=ACCENT_HOVER).pack(anchor="w")
-        ctk.CTkLabel(ap, text="Thème de l'application", font=(POLICE, 13),
-                     text_color=MUTED).pack(anchor="w", pady=(8, 6))
-        _v2m = {"Clair": "light", "Sombre": "dark", "Système": "system"}
-        _m2v = {v: k for k, v in _v2m.items()}
-
-        def _set_theme(v):
-            ctk.set_appearance_mode(_v2m[v])
-            self.params["theme"] = _v2m[v]
-            parametres.sauver(self.params)
-        seg_theme = ctk.CTkSegmentedButton(ap, values=list(_v2m.keys()),
-                                           command=_set_theme,
-                                           font=(POLICE, 13),
-                                           selected_color=ACCENT, selected_hover_color=ACCENT_HOVER)
-        seg_theme.set(_m2v.get(self.params.get("theme", "light"), "Clair"))
-        seg_theme.pack(anchor="w")
+        self._entete_page("Paramètres", "Réglages de la licence.")
 
         # --- Licence & abonnement ---
         lic = self._carte()
