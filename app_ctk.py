@@ -89,14 +89,10 @@ def chemin_ressource(rel: str) -> str:
 
 
 def _abonnement_txt(st: dict) -> str:
-    t = st.get("type")
-    if t == "vie":
-        return "Abonnement : à vie"
-    if t == "essai" and st.get("expire_le"):
-        return f"Essai — jusqu'au {st['expire_le'].strftime('%d/%m/%Y')}"
-    if st.get("expire_le"):
-        return f"jusqu'au {st['expire_le'].strftime('%d/%m/%Y')}"
-    return ""
+    return {"vie": "Abonnement à vie",
+            "mois": "Abonnement mensuel",
+            "an": "Abonnement annuel",
+            "essai": "Essai"}.get(st.get("type"), "")
 
 
 _JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
