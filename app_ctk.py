@@ -1899,20 +1899,27 @@ class App(ctk.CTk):
         """Éditeur de calendrier — UI en tkinter/ttk CLASSIQUE (widgets légers)
         pour un rendu instantané (ajout/suppression/duplication de semaines)."""
         import copy
+        _dark = ctk.get_appearance_mode() == "Dark"
+        def _col(t):
+            return (t[1] if _dark else t[0]) if isinstance(t, (tuple, list)) else t
+        cBG, cCARD, cTEXT, cMUTED = _col(BG), _col(CARD), _col(TEXT), _col(MUTED)
+        cACCENT, cHOVER = _col(ACCENT), _col(ACCENT_HOVER)
+        cSOFT, cSOFTER = _col(ACCENT_SOFT), _col(ACCENT_SOFTER)
+        cBORDER, cGREEN = _col(BORDER), _col(GREEN)
         cal = calendrier.charger_calendrier()
         courant = {"nom": next(iter(cal), None)}
 
         top = tk.Toplevel(self)
         top.title("Calendrier")
         top.geometry("700x760")
-        top.configure(bg=BG)
+        top.configure(bg=cBG)
         top.transient(self)
         self._modale_devant(top)
         top.after(200, lambda: top.winfo_exists() and top.grab_set())
 
         def bouton(parent, texte, cmd, genre="doux", **kw):
-            couleurs = {"doux": (ACCENT_SOFT, ACCENT_HOVER),
-                        "primaire": (ACCENT, "#FFFFFF"),
+            couleurs = {"doux": (cSOFT, cHOVER),
+                        "primaire": (cACCENT, "#FFFFFF"),
                         "danger": ("#FDECEA", "#E5484D")}
             bg, fg = couleurs.get(genre, couleurs["doux"])
             kw.setdefault("font", (POLICE, 12))
@@ -1921,11 +1928,11 @@ class App(ctk.CTk):
                              bd=0, cursor="hand2", padx=12, pady=6, **kw)
 
         # --- en-tête ---
-        tk.Label(top, text="Ajuster le calendrier", bg=BG, fg=TEXT,
+        tk.Label(top, text="Ajuster le calendrier", bg=cBG, fg=cTEXT,
                  font=(POLICE, 20, "bold")).pack(anchor="w", padx=22, pady=(16, 0))
         tk.Label(top, text="Maximum 4 semaines (1 mois). Duplique ou supprime des semaines.",
-                 bg=BG, fg=MUTED, font=(POLICE, 12)).pack(anchor="w", padx=22, pady=(2, 8))
-        besoins_lbl = tk.Label(top, text="", bg=BG, fg=ACCENT_HOVER, font=(POLICE, 13, "bold"))
+                 bg=cBG, fg=cMUTED, font=(POLICE, 12)).pack(anchor="w", padx=22, pady=(2, 8))
+        besoins_lbl = tk.Label(top, text="", bg=cBG, fg=cHOVER, font=(POLICE, 13, "bold"))
         besoins_lbl.pack(anchor="w", padx=22, pady=(0, 8))
 
         # --- Contenu : « Vidéos uniquement » (tout reels) ou « Images + Vidéos » ---
@@ -1938,9 +1945,9 @@ class App(ctk.CTk):
             return "reels"
 
         mode = {"val": _mode_actuel()}
-        mode_frame = tk.Frame(top, bg=BG)
+        mode_frame = tk.Frame(top, bg=cBG)
         mode_frame.pack(anchor="w", padx=22, pady=(0, 10))
-        tk.Label(mode_frame, text="Contenu :", bg=BG, fg=TEXT,
+        tk.Label(mode_frame, text="Contenu :", bg=cBG, fg=cTEXT,
                  font=(POLICE, 12, "bold")).pack(side="left", padx=(0, 8))
 
         def construire_mode():
@@ -1950,10 +1957,10 @@ class App(ctk.CTk):
                 actif = mode["val"] == cle
                 tk.Button(mode_frame, text=libelle,
                           command=lambda c=cle: appliquer_mode(c),
-                          bg=(ACCENT if actif else ACCENT_SOFT),
-                          fg=("#FFFFFF" if actif else ACCENT_HOVER),
-                          activebackground=(ACCENT if actif else ACCENT_SOFT),
-                          activeforeground=("#FFFFFF" if actif else ACCENT_HOVER),
+                          bg=(cACCENT if actif else cSOFT),
+                          fg=("#FFFFFF" if actif else cHOVER),
+                          activebackground=(cACCENT if actif else cSOFT),
+                          activeforeground=("#FFFFFF" if actif else cHOVER),
                           relief="flat", bd=0, cursor="hand2",
                           font=(POLICE, 11, "bold"), padx=12, pady=5).pack(side="left", padx=(0, 6))
 
@@ -1985,18 +1992,18 @@ class App(ctk.CTk):
             afficher_semaine(courant["nom"])
 
         # --- barre des semaines ---
-        barre = tk.Frame(top, bg=BG)
+        barre = tk.Frame(top, bg=cBG)
         barre.pack(fill="x", padx=18, pady=(0, 6))
 
         # --- zone défilable (contenu de la semaine active) ---
-        zone = tk.Frame(top, bg=CARD)
+        zone = tk.Frame(top, bg=cCARD)
         zone.pack(fill="both", expand=True, padx=18, pady=4)
-        canvas = tk.Canvas(zone, bg=CARD, highlightthickness=0)
+        canvas = tk.Canvas(zone, bg=cCARD, highlightthickness=0)
         vsb = tk.Scrollbar(zone, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
-        inner = tk.Frame(canvas, bg=CARD)
+        inner = tk.Frame(canvas, bg=cCARD)
         win = canvas.create_window((0, 0), window=inner, anchor="nw")
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(win, width=e.width))
@@ -2056,10 +2063,10 @@ class App(ctk.CTk):
                 actif = nom == courant["nom"]
                 b = tk.Button(barre, text=nom.replace("semaine-", "Semaine "),
                               command=lambda n=nom: selectionner(n),
-                              bg=(ACCENT if actif else ACCENT_SOFT),
-                              fg=("#FFFFFF" if actif else ACCENT_HOVER),
-                              activebackground=(ACCENT if actif else ACCENT_SOFT),
-                              activeforeground=("#FFFFFF" if actif else ACCENT_HOVER),
+                              bg=(cACCENT if actif else cSOFT),
+                              fg=("#FFFFFF" if actif else cHOVER),
+                              activebackground=(cACCENT if actif else cSOFT),
+                              activeforeground=("#FFFFFF" if actif else cHOVER),
                               relief="flat", bd=0, cursor="hand2",
                               font=(POLICE, 12, "bold"), padx=14, pady=6)
                 b.pack(side="left", padx=(0, 8))
@@ -2070,7 +2077,7 @@ class App(ctk.CTk):
 
         def _rendre_ligne(cont, cr):
             """Une ligne créneau : heure + type + supprimer. Widgets tk = rapide."""
-            row = tk.Frame(cont, bg=CARD)
+            row = tk.Frame(cont, bg=cCARD)
             row.pack(fill="x", pady=3, padx=(20, 8))
             e = tk.Entry(row, width=8, font=(POLICE, 13), relief="solid", bd=1)
             e.insert(0, cr["heure"])
@@ -2106,17 +2113,17 @@ class App(ctk.CTk):
                 w.destroy()
             if nom is None or nom not in cal:
                 return
-            act = tk.Frame(inner, bg=CARD)
+            act = tk.Frame(inner, bg=cCARD)
             act.pack(fill="x", pady=(10, 6), padx=16)
             bouton(act, "Dupliquer cette semaine", lambda: dupliquer(nom)).pack(side="left", padx=(0, 8))
             bouton(act, "Supprimer cette semaine", lambda: supprimer_sem(nom),
                    genre="danger").pack(side="left")
             for nom_jour, creneaux in cal[nom].items():
-                hj = tk.Frame(inner, bg=CARD)
+                hj = tk.Frame(inner, bg=cCARD)
                 hj.pack(fill="x", pady=(12, 2), padx=16)
-                tk.Label(hj, text=nom_jour.capitalize(), bg=CARD, fg=TEXT,
+                tk.Label(hj, text=nom_jour.capitalize(), bg=cCARD, fg=cTEXT,
                          font=(POLICE, 13, "bold")).pack(side="left")
-                cont = tk.Frame(inner, bg=CARD)
+                cont = tk.Frame(inner, bg=cCARD)
                 bouton(hj, "+ Ajouter un créneau",
                        lambda j=nom_jour, ct=cont: ajouter_creneau(j, ct)).pack(side="left", padx=12)
                 cont.pack(fill="x")
@@ -2143,7 +2150,7 @@ class App(ctk.CTk):
             self._maj_besoins_ranger()   # la page Ranger reste à jour
 
         # --- bas : Réinitialiser / Enregistrer ---
-        bas = tk.Frame(top, bg=BG)
+        bas = tk.Frame(top, bg=cBG)
         bas.pack(fill="x", padx=22, pady=12)
         bouton(bas, "Réinitialiser", reinit).pack(side="left")
         bouton(bas, "Enregistrer", enreg, genre="primaire",
