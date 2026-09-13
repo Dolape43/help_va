@@ -615,21 +615,28 @@ class App(ctk.CTk):
         mc = ctk.CTkFrame(r, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
         mc.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         mci = ctk.CTkFrame(mc, fg_color="transparent")
-        mci.pack(fill="both", expand=True, padx=22, pady=18)
-        ctk.CTkLabel(mci, text="DOSSIER DE SORTIE", font=(POLICE, 11, "bold"),
+        mci.pack(fill="x", padx=22, pady=20)
+        gm = ctk.CTkFrame(mci, fg_color="transparent")
+        gm.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(gm, text="DOSSIER DE SORTIE", font=(POLICE, 11, "bold"),
                      text_color=ACCENT_HOVER).pack(anchor="w")
-        ctk.CTkLabel(mci, text=os.path.basename(_d) or _d, font=(POLICE, 19, "bold"),
+        ctk.CTkLabel(gm, text=os.path.basename(_d) or _d, font=(POLICE, 20, "bold"),
                      text_color=TEXT).pack(anchor="w", pady=(2, 0))
-        ctk.CTkLabel(mci, text=_d, font=(POLICE, 11), text_color=MUTED,
-                     wraplength=330, justify="left").pack(anchor="w", pady=(1, 12))
-        bts = ctk.CTkFrame(mci, fg_color="transparent")
-        bts.pack(anchor="w")
-        ctk.CTkButton(bts, text="Ouvrir", command=self._ouvrir_dossier_sortie,
-                      fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER, hover_color="#E1DDFA",
-                      corner_radius=10, height=34, width=92, font=(POLICE, 13, "bold")).pack(side="left")
-        ctk.CTkButton(bts, text="Modifier", command=lambda: self._aller("parametres"),
-                      fg_color="transparent", text_color=MUTED, hover_color=ACCENT_SOFTER,
-                      corner_radius=10, height=34, width=92, font=(POLICE, 13)).pack(side="left", padx=(8, 0))
+        ctk.CTkLabel(gm, text="Vos fichiers préparés sont enregistrés ici.",
+                     font=(POLICE, 12), text_color=MUTED).pack(anchor="w")
+        # Petites icônes d'action (Ouvrir le dossier / Modifier dans les Paramètres)
+        acts = ctk.CTkFrame(mci, fg_color="transparent")
+        acts.pack(side="right")
+        self._mini_imgs = getattr(self, "_mini_imgs", [])
+        for _ic, _cmd in [("folder", self._ouvrir_dossier_sortie),
+                          ("parametres", lambda: self._aller("parametres"))]:
+            _im = self._icone(_ic, 20)
+            if _im is not None:
+                self._mini_imgs.append(_im)
+            ctk.CTkButton(acts, text="" if _im else ("Ouvrir" if _ic == "folder" else "…"),
+                          image=_im, width=40, height=40, corner_radius=10,
+                          fg_color=ACCENT_SOFT, hover_color="#E1DDFA",
+                          command=_cmd).pack(side="left", padx=(6, 0))
 
         tc = ctk.CTkFrame(r, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
         tc.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
