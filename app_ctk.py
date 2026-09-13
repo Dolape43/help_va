@@ -1352,7 +1352,7 @@ class App(ctk.CTk):
                   primaire=True).pack(fill="x")
         ctk.CTkLabel(
             action, justify="left", font=(POLICE, 11, "bold"), text_color=MUTED,
-            text="Résultat dans « media (métadonnées changées) » — même arborescence que votre dossier."
+            text="Résultat : un dossier « <votre dossier> (métadonnées changées) » — même arborescence."
         ).pack(anchor="w", pady=(8, 0))
 
         self._zone_journal()
@@ -1387,11 +1387,16 @@ class App(ctk.CTk):
         if not self.fichiers_uniq_src and not self.dossier_uniq_src:
             messagebox.showwarning("Métadonnées", "Importe d'abord un dossier ou des images.")
             return
-        sortie = os.path.join(self.dossier_sortie(), "media (métadonnées changées)")
         renommer = bool(self.chk_renommer.get())
         filtre = False   # option de filtre retirée : uniquisation invisible uniquement
         fichiers = list(self.fichiers_uniq_src) if self.fichiers_uniq_src else None
         dossier = self.dossier_uniq_src
+        # Sortie nommée d'après le dossier importé : « OK » -> « OK (métadonnées changées) ».
+        if dossier:
+            nom_src = os.path.basename(os.path.normpath(dossier)) or "media"
+            sortie = os.path.join(self.dossier_sortie(), f"{nom_src} (métadonnées changées)")
+        else:
+            sortie = os.path.join(self.dossier_sortie(), "media (métadonnées changées)")
         # Sécurité : la source ne doit pas être le dossier de sortie (ni dedans),
         # sinon on supprimerait la source (rmtree) avant de la traiter.
         if dossier:
