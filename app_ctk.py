@@ -1107,52 +1107,104 @@ class App(ctk.CTk):
                           action=("Modifier le calendrier", self.ouvrir_editeur_calendrier))
         r, c, s, _img = self._besoins()
 
-        # --- Section 1 : Reels + Stories ---
-        inner = self._carte()
-        ctk.CTkLabel(inner, text="1) Reels + Stories", font=(POLICE, 15, "bold"),
+        # ---------- Encart info : à quoi sert le module ----------
+        info = self._carte(pad=18)
+        info_row = ctk.CTkFrame(info, fg_color="transparent")
+        info_row.pack(fill="x")
+        self._badge(info_row, "folder", taille=46).pack(side="left", padx=(0, 14))
+        info_txt = ctk.CTkFrame(info_row, fg_color="transparent")
+        info_txt.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(info_txt, text="Ce que fait ce module", font=(POLICE, 14, "bold"),
                      text_color=TEXT).pack(anchor="w")
-        ctk.CTkLabel(inner, justify="left", font=(POLICE, 13), text_color=MUTED,
-                     text="Prépare un dossier avec ces 2 sous-dossiers :\n"
-                          "     videos\\   →  vos vidéos (Reels)\n"
-                          "     images\\   →  vos images (Stories)").pack(anchor="w", pady=(4, 0))
+        ctk.CTkLabel(
+            info_txt, justify="left", font=(POLICE, 13), text_color=MUTED,
+            text="HelpVA range vos médias par semaine / jour / créneau selon le calendrier.\n"
+                 "Modifiez le calendrier via le bouton en haut à droite.\n"
+                 "Vos originaux ne sont pas touchés.").pack(anchor="w", pady=(2, 0))
+
+        # ---------- Étape 1 : Reels + Stories ----------
+        c1 = self._carte()
+        self._entete_etape(c1, 1, "Reels + Stories",
+                           "Vos Reels et Stories, rangés selon le calendrier.")
+        ctk.CTkLabel(
+            c1, justify="left", font=(POLICE, 13), text_color=MUTED,
+            text="Préparez un dossier avec 2 sous-dossiers :\n"
+                 "     videos\\   →  vos Reels\n"
+                 "     images\\   →  vos Stories").pack(anchor="w", pady=(16, 0))
         self.lbl_ranger_besoins = ctk.CTkLabel(
-            inner, font=(POLICE, 14, "bold"), text_color=ACCENT_HOVER,
+            c1, font=(POLICE, 14, "bold"), text_color=ACCENT_HOVER,
             text=f"Besoin : {r} vidéo(s) (reels) · {s} image(s) (stories)")
-        self.lbl_ranger_besoins.pack(anchor="w", pady=(12, 8))
+        self.lbl_ranger_besoins.pack(anchor="w", pady=(12, 6))
         self.chk_aleatoire_ranger = ctk.CTkCheckBox(
-            inner, text="Répartir au hasard (au lieu de l'ordre 1, 2, 3…)",
+            c1, text="Répartir au hasard (au lieu de l'ordre 1, 2, 3…)",
             font=(POLICE, 14), fg_color=ACCENT_HOVER)
         self.chk_aleatoire_ranger.select()   # coché par défaut
-        self.chk_aleatoire_ranger.pack(anchor="w", pady=(0, 8))
-        ligne = ctk.CTkFrame(inner, fg_color="transparent")
-        ligne.pack(anchor="w", pady=(6, 4))
-        self._btn(ligne, "Importer un dossier…", self._choisir_dossier_ranger).pack(side="left", padx=(0, 10))
-        self._btn(ligne, "Ranger reels + stories", self._lancer_ranger, primaire=True).pack(side="left")
-        txt = f"Dossier : {self.dossier_ranger_src}" if self.dossier_ranger_src else "Aucun dossier sélectionné"
-        self.lbl_ranger = ctk.CTkLabel(inner, text=txt, font=(POLICE, 13), text_color=MUTED)
-        self.lbl_ranger.pack(anchor="w", pady=(10, 0))
+        self.chk_aleatoire_ranger.pack(anchor="w", pady=(0, 14))
+        row1 = ctk.CTkFrame(c1, fg_color="transparent")
+        row1.pack(fill="x", pady=(0, 14))
+        self._btn(row1, "Importer un dossier…",
+                  self._choisir_dossier_ranger).pack(side="left")
+        zone1 = ctk.CTkFrame(c1, fg_color=ACCENT_SOFTER, corner_radius=12,
+                             border_width=1, border_color=BORDER)
+        zone1.pack(fill="x")
+        zrow1 = ctk.CTkFrame(zone1, fg_color="transparent")
+        zrow1.pack(fill="x", padx=16, pady=14)
+        self._badge(zrow1, "folder", taille=40).pack(side="left", padx=(0, 12))
+        src1 = ctk.CTkFrame(zrow1, fg_color="transparent")
+        src1.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(src1, text="DOSSIER À RANGER", font=(POLICE, 11, "bold"),
+                     text_color=MUTED).pack(anchor="w")
+        self.lbl_ranger = ctk.CTkLabel(
+            src1, justify="left", font=(POLICE, 14), text_color=TEXT,
+            text=(f"Dossier : {self.dossier_ranger_src}" if self.dossier_ranger_src
+                  else "Aucun dossier sélectionné"))
+        self.lbl_ranger.pack(anchor="w", pady=(2, 0))
 
-        # --- Section 2 : Carrousels (dossier dédié, ordre respecté) ---
-        cc = self._carte()
-        ctk.CTkLabel(cc, text="2) Carrousels", font=(POLICE, 15, "bold"),
-                     text_color=TEXT).pack(anchor="w")
-        ctk.CTkLabel(cc, justify="left", font=(POLICE, 13), text_color=MUTED,
-                     text="Dossier séparé de photos que TU nommes 1, 2, 3… (les photos qui se\n"
-                          "ressemblent se suivent). Rangées DANS L'ORDRE par groupes de "
-                          f"{rangement.IMAGES_PAR_CAROUSEL} :\n"
-                          "1-2-3 → 1er carrousel, 4-5-6 → 2e, etc.\n"
-                          "⚠️ Fais d'abord « Ranger reels + stories » ci-dessus.").pack(anchor="w", pady=(4, 0))
-        ctk.CTkLabel(cc, font=(POLICE, 14, "bold"), text_color=ACCENT_HOVER,
-                     text=f"Besoin : {c} carrousel(s) = {c * rangement.IMAGES_PAR_CAROUSEL} photos").pack(
-                     anchor="w", pady=(12, 8))
-        lc = ctk.CTkFrame(cc, fg_color="transparent")
-        lc.pack(anchor="w", pady=(6, 4))
-        self._btn(lc, "Importer le dossier carrousel…", self._choisir_dossier_carrousel).pack(side="left", padx=(0, 10))
-        self._btn(lc, "Ranger les carrousels", self._lancer_carrousels, primaire=True).pack(side="left")
-        txt2 = (f"Dossier : {self.dossier_carrousel_src}" if self.dossier_carrousel_src
-                else "Aucun dossier carrousel sélectionné")
-        self.lbl_carrousel = ctk.CTkLabel(cc, text=txt2, font=(POLICE, 13), text_color=MUTED)
-        self.lbl_carrousel.pack(anchor="w", pady=(10, 0))
+        # ---------- Action étape 1 : bouton pleine largeur ----------
+        action1 = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        action1.pack(fill="x", padx=36, pady=(14, 2))
+        self._btn(action1, "Ranger reels + stories  →",
+                  self._lancer_ranger, primaire=True).pack(fill="x")
+
+        # ---------- Étape 2 : Carrousels ----------
+        c2 = self._carte()
+        self._entete_etape(c2, 2, "Carrousels",
+                           "Photos numérotées, rangées dans l'ordre par groupes.")
+        ctk.CTkLabel(
+            c2, justify="left", font=(POLICE, 13), text_color=MUTED,
+            text="Dossier séparé de photos nommées 1, 2, 3… rangées DANS L'ORDRE par\n"
+                 f"groupes de {rangement.IMAGES_PAR_CAROUSEL} "
+                 "(1-2-3 → 1er carrousel, etc.).\n"
+                 "Faites d'abord « Ranger reels + stories ».").pack(anchor="w", pady=(16, 0))
+        ctk.CTkLabel(
+            c2, font=(POLICE, 14, "bold"), text_color=ACCENT_HOVER,
+            text=f"Besoin : {c} carrousel(s) = {c * rangement.IMAGES_PAR_CAROUSEL} photos").pack(
+            anchor="w", pady=(12, 14))
+        row2 = ctk.CTkFrame(c2, fg_color="transparent")
+        row2.pack(fill="x", pady=(0, 14))
+        self._btn(row2, "Importer le dossier carrousel…",
+                  self._choisir_dossier_carrousel).pack(side="left")
+        zone2 = ctk.CTkFrame(c2, fg_color=ACCENT_SOFTER, corner_radius=12,
+                             border_width=1, border_color=BORDER)
+        zone2.pack(fill="x")
+        zrow2 = ctk.CTkFrame(zone2, fg_color="transparent")
+        zrow2.pack(fill="x", padx=16, pady=14)
+        self._badge(zrow2, "folder", taille=40).pack(side="left", padx=(0, 12))
+        src2 = ctk.CTkFrame(zrow2, fg_color="transparent")
+        src2.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(src2, text="DOSSIER CARROUSEL", font=(POLICE, 11, "bold"),
+                     text_color=MUTED).pack(anchor="w")
+        self.lbl_carrousel = ctk.CTkLabel(
+            src2, justify="left", font=(POLICE, 14), text_color=TEXT,
+            text=(f"Dossier : {self.dossier_carrousel_src}" if self.dossier_carrousel_src
+                  else "Aucun dossier carrousel sélectionné"))
+        self.lbl_carrousel.pack(anchor="w", pady=(2, 0))
+
+        # ---------- Action étape 2 : bouton pleine largeur ----------
+        action2 = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        action2.pack(fill="x", padx=36, pady=(14, 2))
+        self._btn(action2, "Ranger les carrousels  →",
+                  self._lancer_carrousels, primaire=True).pack(fill="x")
 
         self._zone_journal()
 
@@ -1355,20 +1407,57 @@ class App(ctk.CTk):
     def _page_convertir(self):
         self._entete_page("Convertir en MP4",
                           "Transforme vos vidéos (.mov, .avi, .mkv…) en .mp4.")
-        inner = self._carte()
-        ctk.CTkLabel(inner, justify="left", font=(POLICE, 14), text_color=MUTED,
-                     text="Choisissez des vidéos (ou un dossier). HelpVA en crée une version .mp4\n"
-                          "dans « media (mp4) ». Vos originaux ne sont pas touchés.\n\n"
-                          "⚡ Rapide quand c'est possible (change juste le conteneur), sinon\n"
-                          "ré-encodage automatique (H.264/AAC) pour que ça marche à coup sûr.").pack(anchor="w")
-        ligne = ctk.CTkFrame(inner, fg_color="transparent")
-        ligne.pack(anchor="w", pady=(14, 4))
-        self._btn(ligne, "Importer un dossier…", self._choisir_dossier_convert).pack(side="left", padx=(0, 8))
-        self._btn(ligne, "Importer des vidéos…", self._choisir_videos_convert).pack(side="left", padx=(0, 8))
-        self._btn(ligne, "Convertir", self._lancer_convert, primaire=True).pack(side="left")
-        self.lbl_convert = ctk.CTkLabel(inner, text=self._txt_source_convert(),
-                                        font=(POLICE, 12), text_color=MUTED)
-        self.lbl_convert.pack(anchor="w", pady=(8, 0))
+
+        # ---------- Encart info : ce que fait le module ----------
+        info = self._carte(pad=18)
+        info_row = ctk.CTkFrame(info, fg_color="transparent")
+        info_row.pack(fill="x")
+        self._badge(info_row, "convertir", taille=46).pack(side="left", padx=(0, 14))
+        info_txt = ctk.CTkFrame(info_row, fg_color="transparent")
+        info_txt.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(info_txt, text="Ce que fait ce module", font=(POLICE, 14, "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(
+            info_txt, justify="left", font=(POLICE, 13), text_color=MUTED,
+            text="Choisissez des vidéos ou un dossier. HelpVA crée une version .mp4 dans\n"
+                 "« media (mp4) ». Rapide quand c'est possible (change juste le conteneur),\n"
+                 "sinon ré-encodage automatique (H.264/AAC) pour que ça marche à coup sûr.\n"
+                 "Vos originaux ne sont pas touchés.").pack(anchor="w", pady=(2, 0))
+
+        # ---------- Étape 1 : choisir les vidéos ----------
+        c1 = self._carte()
+        self._entete_etape(c1, 1, "Choisir les vidéos",
+                           "Un dossier entier, ou des vidéos précises.")
+        boutons = ctk.CTkFrame(c1, fg_color="transparent")
+        boutons.pack(fill="x", pady=(16, 14))
+        self._btn(boutons, "Importer un dossier…",
+                  self._choisir_dossier_convert).pack(side="left", padx=(0, 10))
+        self._btn(boutons, "Importer des vidéos…",
+                  self._choisir_videos_convert).pack(side="left")
+        zone = ctk.CTkFrame(c1, fg_color=ACCENT_SOFTER, corner_radius=12,
+                            border_width=1, border_color=BORDER)
+        zone.pack(fill="x")
+        zone_row = ctk.CTkFrame(zone, fg_color="transparent")
+        zone_row.pack(fill="x", padx=16, pady=14)
+        self._badge(zone_row, "folder", taille=40).pack(side="left", padx=(0, 12))
+        src = ctk.CTkFrame(zone_row, fg_color="transparent")
+        src.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(src, text="SOURCE SÉLECTIONNÉE", font=(POLICE, 11, "bold"),
+                     text_color=MUTED).pack(anchor="w")
+        self.lbl_convert = ctk.CTkLabel(src, text=self._txt_source_convert(), justify="left",
+                                        font=(POLICE, 14), text_color=TEXT)
+        self.lbl_convert.pack(anchor="w", pady=(2, 0))
+
+        # ---------- Action : bouton « Convertir » pleine largeur ----------
+        action = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        action.pack(fill="x", padx=36, pady=(14, 2))
+        self._btn(action, "Convertir  →", self._lancer_convert,
+                  primaire=True).pack(fill="x")
+        ctk.CTkLabel(
+            action, justify="left", font=(POLICE, 11, "bold"), text_color=MUTED,
+            text="Résultat dans « media (mp4) ». La conversion peut être longue selon les vidéos."
+        ).pack(anchor="w", pady=(8, 0))
+
         self._zone_journal()
 
     def _txt_source_convert(self):
@@ -1425,50 +1514,74 @@ class App(ctk.CTk):
     def _page_drive(self):
         self._entete_page("Télécharger depuis Google Drive",
                           "Récupère les médias d'un dossier Drive partagé, classés par type.")
-        inner = self._carte()
-        ctk.CTkLabel(inner, justify="left", font=(POLICE, 14), text_color=MUTED,
-                     text="Le dossier Google Drive doit être partagé\n"
-                          "« Tous les utilisateurs disposant du lien ».\n\n"
-                          "Collez le lien, choisissez quoi prendre, puis Télécharger. Les médias\n"
-                          "seront rangés dans images\\ et videos\\ (prêts pour Ranger / Métadonnées).").pack(anchor="w")
 
-        ctk.CTkLabel(inner, text="Lien(s) du/des dossier(s) Google Drive — UN PAR LIGNE",
-                     font=(POLICE, 13, "bold"), text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
-        self.champ_drive = ctk.CTkTextbox(inner, height=90, font=(POLICE, 13), corner_radius=10)
-        self.champ_drive.pack(fill="x")
-        ctk.CTkLabel(inner, text="Collez plusieurs liens (un par ligne) : ils seront téléchargés "
-                                 "l'un après l'autre, dans le même dossier de sortie.",
+        # ---------- Encart info : partage requis + rangement ----------
+        info = self._carte(pad=18)
+        info_row = ctk.CTkFrame(info, fg_color="transparent")
+        info_row.pack(fill="x")
+        self._badge(info_row, "drive", taille=46).pack(side="left", padx=(0, 14))
+        info_txt = ctk.CTkFrame(info_row, fg_color="transparent")
+        info_txt.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(info_txt, text="Avant de commencer", font=(POLICE, 14, "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(
+            info_txt, justify="left", font=(POLICE, 13), text_color=MUTED,
+            text="Le dossier Google Drive doit être partagé « Tous les utilisateurs disposant\n"
+                 "du lien ». Les médias seront rangés dans images\\ et videos\\ — prêts pour\n"
+                 "Ranger ou Changer les métadonnées.").pack(anchor="w", pady=(2, 0))
+
+        # ---------- Étape 1 : coller le(s) lien(s) ----------
+        c1 = self._carte()
+        self._entete_etape(c1, 1, "Coller le(s) lien(s)",
+                           "Le lien de partage du dossier Google Drive.")
+        self.champ_drive = ctk.CTkTextbox(c1, height=90, font=(POLICE, 13), corner_radius=10)
+        self.champ_drive.pack(fill="x", pady=(16, 0))
+        ctk.CTkLabel(c1, text="Un lien par ligne : ils sont téléchargés l'un après l'autre, "
+                              "dans le même dossier de sortie.",
                      font=(POLICE, 11), text_color=MUTED).pack(anchor="w", pady=(3, 0))
 
-        ctk.CTkLabel(inner, text="Que télécharger ?", font=(POLICE, 13, "bold"),
-                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
-        self.seg_drive = ctk.CTkSegmentedButton(inner, values=["Images", "Vidéos", "Les deux"],
-                                               selected_color=ACCENT_HOVER,
-                                               selected_hover_color="#4A3FCC", font=(POLICE, 14))
+        # ---------- Étape 2 : options de téléchargement ----------
+        c2 = self._carte()
+        self._entete_etape(c2, 2, "Options de téléchargement",
+                           "Ce que vous prenez, dans quel ordre, et combien.")
+
+        ctk.CTkLabel(c2, text="Que télécharger ?", font=(POLICE, 13, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(16, 4))
+        self.seg_drive = ctk.CTkSegmentedButton(c2, values=["Images", "Vidéos", "Les deux"],
+                                                selected_color=ACCENT_HOVER,
+                                                selected_hover_color="#4A3FCC", font=(POLICE, 14))
         self.seg_drive.set("Les deux")
         self.seg_drive.pack(anchor="w")
 
-        ctk.CTkLabel(inner, text="Ordre", font=(POLICE, 13, "bold"),
+        ctk.CTkLabel(c2, text="Ordre", font=(POLICE, 13, "bold"),
                      text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
-        self.seg_tri_drive = ctk.CTkSegmentedButton(inner, values=["Plus récents", "Par nom"],
+        self.seg_tri_drive = ctk.CTkSegmentedButton(c2, values=["Plus récents", "Par nom"],
                                                     selected_color=ACCENT_HOVER,
                                                     selected_hover_color="#4A3FCC", font=(POLICE, 14))
         self.seg_tri_drive.set("Plus récents")
         self.seg_tri_drive.pack(anchor="w")
-        ctk.CTkLabel(inner, text="« Plus récents » : prend d'abord les médias les plus "
-                                 "récemment ajoutés au dossier Drive.",
+        ctk.CTkLabel(c2, text="« Plus récents » : prend d'abord les médias les plus "
+                              "récemment ajoutés.",
                      font=(POLICE, 11), text_color=MUTED).pack(anchor="w", pady=(3, 0))
 
-        ctk.CTkLabel(inner, text="Combien de médias prendre ? (vide = tout)",
+        ctk.CTkLabel(c2, text="Combien de médias prendre ? (vide = tout)",
                      font=(POLICE, 13, "bold"), text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
-        self.champ_nb_drive = ctk.CTkEntry(inner, width=160, height=42, font=(POLICE, 14),
+        self.champ_nb_drive = ctk.CTkEntry(c2, width=160, height=42, font=(POLICE, 14),
                                            placeholder_text="Ex : 35  (ou vide)")
         self.champ_nb_drive.pack(anchor="w")
 
-        lg = ctk.CTkFrame(inner, fg_color="transparent")
-        lg.pack(anchor="w", pady=(16, 0))
-        self._btn(lg, "Voir le contenu", self._apercu_drive).pack(side="left", padx=(0, 10))
-        self._btn(lg, "Télécharger", self._importer_drive, primaire=True).pack(side="left")
+        # ---------- Actions : aperçu (secondaire) + télécharger (primaire pleine largeur) ----------
+        action = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        action.pack(fill="x", padx=36, pady=(14, 2))
+        row = ctk.CTkFrame(action, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 10))
+        self._btn(row, "Voir le contenu", self._apercu_drive).pack(side="left")
+        self._btn(action, "Télécharger  →", self._importer_drive, primaire=True).pack(fill="x")
+        ctk.CTkLabel(
+            action, justify="left", font=(POLICE, 11, "bold"), text_color=MUTED,
+            text="Résultat dans « telechargement drive » (sous-dossiers images\\ et videos\\)."
+        ).pack(anchor="w", pady=(8, 0))
+
         self._zone_journal()
 
     def _liens_drive(self):
