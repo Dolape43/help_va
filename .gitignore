@@ -1,5 +1,4 @@
-# Ne jamais publier la config / les paramètres (clé API)
-agent/config.py
+# Paramètres locaux de l'utilisateur (ne pas publier)
 parametres.json
 
 # LICENCE — secrets du vendeur : NE JAMAIS partager / distribuer / publier

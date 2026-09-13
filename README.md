@@ -1,77 +1,53 @@
-# Agent Insta
+# HelpVA
 
-Agent qui publie automatiquement sur Instagram (publications, carrousels, réels)
-en pilotant les profils **AdsPower** via son API locale, puis en automatisant
-l'interface web d'Instagram avec **Playwright**.
+**HelpVA** est une application de bureau (Windows / macOS) qui aide les
+assistants virtuels à **préparer** le contenu d'un modèle avant publication :
+récupérer les médias, les convertir, les rendre uniques et les ranger selon un
+calendrier. La publication elle-même reste **manuelle** — HelpVA ne poste pas à
+votre place.
 
-## Principe
+Interface : Python + CustomTkinter, police Poppins embarquée, thème clair/sombre.
 
-```
-Ton script (Python)
-  1. démarre le profil AdsPower via l'API locale
-  2. Playwright se branche sur le navigateur ouvert (session Insta déjà connectée)
-  3. clique "Créer" -> upload média -> légende -> publie
-```
+## Les 4 modules
 
-On ne touche jamais aux mots de passe : chaque profil AdsPower reste connecté
-manuellement à Instagram, et l'agent réutilise la session.
+| Module | Rôle | Code |
+|---|---|---|
+| **Télécharger depuis Drive** | Récupère les médias d'un modèle depuis un lien Google Drive. | [`agent/drive.py`](agent/drive.py) |
+| **Convertir en MP4** | Transforme `.mov`, `.avi`, … en `.mp4` prêt pour Instagram. | [`agent/conversion.py`](agent/conversion.py) |
+| **Changer les métadonnées** | Rend chaque photo/vidéo **unique** (métadonnées, taille, pixels) pour éviter la détection de doublon d'Instagram, sans changement visible. | [`agent/unicite.py`](agent/unicite.py) |
+| **Ranger les médias** | Organise images et vidéos par semaine/jour/créneau selon le calendrier. | [`agent/ranger.py`](agent/ranger.py) · [`agent/calendrier.py`](agent/calendrier.py) |
 
 ## Prérequis
 
-- **AdsPower** installé, avec l'**API locale** activée (plan payant requis).
-- Au moins **1 profil** créé, connecté manuellement à Instagram.
-- **Python 3.11+** et les dépendances : `pip install -r requirements.txt`
+- **Python 3.11+**
+- Dépendances : `pip install -r requirements.txt`
 
-## Configuration
-
-Tout se règle dans [`agent/config.py`](agent/config.py) :
-- `ADSPOWER_API_KEY` : la clé générée dans AdsPower.
-- délais "humains", dossier des contenus, etc.
-
-## Commandes
+## Lancer en développement
 
 ```bash
-# Lister les profils AdsPower (retrouver les user_id)
-python -m agent.main list
-
-# Vérifier qu'un profil est bien connecté à Instagram
-python -m agent.main check <user_id>
-
-# Publier une photo
-python -m agent.main post <user_id> publication image.jpg --legende "Ma légende"
-
-# Publier un carrousel (slides)
-python -m agent.main post <user_id> carrousel img1.jpg img2.jpg --legende "Slides"
-
-# Publier un réel
-python -m agent.main post <user_id> reel video.mp4 --legende "Mon reel"
+python app_ctk.py
 ```
 
-## Ranger les médias selon le calendrier
+## Licences & activation
 
-Tu déposes tes médias bruts dans :
-- `sources/videos/` -> serviront aux **Reels**
-- `sources/images/` -> l'agent y pioche pour les **Carousels** (plusieurs images) et **Stories** (1 image)
+HelpVA est protégé par un système de licences signées (Ed25519) et un
+back-office **Supabase** :
 
-Puis :
+- l'utilisateur saisit un **code d'activation** ; l'app envoie son empreinte
+  machine au serveur, qui renvoie une licence signée ;
+- une licence peut être **résiliée / suspendue à distance** depuis le tableau
+  de bord web (le serveur est la seule source de vérité) ;
+- code côté app : [`agent/licence.py`](agent/licence.py) — fonction serveur :
+  [`supabase/functions/admin/index.ts`](supabase/functions/admin/index.ts) —
+  tableau de bord : [`web/admin.html`](web/admin.html).
 
-```bash
-# Voir la répartition sans rien écrire
-python -m agent.main ranger --simuler
+## Construction (exe / .app)
 
-# Ranger réellement dans planning/
-python -m agent.main ranger
-```
+- Windows : voir [`HelpVA.spec`](HelpVA.spec) (PyInstaller).
+- macOS : voir [`HelpVA_mac.spec`](HelpVA_mac.spec) et [`BUILD_MAC.md`](BUILD_MAC.md).
 
-Résultat : `planning/semaine-XX/jour-Y/<ordre>_<heure>_<type>/` contenant les médias
-du créneau + un `legende.txt` à remplir. Le planning est défini dans
-[`agent/calendrier.py`](agent/calendrier.py) ; les réglages (images par carousel,
-copier/déplacer) dans [`agent/config.py`](agent/config.py).
+## Sécurité
 
-## Limites connues
-
-- L'API locale AdsPower est limitée à ~1 requête/seconde (géré automatiquement).
-- Les sélecteurs de l'interface Instagram peuvent changer : voir
-  [`agent/instagram.py`](agent/instagram.py) si un clic ne fonctionne plus.
-- Le PC doit être allumé au moment de la publication.
-```
+Ne sont **jamais** publiés (voir [`.gitignore`](.gitignore)) : la clé privée
+Ed25519 du vendeur (`outils/`, `admin-prive/`), les licences clients, les
+médias locaux (`contenus/`, `sources/`) et les journaux.

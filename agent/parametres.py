@@ -41,13 +41,3 @@ def sauver(params: dict) -> None:
     """Enregistre les paramètres dans parametres.json (à côté de l'exe)."""
     with open(_chemin(), "w", encoding="utf-8") as f:
         json.dump(params, f, indent=2, ensure_ascii=False)
-
-
-def cle_api() -> str:
-    """Retourne la clé API à utiliser (parametres.json, sinon config.py)."""
-    cle = charger().get("api_key", "").strip()
-    if cle:
-        return cle
-    # Repli : la clé de développement dans config.py (utile en local).
-    from .config import ADSPOWER_API_KEY
-    return ADSPOWER_API_KEY
