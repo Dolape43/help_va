@@ -196,12 +196,19 @@ class App(ctk.CTk):
         lier(carte)
 
     def _icone(self, nom, size=22):
-        """Icône PNG duotone embarquée (assets/icons) ; repli sur dessin PIL."""
+        """Icône PNG embarquée (assets/icons) ; repli sur dessin PIL.
+
+        Supporte une variante mode sombre optionnelle : si `assets/icons/<nom>_dark.png`
+        existe, il est utilisé en thème sombre (sinon la même image sert aux deux).
+        """
         try:
             from PIL import Image
             p = chemin_ressource(os.path.join("assets", "icons", f"{nom}.png"))
             if os.path.isfile(p):
-                return ctk.CTkImage(Image.open(p), size=(size, size))
+                clair = Image.open(p)
+                pd = chemin_ressource(os.path.join("assets", "icons", f"{nom}_dark.png"))
+                sombre = Image.open(pd) if os.path.isfile(pd) else clair
+                return ctk.CTkImage(light_image=clair, dark_image=sombre, size=(size, size))
         except Exception:
             pass
         try:
@@ -287,7 +294,7 @@ class App(ctk.CTk):
         b = ctk.CTkFrame(parent, fg_color=ACCENT_SOFT, corner_radius=taille // 2,
                          width=taille, height=taille)
         b.pack_propagate(False)
-        img = self._icone(nom, int(taille * 0.5))
+        img = self._icone(nom, int(taille * 0.58))
         if img is not None:
             lbl = ctk.CTkLabel(b, image=img, text="")
             self._badge_imgs = getattr(self, "_badge_imgs", [])
@@ -593,7 +600,7 @@ class App(ctk.CTk):
         tc.grid(row=0, column=1, sticky="ew", padx=(10, 0))
         tci = ctk.CTkFrame(tc, fg_color="transparent")
         tci.pack(fill="x", padx=20, pady=18)
-        self._badge(tci, "bulb", 46).pack(side="left", padx=(0, 12))
+        self._badge(tci, "bulb", 54).pack(side="left", padx=(0, 12))
         gt = ctk.CTkFrame(tci, fg_color="transparent")
         gt.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(gt, text="Conseil", font=(POLICE, 14, "bold"),
@@ -624,7 +631,7 @@ class App(ctk.CTk):
         carte.grid(row=row, column=col, sticky="ew", padx=8, pady=8)
         inner = ctk.CTkFrame(carte, fg_color="transparent")
         inner.pack(fill="x", padx=18, pady=18)
-        self._badge(inner, emoji, 50).pack(side="left", padx=(0, 14))
+        self._badge(inner, emoji, 66).pack(side="left", padx=(0, 16))
         body = ctk.CTkFrame(inner, fg_color="transparent")
         body.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(body, text=titre, font=(POLICE, 16, "bold"),
