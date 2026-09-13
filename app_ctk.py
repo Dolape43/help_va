@@ -29,10 +29,11 @@ from agent import unicite, calendrier, conversion
 from agent import horloge, drive
 
 # Re-contrôle de l'abonnement quand l'app reste ouverte (réglable pour tests).
+# Toutes les 1 h : vérifie en ligne l'état de la licence (résiliation/expiration).
 try:
-    INTERVALLE_VERIF_MS = int(os.environ.get("HELPVA_VERIF_MS", str(5 * 60 * 60 * 1000)))
+    INTERVALLE_VERIF_MS = int(os.environ.get("HELPVA_VERIF_MS", str(60 * 60 * 1000)))
 except ValueError:
-    INTERVALLE_VERIF_MS = 5 * 60 * 60 * 1000
+    INTERVALLE_VERIF_MS = 60 * 60 * 1000
 RETRY_VERIF_MS = 5 * 60 * 1000
 MAX_ECHECS_VERIF = 3
 
@@ -355,8 +356,7 @@ class App(ctk.CTk):
         c = self._carte_centre()
         ctk.CTkLabel(c, text="Connexion internet requise",
                      font=(POLICE, 22, "bold"), text_color=TEXT).pack(pady=(0, 8))
-        ctk.CTkLabel(c, text="HelpVA doit vérifier votre abonnement en ligne.\n"
-                     "Connectez-vous à internet, puis réessayez.",
+        ctk.CTkLabel(c, text="Veuillez vous connecter à internet, puis réessayez.",
                      font=(POLICE, 13), text_color=MUTED, justify="center").pack(pady=(0, 20))
         ctk.CTkButton(c, text="Réessayer", command=self._router_licence,
                       fg_color=ACCENT_HOVER, hover_color="#4A3FCC", height=42,

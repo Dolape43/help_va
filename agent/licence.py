@@ -99,12 +99,46 @@ def est_revoquee(licence_txt: str) -> bool:
     return _hash_licence(licence_txt) in _charger_revoquees()
 
 
+# -------------------------------------- tolérance hors-ligne (contrôle serveur)
+# L'app confirme l'accès auprès du serveur régulièrement. Si elle ne peut PAS
+# joindre le serveur (hors-ligne), elle tolère quelques heures grâce à la
+# dernière confirmation, puis se bloque tant qu'une connexion n'est pas revenue.
+GRACE_HORS_LIGNE_H = float(os.environ.get("HELPVA_GRACE_H", "3"))
+NOM_FICHIER_CONFIRM = "derniere_verif.txt"
+
+
+def _fichier_confirmation() -> str:
+    return os.path.join(emplacement.dossier_donnees(), NOM_FICHIER_CONFIRM)
+
+
+def _marquer_confirmation() -> None:
+    """Mémorise l'instant de la dernière confirmation serveur (accès autorisé)."""
+    try:
+        with open(_fichier_confirmation(), "w", encoding="utf-8") as f:
+            f.write(datetime.now(timezone.utc).isoformat())
+    except Exception:
+        pass
+
+
+def _confirmation_recente() -> bool:
+    """Vrai si le serveur a confirmé l'accès il y a moins de GRACE_HORS_LIGNE_H h."""
+    try:
+        with open(_fichier_confirmation(), encoding="utf-8") as f:
+            t = datetime.fromisoformat(f.read().strip())
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        ecoule = (datetime.now(timezone.utc) - t).total_seconds()
+        return 0 <= ecoule < GRACE_HORS_LIGNE_H * 3600
+    except Exception:
+        return False
+
+
 def _statut_serveur(empreinte: str, cle_hash: str):
     """Interroge Supabase pour le statut d'une licence (révocation à distance).
 
-    Renvoie 'actif' | 'resiliee' | 'suspendu', ou None si aucune ligne trouvée
-    OU si le serveur est injoignable (dans ce cas on ne bloque pas : repli
-    sur la vérification locale hors-ligne).
+    Renvoie un couple (joignable, statut) :
+      - joignable : True si le serveur a répondu, False si hors-ligne.
+      - statut : 'actif' | 'resiliee' | 'suspendu' | None (licence introuvable).
     """
     try:
         import requests
@@ -118,29 +152,40 @@ def _statut_serveur(empreinte: str, cle_hash: str):
             timeout=6)
         if r.status_code == 200:
             data = r.json()
-            if data:
-                return data[0].get("statut")
+            return True, (data[0].get("statut") if data else None)
     except Exception:
         pass
-    return None
+    return False, None
 
 
 def _blocage_serveur(licence_txt: str, empreinte: str):
-    """Renvoie un dict de statut BLOQUANT si le SERVEUR a résilié/suspendu la
-    licence, sinon None.
+    """Contrôle d'accès auprès du serveur, avec tolérance hors-ligne.
 
-    Le serveur est la SEULE source de vérité : on ne mémorise PAS le blocage en
-    local, pour que « réactiver » depuis le tableau de bord débloque aussitôt le
-    client (réversible). Hors-ligne, on retombe sur la vérification locale.
+    Renvoie un dict BLOQUANT, ou None si l'accès peut continuer.
+
+    - Serveur joignable :
+        * 'resiliee'/'suspendu' -> bloque (réversible : réactiver côté serveur
+          débloque au prochain contrôle) ;
+        * sinon -> on mémorise la confirmation et on autorise.
+    - Serveur injoignable (hors-ligne) :
+        * on tolère tant que la dernière confirmation date de moins de
+          GRACE_HORS_LIGNE_H heures ; au-delà -> bloque (raison 'pas_internet')
+          pour forcer une reconnexion et re-vérifier la résiliation.
     """
-    srv = _statut_serveur(empreinte, _hash_licence(licence_txt))
-    if srv == "resiliee":
-        return {"ok": False, "raison": "revoquee", "type": None,
-                "expire_le": None, "jours_restants": None}
-    if srv == "suspendu":
-        return {"ok": False, "raison": "suspendu", "type": None,
-                "expire_le": None, "jours_restants": None}
-    return None
+    joignable, srv = _statut_serveur(empreinte, _hash_licence(licence_txt))
+    if joignable:
+        if srv == "resiliee":
+            return {"ok": False, "raison": "revoquee", "type": None,
+                    "expire_le": None, "jours_restants": None}
+        if srv == "suspendu":
+            return {"ok": False, "raison": "suspendu", "type": None,
+                    "expire_le": None, "jours_restants": None}
+        _marquer_confirmation()
+        return None
+    if _confirmation_recente():
+        return None
+    return {"ok": False, "raison": "pas_internet", "type": None,
+            "expire_le": None, "jours_restants": None}
 
 
 def activer_par_code(code: str):
