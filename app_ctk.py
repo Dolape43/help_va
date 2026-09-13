@@ -159,12 +159,21 @@ class App(ctk.CTk):
 
         self._router_licence()
 
-    def dossier_sortie(self) -> str:
+    def _dossier_sortie_defaut(self) -> str:
         bureau = os.path.join(os.path.expanduser("~"), "Desktop")
         if not os.path.isdir(bureau):
             bureau = os.path.expanduser("~")
-        d = os.path.join(bureau, "HelpVA")
-        os.makedirs(d, exist_ok=True)
+        return os.path.join(bureau, "HelpVA")
+
+    def dossier_sortie(self) -> str:
+        """Dossier où les modules enregistrent. Personnalisable (Paramètres),
+        par défaut Bureau\\HelpVA."""
+        d = self.params.get("dossier_sortie", "").strip() or self._dossier_sortie_defaut()
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception:
+            d = self._dossier_sortie_defaut()
+            os.makedirs(d, exist_ok=True)
         return d
 
     def _ouvrir_dossier_sortie(self):
@@ -172,6 +181,19 @@ class App(ctk.CTk):
             os.startfile(self.dossier_sortie())   # ouvre l'explorateur (Windows)
         except Exception as e:
             self._notifier("Dossier de sortie", str(e), erreur=True)
+
+    def _changer_dossier_sortie(self):
+        parent = filedialog.askdirectory(title="Choisir où créer le dossier HelpVA")
+        if not parent:
+            return
+        self.params["dossier_sortie"] = os.path.join(parent, "HelpVA")
+        parametres.sauver(self.params)
+        self._aller("parametres")   # rafraîchit l'affichage
+
+    def _reinit_dossier_sortie(self):
+        self.params["dossier_sortie"] = ""
+        parametres.sauver(self.params)
+        self._aller("parametres")
 
     # ----------------------------------------------------------- utilitaires
     def _vider(self, widget=None):
@@ -494,7 +516,7 @@ class App(ctk.CTk):
         self._nav_icones = {}
         nav = [("accueil", "Accueil", "accueil"), ("parametres", "Paramètres", "parametres")]
         for cle, lib, ic in nav:
-            img = self._icone(ic, 22)
+            img = self._icone(ic, 26)
             self._nav_icones[cle] = img
             kw = dict(text=("   " + lib), anchor="w", height=46, corner_radius=12,
                       font=(POLICE, 15), fg_color="transparent", text_color=MUTED,
@@ -595,9 +617,12 @@ class App(ctk.CTk):
         mci.pack(fill="x", padx=22, pady=20)
         gm = ctk.CTkFrame(mci, fg_color="transparent")
         gm.pack(side="left", fill="x", expand=True)
+        _d = self.dossier_sortie()
+        _court = " · ".join([os.path.basename(os.path.dirname(_d)) or _d,
+                             os.path.basename(_d)])
         ctk.CTkLabel(gm, text="DOSSIER DE SORTIE", font=(POLICE, 11, "bold"),
                      text_color=ACCENT_HOVER).pack(anchor="w")
-        ctk.CTkLabel(gm, text="Bureau · HelpVA", font=(POLICE, 20, "bold"),
+        ctk.CTkLabel(gm, text=_court, font=(POLICE, 20, "bold"),
                      text_color=TEXT).pack(anchor="w", pady=(2, 0))
         ctk.CTkLabel(gm, text="Vos fichiers préparés sont enregistrés ici.",
                      font=(POLICE, 12), text_color=MUTED).pack(anchor="w")
@@ -1491,7 +1516,24 @@ class App(ctk.CTk):
     #  Page : Paramètres
     # ==================================================================
     def _page_parametres(self):
-        self._entete_page("Paramètres", "Réglages de la licence.")
+        self._entete_page("Paramètres", "Dossier de sortie et licence.")
+
+        # --- Dossier de sortie ---
+        ds = self._carte()
+        ctk.CTkLabel(ds, text="Dossier de sortie", font=(POLICE, 14, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w")
+        perso = bool(self.params.get("dossier_sortie", "").strip())
+        ctk.CTkLabel(ds, text="Emplacement où vos fichiers préparés sont enregistrés"
+                     + ("" if perso else "  (par défaut : Bureau)"),
+                     font=(POLICE, 13), text_color=MUTED).pack(anchor="w", pady=(6, 6))
+        ctk.CTkLabel(ds, text=self.dossier_sortie(), font=("Consolas", 12),
+                     text_color=TEXT, wraplength=560, justify="left").pack(anchor="w", pady=(0, 10))
+        ligne_ds = ctk.CTkFrame(ds, fg_color="transparent")
+        ligne_ds.pack(anchor="w")
+        self._btn(ligne_ds, "Changer…", self._changer_dossier_sortie, primaire=True).pack(side="left")
+        self._btn(ligne_ds, "Ouvrir", self._ouvrir_dossier_sortie).pack(side="left", padx=(8, 0))
+        if perso:
+            self._btn(ligne_ds, "Réinitialiser (Bureau)", self._reinit_dossier_sortie).pack(side="left", padx=(8, 0))
 
         # --- Licence & abonnement ---
         lic = self._carte()
