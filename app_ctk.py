@@ -1529,6 +1529,11 @@ class App(ctk.CTk):
             text="Le dossier Google Drive doit être partagé « Tous les utilisateurs disposant\n"
                  "du lien ». Les médias seront rangés dans les sous-dossiers images et videos\n"
                  "— prêts pour Ranger ou Changer les métadonnées.").pack(anchor="w", pady=(2, 0))
+        ctk.CTkButton(info_txt, text="Comment rendre un dossier Drive public ?  →",
+                      command=self._popup_tuto_drive, height=28, anchor="w",
+                      fg_color="transparent", text_color=ACCENT_HOVER,
+                      hover_color=ACCENT_SOFTER, corner_radius=8,
+                      font=(POLICE, 13, "bold")).pack(anchor="w", pady=(6, 0))
 
         # ---------- Étape 1 : coller le(s) lien(s) ----------
         c1 = self._carte()
@@ -1583,6 +1588,46 @@ class App(ctk.CTk):
         ).pack(anchor="w", pady=(8, 0))
 
         self._zone_journal()
+
+    def _popup_tuto_drive(self):
+        """Mini-tuto en images : rendre un dossier Google Drive public."""
+        top = ctk.CTkToplevel(self)
+        top.title("Rendre un dossier Drive public")
+        top.geometry("700x660")
+        top.configure(fg_color=BG)
+        top.transient(self)
+        self._modale_devant(top)
+        top.after(200, lambda: top.winfo_exists() and top.grab_set())
+
+        cont = ctk.CTkScrollableFrame(top, fg_color=BG)
+        cont.pack(fill="both", expand=True, padx=18, pady=16)
+        ctk.CTkLabel(cont, text="Rendre un dossier Google Drive public",
+                     font=(POLICE, 20, "bold"), text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(cont, text="Deux étapes, directement dans Google Drive :",
+                     font=(POLICE, 13), text_color=MUTED).pack(anchor="w", pady=(2, 14))
+
+        self._tuto_imgs = []
+        etapes = [
+            (1, "Clic droit sur le dossier → Partager → Partager", "drive_etape1.png"),
+            (2, "Accès général → « Tous les utilisateurs disposant du lien »", "drive_etape2.png"),
+        ]
+        for num, titre, fichier in etapes:
+            self._entete_etape(cont, num, titre)
+            try:
+                from PIL import Image
+                im = Image.open(chemin_ressource(os.path.join("assets", "tuto", fichier)))
+                w, h = im.size
+                lw = min(620, w)
+                img = ctk.CTkImage(im, size=(lw, int(h * lw / w)))
+                self._tuto_imgs.append(img)
+                ctk.CTkLabel(cont, image=img, text="").pack(anchor="w", pady=(10, 20))
+            except Exception:
+                ctk.CTkLabel(cont, text="(image indisponible)", font=(POLICE, 12),
+                             text_color=MUTED).pack(anchor="w", pady=(6, 16))
+
+        ctk.CTkButton(cont, text="J'ai compris", command=top.destroy, height=44,
+                      corner_radius=12, fg_color=ACCENT_HOVER, hover_color="#4A3FCC",
+                      font=(POLICE, 15, "bold")).pack(fill="x", pady=(4, 6))
 
     def _liens_drive(self):
         """Liste des liens Drive saisis (un par ligne, vides ignorés)."""
