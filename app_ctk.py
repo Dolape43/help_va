@@ -1527,8 +1527,8 @@ class App(ctk.CTk):
         ctk.CTkLabel(
             info_txt, justify="left", font=(POLICE, 13), text_color=MUTED,
             text="Le dossier Google Drive doit être partagé « Tous les utilisateurs disposant\n"
-                 "du lien ». Les médias seront rangés dans images\\ et videos\\ — prêts pour\n"
-                 "Ranger ou Changer les métadonnées.").pack(anchor="w", pady=(2, 0))
+                 "du lien ». Les médias seront rangés dans les sous-dossiers images et videos\n"
+                 "— prêts pour Ranger ou Changer les métadonnées.").pack(anchor="w", pady=(2, 0))
 
         # ---------- Étape 1 : coller le(s) lien(s) ----------
         c1 = self._carte()

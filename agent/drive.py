@@ -277,12 +277,11 @@ def telecharger_dossier(lien: str, dossier_sortie: str, prendre=("images", "vide
         raise RuntimeError("Aucun média correspondant à votre choix dans ce dossier.")
     medias = _trier(medias, tri)   # 'recent' (défaut) ou 'nom'
 
+    # Les dossiers images/ et videos/ sont créés À LA DEMANDE (seulement si un
+    # média de ce type est réellement téléchargé) -> pas de dossier vide.
     d_img = os.path.join(dossier_sortie, "images")
     d_vid = os.path.join(dossier_sortie, "videos")
-    if "images" in prendre:
-        os.makedirs(d_img, exist_ok=True)
-    if "videos" in prendre:
-        os.makedirs(d_vid, exist_ok=True)
+    os.makedirs(dossier_sortie, exist_ok=True)
 
     # Mémoire des médias déjà téléchargés (par ID Drive) : on ne reprend JAMAIS
     # deux fois le même, même sur plusieurs téléchargements successifs — ex :
@@ -325,6 +324,7 @@ def telecharger_dossier(lien: str, dossier_sortie: str, prendre=("images", "vide
             saute += 1
             continue
 
+        os.makedirs(d_cible, exist_ok=True)   # crée images/ ou videos/ à la demande
         if renommer:
             if est_video:
                 compteur_vid += 1
