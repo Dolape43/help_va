@@ -590,20 +590,28 @@ class App(ctk.CTk):
         pages.get(cle, self._page_accueil)()
 
     # ----------------------------------------------------------- page Accueil
-    def _entete(self, titre, sous=""):
+    def _entete(self, titre, sous="", icone=None):
         e = ctk.CTkFrame(self.contenu, fg_color="transparent")
         e.pack(fill="x", padx=36, pady=(30, 22))
         g = ctk.CTkFrame(e, fg_color="transparent")
         g.pack(side="left")
-        ctk.CTkLabel(g, text=titre, font=(POLICE, 28, "bold"), text_color=TEXT).pack(anchor="w")
+        ligne = ctk.CTkFrame(g, fg_color="transparent")
+        ligne.pack(anchor="w")
+        ctk.CTkLabel(ligne, text=titre, font=(POLICE, 28, "bold"),
+                     text_color=TEXT).pack(side="left")
+        if icone:
+            _im = self._icone(icone, 34)
+            if _im is not None:
+                self._entete_img = _im
+                ctk.CTkLabel(ligne, image=_im, text="").pack(side="left", padx=(10, 0))
         if sous:
             ctk.CTkLabel(g, text=sous, font=(POLICE, 14), text_color=MUTED).pack(anchor="w", pady=(2, 0))
         return e
 
     def _page_accueil(self):
         nom_det = (self.statut or {}).get("nom")
-        self._entete(f"Bonjour {nom_det}" if nom_det else "Bonjour",
-                     "Préparez vos contenus en quelques étapes.")
+        self._entete(f"Hello, {nom_det}" if nom_det else "Hello",
+                     "Préparez vos contenus en quelques étapes.", icone="hello")
 
         # Rangée cartes info (dossier de sortie + conseil) — MÊME largeur
         r = ctk.CTkFrame(self.contenu, fg_color="transparent")
@@ -628,12 +636,12 @@ class App(ctk.CTk):
         acts = ctk.CTkFrame(mci, fg_color="transparent")
         acts.pack(side="right")
         self._mini_imgs = getattr(self, "_mini_imgs", [])
-        for _ic, _cmd in [("folder", self._ouvrir_dossier_sortie),
+        for _ic, _cmd in [("ouvrir", self._ouvrir_dossier_sortie),
                           ("parametres", lambda: self._aller("parametres"))]:
             _im = self._icone(_ic, 20)
             if _im is not None:
                 self._mini_imgs.append(_im)
-            ctk.CTkButton(acts, text="" if _im else ("Ouvrir" if _ic == "folder" else "…"),
+            ctk.CTkButton(acts, text="" if _im else ("Ouvrir" if _ic == "ouvrir" else "…"),
                           image=_im, width=40, height=40, corner_radius=10,
                           fg_color=ACCENT_SOFT, hover_color="#E1DDFA",
                           command=_cmd).pack(side="left", padx=(6, 0))
