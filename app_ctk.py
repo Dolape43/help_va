@@ -183,10 +183,10 @@ class App(ctk.CTk):
             self._notifier("Dossier de sortie", str(e), erreur=True)
 
     def _changer_dossier_sortie(self):
-        parent = filedialog.askdirectory(title="Choisir où créer le dossier HelpVA")
-        if not parent:
+        choix = filedialog.askdirectory(title="Choisir le dossier de sortie")
+        if not choix:
             return
-        self.params["dossier_sortie"] = os.path.join(parent, "HelpVA")
+        self.params["dossier_sortie"] = choix
         parametres.sauver(self.params)
         self._aller("parametres")   # rafraîchit l'affichage
 
@@ -605,36 +605,36 @@ class App(ctk.CTk):
         self._entete(f"Bonjour {nom_det}" if nom_det else "Bonjour",
                      "Préparez vos contenus en quelques étapes.")
 
-        # Rangée cartes info (dossier de sortie + conseil)
+        # Rangée cartes info (dossier de sortie + conseil) — MÊME largeur
         r = ctk.CTkFrame(self.contenu, fg_color="transparent")
         r.pack(fill="x", padx=36)
-        r.grid_columnconfigure(0, weight=3, uniform="a")
-        r.grid_columnconfigure(1, weight=2, uniform="a")
+        r.grid_columnconfigure(0, weight=1, uniform="a")
+        r.grid_columnconfigure(1, weight=1, uniform="a")
 
-        mc = ctk.CTkFrame(r, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
-        mc.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        mci = ctk.CTkFrame(mc, fg_color="transparent")
-        mci.pack(fill="x", padx=22, pady=20)
-        gm = ctk.CTkFrame(mci, fg_color="transparent")
-        gm.pack(side="left", fill="x", expand=True)
         _d = self.dossier_sortie()
-        _court = " · ".join([os.path.basename(os.path.dirname(_d)) or _d,
-                             os.path.basename(_d)])
-        ctk.CTkLabel(gm, text="DOSSIER DE SORTIE", font=(POLICE, 11, "bold"),
+        mc = ctk.CTkFrame(r, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
+        mc.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        mci = ctk.CTkFrame(mc, fg_color="transparent")
+        mci.pack(fill="both", expand=True, padx=22, pady=18)
+        ctk.CTkLabel(mci, text="DOSSIER DE SORTIE", font=(POLICE, 11, "bold"),
                      text_color=ACCENT_HOVER).pack(anchor="w")
-        ctk.CTkLabel(gm, text=_court, font=(POLICE, 20, "bold"),
+        ctk.CTkLabel(mci, text=os.path.basename(_d) or _d, font=(POLICE, 19, "bold"),
                      text_color=TEXT).pack(anchor="w", pady=(2, 0))
-        ctk.CTkLabel(gm, text="Vos fichiers préparés sont enregistrés ici.",
-                     font=(POLICE, 12), text_color=MUTED).pack(anchor="w")
-        ctk.CTkButton(mci, text="Ouvrir", command=self._ouvrir_dossier_sortie,
-                      fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER,
-                      hover_color="#E1DDFA", corner_radius=10, height=38,
-                      font=(POLICE, 13, "bold")).pack(side="right")
+        ctk.CTkLabel(mci, text=_d, font=(POLICE, 11), text_color=MUTED,
+                     wraplength=330, justify="left").pack(anchor="w", pady=(1, 12))
+        bts = ctk.CTkFrame(mci, fg_color="transparent")
+        bts.pack(anchor="w")
+        ctk.CTkButton(bts, text="Ouvrir", command=self._ouvrir_dossier_sortie,
+                      fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER, hover_color="#E1DDFA",
+                      corner_radius=10, height=34, width=92, font=(POLICE, 13, "bold")).pack(side="left")
+        ctk.CTkButton(bts, text="Modifier", command=lambda: self._aller("parametres"),
+                      fg_color="transparent", text_color=MUTED, hover_color=ACCENT_SOFTER,
+                      corner_radius=10, height=34, width=92, font=(POLICE, 13)).pack(side="left", padx=(8, 0))
 
         tc = ctk.CTkFrame(r, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
-        tc.grid(row=0, column=1, sticky="ew", padx=(10, 0))
+        tc.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
         tci = ctk.CTkFrame(tc, fg_color="transparent")
-        tci.pack(fill="x", padx=20, pady=18)
+        tci.pack(fill="both", expand=True, padx=20, pady=18)
         self._badge(tci, "bulb", 54).pack(side="left", padx=(0, 12))
         gt = ctk.CTkFrame(tci, fg_color="transparent")
         gt.pack(side="left", fill="x", expand=True)
@@ -673,7 +673,13 @@ class App(ctk.CTk):
                      text_color=TEXT, anchor="w").pack(anchor="w")
         ctk.CTkLabel(body, text=sous, font=(POLICE, 13), text_color=MUTED,
                      anchor="w").pack(anchor="w", pady=(2, 0))
-        ctk.CTkLabel(inner, text="›", font=(POLICE, 24), text_color="#C7C9D6").pack(side="right")
+        _fl = self._icone("arrow", 26)
+        if _fl is not None:
+            self._fleche_imgs = getattr(self, "_fleche_imgs", [])
+            self._fleche_imgs.append(_fl)
+            ctk.CTkLabel(inner, image=_fl, text="").pack(side="right")
+        else:
+            ctk.CTkLabel(inner, text="›", font=(POLICE, 24), text_color="#C7C9D6").pack(side="right")
         self._cliquable(carte, lambda k=cle: self._ouvrir_fonction(k))
 
     def _ouvrir_fonction(self, cle):
