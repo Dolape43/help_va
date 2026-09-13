@@ -1008,6 +1008,24 @@ class App(ctk.CTk):
         inner.pack(fill="x", padx=pad, pady=pad)
         return inner
 
+    def _entete_etape(self, parent, num, titre, sous=""):
+        """En-tête d'étape : pastille numérotée + titre + sous-titre.
+        Utilisé par les pages « en étapes » (design premium homogène)."""
+        barre = ctk.CTkFrame(parent, fg_color="transparent")
+        barre.pack(fill="x")
+        past = ctk.CTkFrame(barre, fg_color=ACCENT_SOFT, corner_radius=16, width=32, height=32)
+        past.pack_propagate(False)
+        past.pack(side="left")
+        ctk.CTkLabel(past, text=str(num), font=(POLICE, 15, "bold"),
+                     text_color=ACCENT_HOVER).pack(expand=True)
+        bloc = ctk.CTkFrame(barre, fg_color="transparent")
+        bloc.pack(side="left", padx=(12, 0), fill="x", expand=True)
+        ctk.CTkLabel(bloc, text=titre, font=(POLICE, 16, "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        if sous:
+            ctk.CTkLabel(bloc, text=sous, font=(POLICE, 12),
+                         text_color=MUTED).pack(anchor="w")
+
     def _zone_journal(self, persistant=False):
         """persistant=True (page Automatiser) : journal avec historique conservé.
         Sinon : log transitoire de l'action en cours seulement."""
@@ -1232,27 +1250,10 @@ class App(ctk.CTk):
                  "s'affichent pas sur Instagram — sont aussi converties en .jpg automatiquement.\n"
                  "Vos fichiers originaux ne sont jamais modifiés.").pack(anchor="w", pady=(2, 0))
 
-        # ---------- Outil interne : en-tête d'étape (pastille N° + titre) ----------
-        def entete_etape(inner, num, titre, sous):
-            barre = ctk.CTkFrame(inner, fg_color="transparent")
-            barre.pack(fill="x")
-            past = ctk.CTkFrame(barre, fg_color=ACCENT_SOFT, corner_radius=16,
-                                width=32, height=32)
-            past.pack_propagate(False)
-            past.pack(side="left")
-            ctk.CTkLabel(past, text=str(num), font=(POLICE, 15, "bold"),
-                         text_color=ACCENT_HOVER).pack(expand=True)
-            bloc = ctk.CTkFrame(barre, fg_color="transparent")
-            bloc.pack(side="left", padx=(12, 0), fill="x", expand=True)
-            ctk.CTkLabel(bloc, text=titre, font=(POLICE, 16, "bold"),
-                         text_color=TEXT).pack(anchor="w")
-            ctk.CTkLabel(bloc, text=sous, font=(POLICE, 12),
-                         text_color=MUTED).pack(anchor="w")
-
         # ---------- Étape 1 : choisir la source ----------
         c1 = self._carte()
-        entete_etape(c1, 1, "Choisir la source",
-                     "Un dossier entier, ou des images / vidéos précises.")
+        self._entete_etape(c1, 1, "Choisir la source",
+                           "Un dossier entier, ou des images / vidéos précises.")
         boutons = ctk.CTkFrame(c1, fg_color="transparent")
         boutons.pack(fill="x", pady=(16, 14))
         self._btn(boutons, "Importer un dossier…",
@@ -1275,7 +1276,7 @@ class App(ctk.CTk):
 
         # ---------- Étape 2 : options ----------
         c2 = self._carte()
-        entete_etape(c2, 2, "Options", "Un réglage, c'est tout.")
+        self._entete_etape(c2, 2, "Options", "Un réglage, c'est tout.")
         self.chk_renommer = ctk.CTkCheckBox(c2, text="Renommer les médias (1, 2, 3…)",
                                             font=(POLICE, 14), fg_color=ACCENT_HOVER)
         self.chk_renommer.select()
