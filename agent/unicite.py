@@ -194,24 +194,25 @@ def uniquiser_fichiers(fichiers: list, dossier_sortie: str = None,
     for source in fichiers:
         ext = os.path.splitext(source)[1].lower()
         base_nom = os.path.splitext(os.path.basename(source))[0]
-
-        if ext in EXT_IMAGES:
-            if dossier_sortie:
-                os.makedirs(sortie_images, exist_ok=True)
-                base = f"{n_img + 1}.jpg" if renommer else base_nom + ".jpg"
-                uniquiser_image(source, os.path.join(sortie_images, base), filtre=filtre)
-            else:
-                uniquiser_image(source, filtre=filtre)
-            n_img += 1
-
-        elif ext in EXT_VIDEOS:
-            if dossier_sortie:
-                os.makedirs(sortie_videos, exist_ok=True)
-                base = f"{n_vid + 1}.mp4" if renommer else base_nom + ".mp4"
-                uniquiser_video(source, os.path.join(sortie_videos, base))
-            else:
-                uniquiser_video(source)
-            n_vid += 1
+        try:
+            if ext in EXT_IMAGES:
+                if dossier_sortie:
+                    os.makedirs(sortie_images, exist_ok=True)
+                    base = f"{n_img + 1}.jpg" if renommer else base_nom + ".jpg"
+                    uniquiser_image(source, os.path.join(sortie_images, base), filtre=filtre)
+                else:
+                    uniquiser_image(source, filtre=filtre)
+                n_img += 1
+            elif ext in EXT_VIDEOS:
+                if dossier_sortie:
+                    os.makedirs(sortie_videos, exist_ok=True)
+                    base = f"{n_vid + 1}.mp4" if renommer else base_nom + ".mp4"
+                    uniquiser_video(source, os.path.join(sortie_videos, base))
+                else:
+                    uniquiser_video(source)
+                n_vid += 1
+        except Exception as e:
+            print(f"   [!] {os.path.basename(source)} ignoré : {e}", flush=True)
 
     return n_img + n_vid
 
@@ -290,7 +291,7 @@ def uniquiser_arbre(dossier: str, dossier_sortie: str, renommer: bool = False,
                 print(f"   [!] {os.path.basename(source)} ignoré : {e}", flush=True)
         n_total += n_img + n_vid
         print(f"[{i}/{total_d}] {nom_aff} : {n_img} image(s), {n_vid} vidéo(s)", flush=True)
-        if progress:
+        if progress and not arrete:
             try:
                 progress(f"Dossier {i}/{total_d} : {nom_aff} — terminé "
                          f"({n_img + n_vid} média(s))")

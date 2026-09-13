@@ -1392,6 +1392,16 @@ class App(ctk.CTk):
         filtre = False   # option de filtre retirée : uniquisation invisible uniquement
         fichiers = list(self.fichiers_uniq_src) if self.fichiers_uniq_src else None
         dossier = self.dossier_uniq_src
+        # Sécurité : la source ne doit pas être le dossier de sortie (ni dedans),
+        # sinon on supprimerait la source (rmtree) avant de la traiter.
+        if dossier:
+            a_src, a_out = os.path.abspath(dossier), os.path.abspath(sortie)
+            if a_src == a_out or a_src.startswith(a_out + os.sep):
+                messagebox.showerror(
+                    "Dossier invalide",
+                    "Choisissez un autre dossier : la source ne peut pas être le dossier de "
+                    "sortie « media (métadonnées changées) » (ni un sous-dossier de celui-ci).")
+                return
         if os.path.exists(sortie):
             if not messagebox.askyesno("Remplacer ?",
                                        f"Le dossier existe déjà et sera REMPLACÉ :\n{sortie}\n\nContinuer ?"):
@@ -1409,9 +1419,14 @@ class App(ctk.CTk):
             # Dossier : on conserve l'arborescence (sous-dossiers) + progression vivante.
             def progres(txt):
                 self.file_log.put(("uniq_progres", txt))
-            res = unicite.uniquiser_arbre(
-                dossier, sortie, renommer=renommer, filtre=filtre,
-                progress=progres, doit_arreter=lambda: self._annule_tache)
+            try:
+                res = unicite.uniquiser_arbre(
+                    dossier, sortie, renommer=renommer, filtre=filtre,
+                    progress=progres, doit_arreter=lambda: self._annule_tache)
+            except Exception as e:
+                print(f"\n[ERREUR] {e}")
+                self._notifier("Métadonnées", str(e), erreur=True)
+                return
             if res["arrete"]:
                 print(f"\n⛔ Arrêté. {res['medias']} média(s) déjà traité(s) → {sortie}")
                 self._notifier("Interrompu",
@@ -1421,7 +1436,7 @@ class App(ctk.CTk):
                 self._notifier("Métadonnées changées",
                                f"✅ {res['medias']} média(s) traité(s) dans {res['dossiers']} "
                                f"dossier(s) !\n\nMême arborescence que votre dossier, dans :\n{sortie}")
-        self._tache(job, "Changement des métadonnées…", annulable=True)
+        self._tache(job, "Changement des métadonnées…", annulable=bool(dossier))
 
     # ==================================================================
     #  Page : Convertir en MP4
