@@ -1610,6 +1610,7 @@ class App(ctk.CTk):
         etapes = [
             (1, "Clic droit sur le dossier → Partager → Partager", "drive_etape1.png"),
             (2, "Accès général → « Tous les utilisateurs disposant du lien »", "drive_etape2.png"),
+            (3, "Ouvrez le dossier, puis copiez le lien dans la barre d'adresse (encadré en rouge)", "drive_etape3.png"),
         ]
         for num, titre, fichier in etapes:
             self._entete_etape(cont, num, titre)
