@@ -1,0 +1,6 @@
+requests>=2.31
+selenium>=4.20
+Pillow>=10.0
+numpy>=1.24
+imageio-ffmpeg>=0.4
+pyperclip>=1.8

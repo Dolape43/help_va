@@ -1,0 +1,33 @@
+# Ne jamais publier la config / les paramètres (clé API)
+agent/config.py
+parametres.json
+
+# LICENCE — secrets du vendeur : NE JAMAIS partager / distribuer / publier
+outils/cle_privee.pem
+outils/cle_publique.txt
+outils/licences.json
+licence.key
+licence.key*
+admin-prive/
+licences_generees.txt
+
+# Données locales / journaux (ne pas publier)
+calendrier_utilisateur.json
+*.log
+
+# Build PyInstaller
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Contenus locaux (médias à poster)
+contenus/
+sources/
+planning/
+scratch_uniq/

@@ -1,0 +1,3105 @@
+"""
+HelpVA — interface CustomTkinter (légère, fluide, design moderne).
+
+Le "cerveau" reste dans agent/* ; ce fichier ne fait que l'interface.
+Sidebar (Accueil / Modèles / Publications / Paramètres) + cartes.
+"""
+
+import os
+import sys
+import queue
+import random
+import shutil
+import threading
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
+from datetime import datetime, date, timedelta
+
+import customtkinter as ctk
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+from agent import parametres, licence, version
+from agent import ranger as rangement
+from agent import unicite, calendrier, montage, conversion
+from agent import adspower, planificateur, demarrage, instagram, horloge, drive
+from agent.main import navigateur_du_profil
+
+# Re-contrôle de l'abonnement quand l'app reste ouverte (réglable pour tests).
+try:
+    INTERVALLE_VERIF_MS = int(os.environ.get("HELPVA_VERIF_MS", str(5 * 60 * 60 * 1000)))
+except ValueError:
+    INTERVALLE_VERIF_MS = 5 * 60 * 60 * 1000
+RETRY_VERIF_MS = 5 * 60 * 1000
+MAX_ECHECS_VERIF = 3
+
+
+class FluxVersLog:
+    """Redirige les print() vers le journal (via une file d'attente).
+
+    Si le print vient du thread d'automatisation, on le TAGge « auto_log »
+    pour qu'il aille dans le journal de l'automatisation (et pas dans les
+    autres menus)."""
+    def __init__(self, file, est_auto=None):
+        self.file = file
+        self.est_auto = est_auto
+
+    def write(self, texte):
+        if texte:
+            if self.est_auto and self.est_auto():
+                self.file.put(("auto_log", texte))
+            else:
+                self.file.put(texte)
+
+    def flush(self):
+        pass
+
+# ---------------------------------------------------------------- couleurs
+# Couleurs (clair, sombre) — CustomTkinter bascule selon le mode d'apparence.
+BG = ("#F5F6FB", "#0E0F17")
+SIDEBAR = ("#FFFFFF", "#15161F")
+CARD = ("#FFFFFF", "#191A24")
+ACCENT = ("#6C5CE7", "#8072FF")
+ACCENT_HOVER = ("#5B4FE3", "#6F63F5")
+ACCENT_SOFT = ("#ECEAFB", "#26243D")
+ACCENT_SOFTER = ("#F4F2FE", "#1E1D2E")
+TEXT = ("#22243A", "#ECEDF6")
+MUTED = ("#8A90A2", "#9EA1B8")
+GREEN = ("#16A34A", "#4FD08A")
+BORDER = ("#E7E8F2", "#2A2C3C")
+from agent import polices as _polices
+POLICE = "Poppins" if _polices.charger_poppins() else "Segoe UI"
+
+MOIS_FR = ("Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet",
+           "Août", "Septembre", "Octobre", "Novembre", "Décembre")
+
+
+def _date_fr(d) -> str:
+    """Date en français long, ex : « 13 Mars 2024 »."""
+    return f"{d.day} {MOIS_FR[d.month - 1]} {d.year}"
+
+
+def chemin_ressource(rel: str) -> str:
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, rel)
+
+
+def _abonnement_txt(st: dict) -> str:
+    t = st.get("type")
+    if t == "vie":
+        return "Abonnement : à vie"
+    if t == "essai" and st.get("expire_le"):
+        return f"Essai — jusqu'au {st['expire_le'].strftime('%d/%m/%Y')}"
+    if st.get("expire_le"):
+        return f"jusqu'au {st['expire_le'].strftime('%d/%m/%Y')}"
+    return ""
+
+
+_JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+_MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+            "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def _date_fr(d) -> str:
+    """Date lisible en français : 'Lundi 12 octobre 2027'."""
+    return f"{_JOURS_FR[d.weekday()].capitalize()} {d.day} {_MOIS_FR[d.month - 1]} {d.year}"
+
+
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.params = parametres.charger()
+        ctk.set_appearance_mode(self.params.get("theme", "light"))
+        self.title(f"HelpVA v{version.VERSION}")
+        self.geometry("1160x760")
+        self.minsize(980, 640)
+        self.configure(fg_color=BG)
+
+        # Anti-« app gelée » : si une fenêtre modale (grab) reste cachée derrière
+        # la principale, l'app semble bloquée (barre des tâches/Alt+Tab sans
+        # effet). Quand la fenêtre principale reçoit le focus, on ramène la
+        # modale devant.
+        self.bind("<FocusIn>", self._ramener_modale, add="+")
+
+        self.modele = self.params.get("modele", "")
+        self.genre = self.params.get("genre", "feminin")
+        self.statut = {"ok": False, "raison": "pas_active"}
+        self.page = "accueil"
+
+        # Infra jobs : journal + threads + popups.
+        self.file_log = queue.Queue()
+        self.log = None
+        self.journal_est_auto = False  # la zone visible est-elle le journal d'automatisation ?
+        self.journal_buffer = ""       # historique du journal AUTO (persiste entre pages)
+        self._journal_jour = None      # dernier jour écrit (pour les séparateurs)
+        self.occupe = False
+        self._loading = None
+        self._annule_tache = False     # drapeau : annulation d'une tâche en cours
+        self.dossier_ranger_src = None
+        self.dossier_uniq_src = None
+        self.fichiers_uniq_src = None
+        self.dossier_carrousel_src = None
+        self.dossier_convert_src = None
+        self.fichiers_convert_src = None
+        self.dossier_planif_src = None
+        self.fichiers = []
+        self.profils = {}
+        # Automatisation
+        self.planif_actif = False
+        self.planif_thread = None
+        self._timer_verif = None
+        self._echecs_verif = 0
+        self._auto_resume_fait = False
+        self.comptes = self.params.get("auto_comptes", [])   # liste de comptes à automatiser
+        sys.stdout = FluxVersLog(self.file_log, est_auto=self._ecrit_par_auto)
+        sys.stderr = FluxVersLog(self.file_log)
+        self.after(120, self._pomper_log)
+
+        try:
+            self.iconbitmap(chemin_ressource("assets/logo.ico"))
+        except Exception:
+            pass
+
+        self._router_licence()
+
+    def dossier_modele(self) -> str:
+        bureau = os.path.join(os.path.expanduser("~"), "Desktop")
+        if not os.path.isdir(bureau):
+            bureau = os.path.expanduser("~")
+        d = os.path.join(bureau, "HelpVA", self.modele or "SansNom")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    # ----------------------------------------------------------- utilitaires
+    def _vider(self, widget=None):
+        for w in (widget or self).winfo_children():
+            w.destroy()
+
+    def _cliquable(self, carte, cmd):
+        """Rend une carte (et ses enfants) cliquable + effet survol."""
+        def survol(actif):
+            carte.configure(border_color=ACCENT if actif else BORDER,
+                            fg_color=("#FBFAFF", "#20223A") if actif else CARD)
+
+        def on_leave(_):
+            x, y = carte.winfo_pointerxy()
+            rx, ry = carte.winfo_rootx(), carte.winfo_rooty()
+            if rx <= x <= rx + carte.winfo_width() and ry <= y <= ry + carte.winfo_height():
+                return
+            survol(False)
+
+        def lier(w):
+            w.bind("<Button-1>", lambda e: cmd())
+            w.bind("<Enter>", lambda e: survol(True))
+            w.bind("<Leave>", on_leave)
+            for c in w.winfo_children():
+                lier(c)
+        lier(carte)
+
+    def _icone(self, nom, size=22):
+        """Icône PNG duotone embarquée (assets/icons) ; repli sur dessin PIL."""
+        try:
+            from PIL import Image
+            p = chemin_ressource(os.path.join("assets", "icons", f"{nom}.png"))
+            if os.path.isfile(p):
+                return ctk.CTkImage(Image.open(p), size=(size, size))
+        except Exception:
+            pass
+        try:
+            from PIL import Image, ImageDraw
+            import math
+            S = size * 4
+            img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+            d = ImageDraw.Draw(img)
+            col = (108, 92, 231, 255)
+            if nom == "grid":
+                g = S * 0.12
+                w = (S - 3 * g) / 2
+                for rr, cc in [(0, 0), (0, 1), (1, 0), (1, 1)]:
+                    x = g + cc * (w + g)
+                    y = g + rr * (w + g)
+                    d.rounded_rectangle([x, y, x + w, y + w], radius=w * 0.3, fill=col)
+            elif nom == "gear":
+                cx = cy = S / 2
+                ro, ri, teeth = S * 0.46, S * 0.30, 8
+                pts = []
+                for i in range(teeth * 2):
+                    ang = i * math.pi / teeth - math.pi / 2
+                    r = ro if i % 2 == 0 else ri
+                    pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+                lw = max(2, int(S * 0.06))
+                d.line(pts + [pts[0]], fill=col, width=lw, joint="curve")
+                rc = S * 0.15
+                d.ellipse([cx - rc, cy - rc, cx + rc, cy + rc], outline=col, width=lw)
+            else:
+                lw = max(2, int(S * 0.065))
+                if nom == "folder":
+                    d.line([(0.16 * S, 0.42 * S), (0.16 * S, 0.34 * S), (0.42 * S, 0.34 * S),
+                            (0.50 * S, 0.42 * S)], fill=col, width=lw, joint="curve")
+                    d.rounded_rectangle([0.16 * S, 0.42 * S, 0.84 * S, 0.78 * S],
+                                        radius=0.07 * S, outline=col, width=lw)
+                elif nom == "tag":
+                    pts = [(0.22 * S, 0.30 * S), (0.58 * S, 0.30 * S), (0.80 * S, 0.52 * S),
+                           (0.58 * S, 0.74 * S), (0.22 * S, 0.74 * S)]
+                    d.line(pts + [pts[0]], fill=col, width=lw, joint="curve")
+                    r = 0.05 * S
+                    d.ellipse([0.33 * S - r, 0.52 * S - r, 0.33 * S + r, 0.52 * S + r],
+                              outline=col, width=lw)
+                elif nom == "list":
+                    for yy in (0.34, 0.52, 0.70):
+                        rr = 0.045 * S
+                        d.ellipse([0.20 * S - rr, yy * S - rr, 0.20 * S + rr, yy * S + rr], fill=col)
+                        d.line([(0.34 * S, yy * S), (0.82 * S, yy * S)], fill=col, width=lw)
+                elif nom == "send":
+                    pts = [(0.20 * S, 0.28 * S), (0.82 * S, 0.50 * S), (0.20 * S, 0.72 * S),
+                           (0.36 * S, 0.50 * S)]
+                    d.line(pts + [pts[0]], fill=col, width=lw, joint="curve")
+                elif nom == "clock":
+                    d.ellipse([0.16 * S, 0.16 * S, 0.84 * S, 0.84 * S], outline=col, width=lw)
+                    d.line([(0.5 * S, 0.5 * S), (0.5 * S, 0.30 * S)], fill=col, width=lw)
+                    d.line([(0.5 * S, 0.5 * S), (0.66 * S, 0.56 * S)], fill=col, width=lw)
+                elif nom == "bulb":
+                    d.ellipse([0.28 * S, 0.18 * S, 0.72 * S, 0.62 * S], outline=col, width=lw)
+                    d.line([(0.42 * S, 0.64 * S), (0.58 * S, 0.64 * S)], fill=col, width=lw)
+                    d.line([(0.44 * S, 0.72 * S), (0.56 * S, 0.72 * S)], fill=col, width=lw)
+                elif nom == "drive":   # téléchargement : flèche bas + bac
+                    d.line([(0.5 * S, 0.22 * S), (0.5 * S, 0.58 * S)], fill=col, width=lw)
+                    d.line([(0.34 * S, 0.44 * S), (0.5 * S, 0.60 * S), (0.66 * S, 0.44 * S)],
+                           fill=col, width=lw, joint="curve")
+                    d.line([(0.26 * S, 0.74 * S), (0.74 * S, 0.74 * S)], fill=col, width=lw)
+                elif nom == "sun":
+                    d.ellipse([0.36 * S, 0.36 * S, 0.64 * S, 0.64 * S], outline=col, width=lw)
+                    for i in range(8):
+                        a = i * math.pi / 4
+                        d.line([(0.5 * S + 0.40 * S * math.cos(a), 0.5 * S + 0.40 * S * math.sin(a)),
+                                (0.5 * S + 0.50 * S * math.cos(a), 0.5 * S + 0.50 * S * math.sin(a))],
+                               fill=col, width=lw)
+                elif nom == "moon":
+                    d.ellipse([0.26 * S, 0.22 * S, 0.74 * S, 0.70 * S], fill=col)
+                    d.ellipse([0.40 * S, 0.14 * S, 0.86 * S, 0.62 * S], fill=(0, 0, 0, 0))
+                else:
+                    return None
+            img = img.resize((size, size), Image.LANCZOS)
+            return ctk.CTkImage(img, size=(size, size))
+        except Exception:
+            return None
+
+    def _badge(self, parent, nom, taille=52):
+        b = ctk.CTkFrame(parent, fg_color=ACCENT_SOFT, corner_radius=taille // 2,
+                         width=taille, height=taille)
+        b.pack_propagate(False)
+        img = self._icone(nom, int(taille * 0.5))
+        if img is not None:
+            lbl = ctk.CTkLabel(b, image=img, text="")
+            self._badge_imgs = getattr(self, "_badge_imgs", [])
+            self._badge_imgs.append(img)
+        else:
+            fallback = {"folder": "🗂", "tag": "🏷", "list": "📝", "send": "🚀",
+                        "clock": "⏰", "bulb": "💡", "convertir": "🎬"}
+            txt = fallback.get(nom, nom if len(nom) <= 2 else "•")
+            lbl = ctk.CTkLabel(b, text=txt, font=(POLICE, int(taille * 0.42)),
+                               text_color=ACCENT_HOVER)
+        lbl.place(relx=0.5, rely=0.5, anchor="center")
+        return b
+
+    # ----------------------------------------------------------- routage licence
+    def _router_licence(self):
+        self.statut = licence.verifier()
+        self._vider()
+        if self.statut["ok"]:
+            self._apres_licence()
+        elif self.statut["raison"] == "pas_internet":
+            self._ecran_internet()
+        else:
+            self._ecran_activation()
+
+    def _apres_licence(self):
+        # On ne montre l'écran « Bienvenue » qu'AU TOUT PREMIER lancement.
+        # Ensuite (déjà démarré une fois, ou automatisation active) -> Accueil direct.
+        if self.params.get("auto_actif") or self.params.get("deja_demarre"):
+            self._construire_app()
+        else:
+            self._ecran_bienvenue()
+
+    def _ecran_bienvenue(self):
+        c = self._carte_centre()
+        try:
+            from PIL import Image
+            img = ctk.CTkImage(Image.open(chemin_ressource("assets/logo.png")), size=(92, 92))
+            ctk.CTkLabel(c, image=img, text="").pack(pady=(0, 12))
+            self._logo_bienv = img
+        except Exception:
+            pass
+        ctk.CTkLabel(c, text="Bienvenue sur HelpVA", font=(POLICE, 26, "bold"),
+                     text_color=TEXT).pack(pady=(0, 6))
+        ctk.CTkLabel(c, text="Votre assistant pour préparer et publier\ntes contenus sur Instagram.",
+                     font=(POLICE, 15), text_color=MUTED, justify="center").pack(pady=(0, 24))
+        ctk.CTkButton(c, text="Commencer", command=self._commencer, height=48, width=220,
+                      fg_color=ACCENT_HOVER, hover_color="#4A3FCC", corner_radius=12,
+                      font=(POLICE, 16, "bold")).pack()
+
+    def _commencer(self):
+        # Mémorise que l'utilisateur a déjà démarré -> plus jamais l'écran Bienvenue.
+        self.params["deja_demarre"] = True
+        parametres.sauver(self.params)
+        self._construire_app()
+
+    def _carte_centre(self):
+        wrap = ctk.CTkFrame(self, fg_color=BG)
+        wrap.pack(fill="both", expand=True)
+        carte = ctk.CTkFrame(wrap, fg_color=CARD, corner_radius=22, border_width=1,
+                             border_color=BORDER, width=480)
+        carte.place(relx=0.5, rely=0.5, anchor="center")
+        inner = ctk.CTkFrame(carte, fg_color="transparent")
+        inner.pack(padx=40, pady=36)
+        return inner
+
+    def _ecran_internet(self):
+        c = self._carte_centre()
+        ctk.CTkLabel(c, text="Connexion internet requise",
+                     font=(POLICE, 22, "bold"), text_color=TEXT).pack(pady=(0, 8))
+        ctk.CTkLabel(c, text="HelpVA doit vérifier votre abonnement en ligne.\n"
+                     "Connectez-vous à internet, puis réessayez.",
+                     font=(POLICE, 13), text_color=MUTED, justify="center").pack(pady=(0, 20))
+        ctk.CTkButton(c, text="Réessayer", command=self._router_licence,
+                      fg_color=ACCENT_HOVER, hover_color="#4A3FCC", height=42,
+                      corner_radius=12, font=(POLICE, 14, "bold")).pack()
+        # Au démarrage du PC, internet met parfois quelques secondes -> on
+        # réessayez tout seul, pour que l'automatisation reparte sans clic.
+        self.after(20000, self._router_licence)
+
+    def _ecran_activation(self):
+        raison = self.statut.get("raison", "pas_active")
+        titre = "Activer HelpVA"
+        sous = "Entrez le code d'activation fourni par le vendeur."
+        if raison == "expire":
+            titre = "Abonnement expiré"
+            sous = "Votre abonnement a expiré.\nEntrez un nouveau code pour le renouveler."
+        elif raison == "revoquee":
+            titre = "Licence résiliée"
+            sous = "Cette licence a été résiliée.\nEntrez un nouveau code fourni par le vendeur."
+        elif raison == "suspendu":
+            titre = "Licence suspendue"
+            sous = "Cette licence est suspendue.\nContactez le vendeur."
+
+        c = self._carte_centre()
+        ctk.CTkLabel(c, text=titre, font=(POLICE, 22, "bold"), text_color=TEXT).pack(pady=(0, 6))
+        ctk.CTkLabel(c, text=sous, font=(POLICE, 13), text_color=MUTED,
+                     justify="center").pack(pady=(0, 22))
+
+        ctk.CTkLabel(c, text="Code d'activation", font=(POLICE, 12, "bold"),
+                     text_color=MUTED).pack()
+        champ_code = ctk.CTkEntry(c, height=48, font=("Consolas", 16), justify="center",
+                                  placeholder_text="HELP-XXXX-XXXX-XXXX")
+        champ_code.pack(fill="x", pady=(8, 0))
+
+        def activer_code():
+            code = champ_code.get().strip()
+            if not code:
+                msg.configure(text="Entrez votre code d'activation.", text_color="#E5484D")
+                return
+            msg.configure(text="Activation en cours…", text_color=MUTED)
+            self.update_idletasks()
+            lic, info = licence.activer_par_code(code)
+            if not lic:
+                msg.configure(text=info, text_color="#E5484D")
+                return
+            st = licence.enregistrer_licence(lic)
+            self.statut = st
+            if st.get("ok"):
+                self.params = parametres.charger()
+                self._vider()
+                self._apres_licence()
+            else:
+                msg.configure(text="Code accepté mais activation refusée. Réessayez.",
+                              text_color="#E5484D")
+
+        champ_code.bind("<Return>", lambda e: activer_code())
+        ctk.CTkButton(c, text="Activer HelpVA", command=activer_code, height=46,
+                      fg_color=ACCENT_HOVER, hover_color="#4A3FCC", corner_radius=12,
+                      font=(POLICE, 15, "bold")).pack(fill="x", pady=(12, 0))
+        msg = ctk.CTkLabel(c, text="", font=(POLICE, 12), text_color="#E5484D")
+        msg.pack(pady=(10, 0))
+
+        # Licence déjà présente mais bloquée (expirée/suspendue/résiliée) :
+        # après réactivation côté vendeur, on re-vérifie sans nouveau code.
+        if raison != "pas_active":
+            ctk.CTkButton(c, text="Abonnement réactivé ? Réessayer",
+                          command=self._router_licence, height=38, fg_color="transparent",
+                          text_color=MUTED, hover_color=ACCENT_SOFT, border_width=1,
+                          border_color=BORDER, corner_radius=10,
+                          font=(POLICE, 12)).pack(fill="x", pady=(8, 0))
+
+    # ----------------------------------------------------------- app (sidebar + contenu)
+    def _construire_app(self):
+        self._vider()
+        cont = ctk.CTkFrame(self, fg_color="transparent")
+        cont.pack(fill="both", expand=True)
+
+        self.sidebar = ctk.CTkFrame(cont, fg_color=SIDEBAR, corner_radius=0, width=244)
+        self.sidebar.pack(side="left", fill="y")
+        self.sidebar.pack_propagate(False)
+        self._construire_sidebar()
+
+        self.contenu = ctk.CTkScrollableFrame(cont, fg_color=BG, corner_radius=0)
+        self.contenu.pack(side="left", fill="both", expand=True)
+        self._page_accueil()
+
+        # Reprise auto de l'automatisation + re-contrôle abonnement (une fois).
+        if not self._auto_resume_fait:
+            self._auto_resume_fait = True
+            self.after(3000, self._reprendre_auto)
+            self._planifier_verif_periodique()
+
+    def _construire_sidebar(self):
+        # Marque
+        haut = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        haut.pack(fill="x", padx=18, pady=(20, 20))
+        try:
+            from PIL import Image
+            img = ctk.CTkImage(Image.open(chemin_ressource("assets/logo.png")), size=(38, 38))
+            ctk.CTkLabel(haut, image=img, text="").pack(side="left")
+            self._logo_ref = img
+        except Exception:
+            pass
+        ctk.CTkLabel(haut, text="  HelpVA", font=(POLICE, 20, "bold"),
+                     text_color=TEXT).pack(side="left")
+
+        self._nav_boutons = {}
+        self._nav_icones = {}
+        nav = [("accueil", "Accueil", "grid"), ("parametres", "Paramètres", "gear")]
+        for cle, lib, ic in nav:
+            img = self._icone(ic, 22)
+            self._nav_icones[cle] = img
+            kw = dict(text=("   " + lib), anchor="w", height=46, corner_radius=12,
+                      font=(POLICE, 15), fg_color="transparent", text_color=MUTED,
+                      hover_color=ACCENT_SOFTER, command=lambda c=cle: self._aller(c))
+            if img is not None:
+                kw["image"] = img
+                kw["compound"] = "left"
+            else:
+                kw["text"] = ("▦   " if ic == "grid" else "⚙   ") + lib
+            b = ctk.CTkButton(self.sidebar, **kw)
+            b.pack(fill="x", padx=14, pady=3)
+            self._nav_boutons[cle] = b
+        self._maj_nav()
+
+        # Carte utilisateur en bas
+        bas = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        bas.pack(side="bottom", fill="x", padx=14, pady=16)
+        uc = ctk.CTkFrame(bas, fg_color=ACCENT_SOFTER, corner_radius=12)
+        uc.pack(fill="x")
+        av = ctk.CTkFrame(uc, fg_color=ACCENT_SOFT, corner_radius=17, width=34, height=34)
+        av.pack_propagate(False)
+        av.grid(row=0, column=0, padx=10, pady=10)
+        ctk.CTkLabel(av, text="👤", font=(POLICE, 14)).place(relx=0.5, rely=0.5, anchor="center")
+        info = ctk.CTkFrame(uc, fg_color="transparent")
+        info.grid(row=0, column=1, sticky="w", pady=10)
+        ctk.CTkLabel(info, text=((self.statut or {}).get("nom") or "HelpVA"),
+                     font=(POLICE, 13, "bold"), text_color=TEXT, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(info, text=_abonnement_txt(self.statut), font=(POLICE, 11),
+                     text_color=GREEN, anchor="w").pack(anchor="w")
+        pied = ctk.CTkFrame(bas, fg_color="transparent")
+        pied.pack(fill="x", pady=(8, 0))
+        ctk.CTkLabel(pied, text=f"v{version.VERSION}", font=(POLICE, 11),
+                     text_color=MUTED).pack(side="left", padx=6)
+        _mode = ctk.get_appearance_mode()
+        self._theme_img = self._icone("moon" if _mode == "Light" else "sun", 20)
+        self._theme_btn = ctk.CTkButton(pied, text="", width=34, height=34, corner_radius=9,
+                                        fg_color="transparent", hover_color=ACCENT_SOFTER,
+                                        image=self._theme_img, command=self._toggle_theme)
+        self._theme_btn.pack(side="right")
+
+    def _toggle_theme(self):
+        """Bascule clair/sombre depuis la sidebar."""
+        nouveau = "light" if ctk.get_appearance_mode() == "Dark" else "dark"
+        ctk.set_appearance_mode(nouveau)
+        self.params["theme"] = nouveau
+        parametres.sauver(self.params)
+        self._theme_img = self._icone("moon" if nouveau == "light" else "sun", 20)
+        if getattr(self, "_theme_btn", None) is not None:
+            self._theme_btn.configure(image=self._theme_img)
+
+    def _maj_nav(self):
+        for cle, b in self._nav_boutons.items():
+            if cle == self.page:
+                b.configure(fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER)
+            else:
+                b.configure(fg_color="transparent", text_color=MUTED)
+
+    def _aller(self, cle):
+        self.page = cle
+        self.log = None
+        self.journal_est_auto = False
+        self._maj_nav()
+        self._vider(self.contenu)
+        pages = {"accueil": self._page_accueil,
+                 "parametres": self._page_parametres}
+        pages.get(cle, self._page_accueil)()
+
+    # ----------------------------------------------------------- page Accueil
+    def _entete(self, titre, sous=""):
+        e = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        e.pack(fill="x", padx=36, pady=(30, 22))
+        g = ctk.CTkFrame(e, fg_color="transparent")
+        g.pack(side="left")
+        ctk.CTkLabel(g, text=titre, font=(POLICE, 28, "bold"), text_color=TEXT).pack(anchor="w")
+        if sous:
+            ctk.CTkLabel(g, text=sous, font=(POLICE, 14), text_color=MUTED).pack(anchor="w", pady=(2, 0))
+        return e
+
+    # Interrupteur : afficher (ou non) les menus de publication sur l'accueil.
+    # Mis à False le temps de finir l'intégration Inssist — la logique et les
+    # pages (_page_publier / _page_automatiser) restent intactes.
+    AFFICHER_MENUS_PUBLICATION = False
+
+    def _page_accueil(self):
+        genre = "Féminin" if self.genre == "feminin" else "Masculin"
+        nom_det = (self.statut or {}).get("nom")
+        self._entete(f"Bonjour {nom_det}" if nom_det else "Bonjour",
+                     "Préparez, enrichissez et publiez votre modèle en quelques étapes.")
+
+        # Rangée cartes info (modèle + conseil)
+        r = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        r.pack(fill="x", padx=36)
+        r.grid_columnconfigure(0, weight=3, uniform="a")
+        r.grid_columnconfigure(1, weight=2, uniform="a")
+
+        mc = ctk.CTkFrame(r, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
+        mc.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        mci = ctk.CTkFrame(mc, fg_color="transparent")
+        mci.pack(fill="x", padx=22, pady=20)
+        gm = ctk.CTkFrame(mci, fg_color="transparent")
+        gm.pack(side="left")
+        ctk.CTkLabel(gm, text="MODÈLE ACTIF", font=(POLICE, 11, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w")
+        ctk.CTkLabel(gm, text=(f"{self.modele} ({genre})" if self.modele else "Aucun modèle"),
+                     font=(POLICE, 20, "bold"), text_color=TEXT).pack(anchor="w", pady=(2, 0))
+        ctk.CTkButton(mci, text=("🔄  Changer" if self.modele else "＋  Choisir"),
+                      command=self._modal_modele, fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER,
+                      hover_color="#E1DDFA", corner_radius=10, height=38,
+                      font=(POLICE, 13, "bold")).pack(side="right")
+
+        tc = ctk.CTkFrame(r, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
+        tc.grid(row=0, column=1, sticky="ew", padx=(10, 0))
+        tci = ctk.CTkFrame(tc, fg_color="transparent")
+        tci.pack(fill="x", padx=20, pady=18)
+        self._badge(tci, "bulb", 46).pack(side="left", padx=(0, 12))
+        gt = ctk.CTkFrame(tci, fg_color="transparent")
+        gt.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(gt, text="Conseil", font=(POLICE, 14, "bold"),
+                     text_color=ACCENT_HOVER, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(gt, text="Change d'abord les métadonnées, puis range\ntes médias selon le calendrier.",
+                     font=(POLICE, 13), text_color=MUTED, justify="left", anchor="w").pack(anchor="w")
+
+        # Section 1 : préparer le contenu (2 colonnes)
+        self._section("Contenu du modèle")
+        g1 = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        g1.pack(fill="x", padx=36)
+        for i in range(2):
+            g1.grid_columnconfigure(i, weight=1, uniform="c")
+        feats1 = [("drive", "Télécharger depuis Drive", "Récupère vos médias (Google Drive)", "drive"),
+                  ("convertir", "Convertir en MP4", "Transforme .mov, .avi… en .mp4", "convertir"),
+                  ("tag", "Changer les métadonnées", "Uniquifie vos photos et vidéos", "metadonnees"),
+                  ("folder", "Ranger les médias", "Organise vos images et vidéos", "ranger")]
+        for i, (emo, t, s, k) in enumerate(feats1):
+            self._carte_fonction(g1, emo, t, s, k, row=i // 2, col=i % 2, besoin_modele=True)
+
+        # Section 2 : publication (2 colonnes) — masquée pour l'instant.
+        # (La logique reste ; on cache seulement les tuiles d'accès.)
+        if self.AFFICHER_MENUS_PUBLICATION:
+            self._section("Publication")
+            g2 = ctk.CTkFrame(self.contenu, fg_color="transparent")
+            g2.pack(fill="x", padx=36, pady=(0, 30))
+            for i in range(2):
+                g2.grid_columnconfigure(i, weight=1, uniform="p")
+            feats2 = [("send", "Publier le contenu", "Photo, carrousel ou réel", "publier"),
+                      ("clock", "Automatiser les publications", "Planifie et publie tout seul", "automatiser")]
+            for i, (emo, t, s, k) in enumerate(feats2):
+                self._carte_fonction(g2, emo, t, s, k, row=0, col=i, besoin_modele=False)
+
+    def _section(self, titre):
+        ctk.CTkLabel(self.contenu, text=titre, font=(POLICE, 20, "bold"),
+                     text_color=TEXT).pack(anchor="w", padx=38, pady=(28, 14))
+
+    def _carte_fonction(self, parent, emoji, titre, sous, cle, col, besoin_modele, row=0):
+        carte = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=16,
+                             border_width=1, border_color=BORDER)
+        carte.grid(row=row, column=col, sticky="ew", padx=8, pady=8)
+        inner = ctk.CTkFrame(carte, fg_color="transparent")
+        inner.pack(fill="x", padx=18, pady=18)
+        self._badge(inner, emoji, 50).pack(side="left", padx=(0, 14))
+        body = ctk.CTkFrame(inner, fg_color="transparent")
+        body.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(body, text=titre, font=(POLICE, 16, "bold"),
+                     text_color=TEXT, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(body, text=sous, font=(POLICE, 13), text_color=MUTED,
+                     anchor="w").pack(anchor="w", pady=(2, 0))
+        ctk.CTkLabel(inner, text="›", font=(POLICE, 24), text_color="#C7C9D6").pack(side="right")
+        self._cliquable(carte, lambda k=cle, bm=besoin_modele: self._ouvrir_fonction(k, bm))
+
+    def _ouvrir_fonction(self, cle, besoin_modele):
+        if besoin_modele and not self.modele:
+            self._modal_modele()
+            return
+        self.page = ""
+        self.log = None
+        self.journal_est_auto = False
+        self._maj_nav()
+        self._vider(self.contenu)
+        pages = {"drive": self._page_drive, "ranger": self._page_ranger,
+                 "metadonnees": self._page_metadonnees,
+                 "convertir": self._page_convertir,
+                 "publier": self._page_publier, "automatiser": self._page_automatiser}
+        pages.get(cle, self._page_accueil)()
+
+    # ----------------------------------------------------------- modale modèle
+    def _enregistrer_modele_liste(self, nom, genre):
+        """Garde l'historique des modèles (le plus récent en tête, sans doublon)."""
+        modeles = [m for m in self.params.get("modeles", []) if m.get("nom") != nom]
+        modeles.insert(0, {"nom": nom, "genre": genre})
+        self.params["modeles"] = modeles
+
+    def _modal_modele(self):
+        top = ctk.CTkToplevel(self)
+        top.title("Modèle")
+        top.geometry("440x560")
+        top.configure(fg_color=BG)
+        top.transient(self)
+        self._modale_devant(top)
+        top.after(200, lambda: top.winfo_exists() and top.grab_set())
+        c = ctk.CTkFrame(top, fg_color=CARD, corner_radius=18, border_width=1, border_color=BORDER)
+        c.pack(fill="both", expand=True, padx=16, pady=16)
+        ctk.CTkLabel(c, text="Choisir un modèle", font=(POLICE, 20, "bold"),
+                     text_color=TEXT).pack(anchor="w", padx=24, pady=(22, 6))
+
+        self._modele_edit = None   # nom en cours de modification (renommage)
+        modeles = list(self.params.get("modeles", []))
+        if self.modele and not any(m.get("nom") == self.modele for m in modeles):
+            modeles.insert(0, {"nom": self.modele, "genre": self.genre})
+
+        def choisir(m):
+            self.modele = m["nom"]
+            self.genre = m.get("genre", "feminin")
+            self.params["modele"] = self.modele
+            self.params["genre"] = self.genre
+            self._enregistrer_modele_liste(self.modele, self.genre)
+            parametres.sauver(self.params)
+            top.destroy()
+            self._construire_app()
+
+        def editer(m):
+            # Charge le modèle dans le formulaire du bas pour le renommer/changer.
+            self._modele_edit = m["nom"]
+            champ.delete(0, "end")
+            champ.insert(0, m["nom"])
+            seg.set("Féminin" if m.get("genre") == "feminin" else "Masculin")
+            lbl_form.configure(text=f"Modifier « {m['nom']} » :")
+            btn_creer.configure(text="Enregistrer")
+            champ.focus()
+
+        def supprimer(m):
+            if not messagebox.askyesno("Supprimer", f"Supprimer le modèle « {m['nom']} » ?\n"
+                                       "(le dossier sur le Bureau n'est PAS supprimé)"):
+                return
+            self.params["modeles"] = [x for x in self.params.get("modeles", [])
+                                      if x.get("nom") != m["nom"]]
+            if self.modele == m["nom"]:
+                self.modele = ""
+                self.params["modele"] = ""
+            parametres.sauver(self.params)
+            top.destroy()
+            self._modal_modele()   # ré-ouvre la liste à jour
+
+        if modeles:
+            ctk.CTkLabel(c, text="Vos modèles (cliquez pour l'activer) :",
+                         font=(POLICE, 12, "bold"), text_color=MUTED).pack(
+                         anchor="w", padx=24, pady=(0, 6))
+            liste = ctk.CTkScrollableFrame(c, fg_color="transparent", height=150)
+            liste.pack(fill="x", padx=18)
+            for m in modeles:
+                actif = m.get("nom") == self.modele
+                g = "Féminin" if m.get("genre") == "feminin" else "Masculin"
+                row = ctk.CTkFrame(liste, fg_color="transparent")
+                row.pack(fill="x", pady=3)
+                ctk.CTkButton(row, text=f"{'●  ' if actif else ''}{m['nom']}   ({g})",
+                              anchor="w", command=lambda mm=m: choisir(mm),
+                              fg_color=(ACCENT_SOFT if actif else "#F5F5FA"),
+                              text_color=(ACCENT_HOVER if actif else TEXT),
+                              hover_color="#E1DDFA", height=40, corner_radius=10,
+                              font=(POLICE, 14, "bold" if actif else "normal")).pack(
+                              side="left", fill="x", expand=True)
+                ctk.CTkButton(row, text="✎", width=40, height=40, command=lambda mm=m: editer(mm),
+                              fg_color=("#F5F5FA", "#20222E"), text_color=TEXT, hover_color="#E1DDFA",
+                              corner_radius=10, font=(POLICE, 15)).pack(side="left", padx=(6, 0))
+                ctk.CTkButton(row, text="×", width=40, height=40, command=lambda mm=m: supprimer(mm),
+                              fg_color=("#FDECEA", "#3A1E1E"), text_color="#E5484D", hover_color="#F8D7D5",
+                              corner_radius=10, font=(POLICE, 16, "bold")).pack(side="left", padx=(6, 0))
+
+        lbl_form = ctk.CTkLabel(c, text="Ou créer un nouveau modèle :", font=(POLICE, 12, "bold"),
+                                text_color=MUTED)
+        lbl_form.pack(anchor="w", padx=24, pady=(14, 6))
+        champ = ctk.CTkEntry(c, height=44, font=(POLICE, 15), placeholder_text="Ex : Olivia")
+        champ.pack(fill="x", padx=24)
+        seg = ctk.CTkSegmentedButton(c, values=["Féminin", "Masculin"],
+                                     font=(POLICE, 13), selected_color=ACCENT_HOVER,
+                                     selected_hover_color="#4A3FCC")
+        seg.set("Féminin")
+        seg.pack(fill="x", padx=24, pady=(8, 0))
+
+        def creer():
+            nom = champ.get().strip()
+            for ch in '<>:"/\\|?*':
+                nom = nom.replace(ch, "")
+            nom = nom.strip()
+            if not nom:
+                champ.focus()
+                return
+            # Renommage : on retire l'ancien nom si on éditait.
+            if self._modele_edit and self._modele_edit != nom:
+                self.params["modeles"] = [x for x in self.params.get("modeles", [])
+                                          if x.get("nom") != self._modele_edit]
+            choisir({"nom": nom, "genre": "feminin" if seg.get() == "Féminin" else "masculin"})
+
+        actions = ctk.CTkFrame(c, fg_color="transparent")
+        actions.pack(fill="x", padx=24, pady=20, side="bottom")
+        ctk.CTkButton(actions, text="Fermer", command=top.destroy, width=90,
+                      fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER, hover_color="#E1DDFA",
+                      corner_radius=10).pack(side="right", padx=(8, 0))
+        btn_creer = ctk.CTkButton(actions, text="Créer et activer", command=creer, width=150,
+                                  fg_color=ACCENT_HOVER, hover_color="#4A3FCC", corner_radius=10,
+                                  font=(POLICE, 13, "bold"))
+        btn_creer.pack(side="right")
+
+    # ----------------------------------------------------------- placeholder
+    def _page_placeholder(self, titre, emoji, texte):
+        self._entete(titre)
+        carte = ctk.CTkFrame(self.contenu, fg_color=CARD, corner_radius=16,
+                             border_width=1, border_color=BORDER)
+        carte.pack(fill="x", padx=36, pady=10)
+        inner = ctk.CTkFrame(carte, fg_color="transparent")
+        inner.pack(pady=50)
+        self._badge(inner, emoji, 60).pack(pady=(0, 14))
+        ctk.CTkLabel(inner, text=texte, font=(POLICE, 14), text_color=MUTED,
+                     justify="center").pack()
+        ctk.CTkButton(inner, text="← Retour à l'accueil", command=lambda: self._aller("accueil"),
+                      fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER, hover_color="#E1DDFA",
+                      corner_radius=10, height=40).pack(pady=(20, 0))
+
+
+    # ==================================================================
+    #  Infra : journal, threads, popups, chargement
+    # ==================================================================
+    def _ecrit_par_auto(self):
+        """Vrai si le print() courant vient du thread d'automatisation."""
+        t = getattr(self, "planif_thread", None)
+        return t is not None and threading.get_ident() == t.ident
+
+    def _pomper_log(self):
+        try:
+            while True:
+                item = self.file_log.get_nowait()
+                if isinstance(item, tuple):
+                    if item and item[0] == "auto_log":
+                        self._journal_auto(item[1])
+                    else:
+                        self._controle(item)
+                else:
+                    self._journal_transitoire(item)
+        except queue.Empty:
+            pass
+        self.after(120, self._pomper_log)
+
+    def _inserer_log(self, texte):
+        if self.log is not None:
+            try:
+                self.log.configure(state="normal")
+                self.log.insert("end", texte)
+                self.log.see("end")
+                self.log.configure(state="disabled")
+            except Exception:
+                pass
+
+    def _journal_auto(self, texte):
+        """Journal de l'AUTOMATISATION : historique persistant + séparateurs de
+        jour. Affiché seulement sur la page Automatiser."""
+        jour = datetime.now().date()
+        if jour != self._journal_jour:
+            self._journal_jour = jour
+            entete = f"────────────  {_date_fr(jour)}  ────────────\n\n"
+            if self.journal_buffer:
+                entete = "\n\n" + entete
+            self.journal_buffer += entete
+            if self.journal_est_auto:
+                self._inserer_log(entete)
+        self.journal_buffer += texte
+        if len(self.journal_buffer) > 200_000:
+            self.journal_buffer = self.journal_buffer[-200_000:]
+        if self.journal_est_auto:
+            self._inserer_log(texte)
+
+    def _journal_transitoire(self, texte):
+        """Log des autres actions (Ranger, Drive…) : juste l'action en cours,
+        rien de persistant. Sur la page Automatiser, tout va au journal auto."""
+        if self.journal_est_auto:
+            self._journal_auto(texte)
+        else:
+            self._inserer_log(texte)
+
+    def _controle(self, item):
+        tag = item[0]
+        if tag == "loading_fini":
+            self._cacher_loading()
+        elif tag == "profils":
+            self.profils = item[1]
+            noms = list(self.profils.keys())
+            if getattr(self, "combo_profil", None) is not None:
+                try:
+                    self.combo_profil.configure(values=noms or ["(aucun profil)"])
+                    cible = self.params.get("profil", "")
+                    choisi = next((n for n, u in self.profils.items() if u == cible), None)
+                    self.combo_profil.set(choisi or (noms[0] if noms else "(aucun profil)"))
+                except Exception:
+                    pass
+        elif tag == "planif_arret":
+            self._maj_boutons_planif(False)
+        elif tag == "planif_bloque":
+            _, nom, msg = item
+            self._popup_erreur_continuer(nom, msg)
+        elif tag == "verif_licence":
+            self._traiter_verif(item[1])
+        elif tag == "drive_apercu":
+            self._cacher_loading()
+            _, vignettes, total = item
+            self._popup_apercu_drive(vignettes, total)
+        elif tag == "drive_fini":
+            self._cacher_loading()
+            _, sortie, ni, nv, err, bloque = item
+            if bloque:
+                messagebox.showwarning(
+                    "Google a bloqué votre réseau",
+                    "⛔ Google a TEMPORAIREMENT bloqué les téléchargements depuis "
+                    "votre connexion internet.\n\n"
+                    "POURQUOI : trop de téléchargements en peu de temps depuis la même "
+                    "adresse IP → Google te prend pour un robot (« automated queries »). "
+                    "Ce n'est PAS un bug, ni un problème de partage de vos dossiers.\n\n"
+                    "SOLUTIONS :\n"
+                    "1) Change de connexion : partage 4G du téléphone, ou un VPN "
+                    "(nouvelle IP → ça remarche tout de suite).\n"
+                    "2) Ou attends (le blocage se lève tout seul, souvent quelques "
+                    "heures).\n\n"
+                    f"({ni} image(s) et {nv} vidéo(s) déjà récupérées avant le blocage.)")
+                return
+            msg = (f"✅ Téléchargé : {ni} image(s) et {nv} vidéo(s).\n\n"
+                   f"Dossier :\n{sortie}\n(sous-dossiers images\\ et videos\\)\n\n"
+                   "Vous pouvez maintenant l'utiliser pour Ranger ou Changer les métadonnées.")
+            if err:
+                msg += f"\n\n⚠️ {err} fichier(s) en échec."
+            messagebox.showinfo("Google Drive", msg)
+        elif tag == "popup":
+            self._cacher_loading()
+            _, titre, msg, err = item
+            (messagebox.showwarning if err else messagebox.showinfo)(titre, msg)
+        elif tag == "fini_ranger":
+            self._cacher_loading()
+            _, sortie, res = item
+            txt = f"Reels + Stories rangés !\n\nDossier :\n{sortie}"
+            mv, mi = res.get("manque_videos", 0), res.get("manque_images", 0)
+            if mv or mi:
+                txt += "\n\n⚠️ Médias insuffisants :"
+                if mv:
+                    txt += f"\n• Il manque {mv} vidéo(s) pour les reels"
+                if mi:
+                    txt += f"\n• Il manque {mi} image(s) pour les stories"
+            if res.get("surplus"):
+                txt += f"\n\n📦 {res['surplus']} média(s) en surplus."
+            txt += "\n\n👉 Ensuite : « Ranger les carrousels » (section 2)."
+            (messagebox.showwarning if (mv or mi) else messagebox.showinfo)("Ranger", txt)
+
+        elif tag == "fini_carrousels":
+            self._cacher_loading()
+            _, sortie, res = item
+            faits = res.get("carrousels", 0)
+            manques = res.get("manques", [])
+            txt = f"Carrousels rangés dans l'ordre !\n\n{faits} carrousel(s) remplis."
+            if manques:
+                txt += (f"\n\n⚠️ {len(manques)} carrousel(s) incomplet(s) "
+                        f"(pas assez de photos : {res.get('photos', 0)} fournies pour "
+                        f"{res.get('requises', 0)} attendues).")
+            (messagebox.showwarning if manques else messagebox.showinfo)("Carrousels", txt)
+
+    def _tache(self, fn, message="Traitement en cours…", annulable=False):
+        if self.occupe:
+            print("[!] Une action est déjà en cours, patiente…")
+            return
+        self._annule_tache = False
+        self._afficher_loading(message, annulable=annulable)
+
+        def envelopper():
+            self.occupe = True
+            try:
+                fn()
+            except Exception as e:
+                print(f"\n[ERREUR] {e}")
+            finally:
+                self.occupe = False
+                self.file_log.put(("loading_fini",))
+        threading.Thread(target=envelopper, daemon=True).start()
+
+    def _notifier(self, titre, message, erreur=False):
+        self.file_log.put(("popup", titre, message, erreur))
+
+    def _ramener_modale(self, _evt=None):
+        """Anti « app gelée » : quand la principale reçoit le focus, on gère un
+        éventuel verrou (grab) resté actif.
+
+        - modale valide cachée derrière / réduite -> on la remet devant ;
+        - modale « fantôme » (verrou resté actif alors que la fenêtre n'est plus
+          affichée) -> on LIBÈRE le verrou et on remet la principale devant
+          (sinon la barre des tâches / Alt+Tab restent sans effet)."""
+        try:
+            g = self.grab_current()
+        except Exception:
+            g = None
+        if g is None or g is self:
+            return   # cas normal : rien à forcer
+
+        try:
+            top = g.winfo_toplevel()
+            vivante = bool(top.winfo_exists())
+        except Exception:
+            top, vivante = None, False
+
+        if vivante:
+            try:
+                if str(top.state()) == "iconic":
+                    top.deiconify()
+                top.lift()
+                top.focus_force()
+            except Exception:
+                pass
+        else:
+            # verrou fantôme -> on le relâche et on remet l'app principale devant
+            for essai in (g, self):
+                try:
+                    essai.grab_release()
+                except Exception:
+                    pass
+            try:
+                if str(self.state()) == "iconic":
+                    self.deiconify()
+                self.lift()
+                self.focus_force()
+            except Exception:
+                pass
+
+    def _modale_devant(self, top):
+        """Force une fenêtre modale à apparaître DEVANT et à prendre le focus."""
+        try:
+            top.lift()
+            top.focus_force()
+            top.attributes("-topmost", True)
+            top.after(400, lambda: top.winfo_exists() and top.attributes("-topmost", False))
+        except Exception:
+            pass
+
+    def _afficher_loading(self, message, annulable=False):
+        self._loading = ctk.CTkToplevel(self)
+        self._loading.title("Veuillez patienter")
+        self._loading.geometry("340x190" if annulable else "320x130")
+        self._loading.configure(fg_color=BG)
+        self._loading.resizable(False, False)
+        self._loading.transient(self)
+        self._lbl_loading = ctk.CTkLabel(self._loading, text=message, font=(POLICE, 13),
+                                         text_color=TEXT, wraplength=300)
+        self._lbl_loading.pack(pady=(26, 12))
+        pb = ctk.CTkProgressBar(self._loading, mode="indeterminate", width=250,
+                                progress_color=ACCENT)
+        pb.pack(pady=4)
+        pb.start()
+        self._pb = pb
+        if annulable:
+            ctk.CTkButton(self._loading, text="✖ Annuler l'opération", height=36,
+                          corner_radius=10, font=(POLICE, 13, "bold"),
+                          fg_color=("#FDECEA", "#3A1E1E"), text_color="#E5484D",
+                          hover_color="#F8D7D5",
+                          command=self._annuler_tache).pack(pady=(16, 8))
+        # PAS de grab_set ici : l'écran de chargement d'une opération LONGUE
+        # (téléchargement Drive…) ne doit pas verrouiller l'app, sinon réduire
+        # puis rouvrir depuis la barre des tâches ne marche plus. `self.occupe`
+        # empêche déjà de lancer deux tâches en même temps.
+        self._modale_devant(self._loading)
+
+    def _annuler_tache(self):
+        """Demande l'arrêt complet de la tâche en cours (publication…).
+
+        Pose le drapeau lu par instagram._stop() : la publication s'interrompt
+        au prochain point de contrôle (boucles d'attente, étapes Inssist…)."""
+        self._annule_tache = True
+        print("[publier] ⛔ Annulation demandée — arrêt de l'opération…")
+        try:
+            if getattr(self, "_lbl_loading", None) and self._lbl_loading.winfo_exists():
+                self._lbl_loading.configure(text="Annulation en cours…")
+        except Exception:
+            pass
+
+    def _cacher_loading(self):
+        lo = self._loading
+        self._loading = None
+        if lo is None:
+            return
+        try:
+            lo.grab_release()
+        except Exception:
+            pass
+        # On DIFFÈRE la destruction : CustomTkinter planifie en interne un
+        # after(~200ms) (deiconify) après la création du Toplevel ; le détruire
+        # trop vite provoque « bad window path name ». On attend ~260ms.
+        def _kill(w=lo):
+            try:
+                if w.winfo_exists():
+                    w.destroy()
+            except Exception:
+                pass
+        try:
+            self.after(260, _kill)
+        except Exception:
+            _kill()
+
+    # ----- briques d'UI réutilisables -----
+    def _entete_page(self, titre, sous="", action=None):
+        e = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        e.pack(fill="x", padx=36, pady=(28, 16))
+        barre = ctk.CTkFrame(e, fg_color="transparent")
+        barre.pack(fill="x")
+        ctk.CTkButton(barre, text="←  Accueil", width=104, height=36,
+                      command=lambda: self._aller("accueil"), fg_color=ACCENT_SOFT,
+                      text_color=ACCENT_HOVER, hover_color="#E1DDFA", corner_radius=10,
+                      font=(POLICE, 14)).pack(side="left")
+        if action:
+            ctk.CTkButton(barre, text=action[0], command=action[1], height=36,
+                          fg_color=ACCENT_HOVER, hover_color="#4A3FCC", corner_radius=10,
+                          font=(POLICE, 14, "bold")).pack(side="right")
+        ctk.CTkLabel(e, text=titre, font=(POLICE, 30, "bold"),
+                     text_color=TEXT).pack(anchor="w", pady=(16, 0))
+        if sous:
+            ctk.CTkLabel(e, text=sous, font=(POLICE, 15), text_color=MUTED,
+                         justify="left").pack(anchor="w", pady=(6, 0))
+
+    def _carte(self, pad=22):
+        c = ctk.CTkFrame(self.contenu, fg_color=CARD, corner_radius=16,
+                         border_width=1, border_color=BORDER)
+        c.pack(fill="x", padx=36, pady=8)
+        inner = ctk.CTkFrame(c, fg_color="transparent")
+        inner.pack(fill="x", padx=pad, pady=pad)
+        return inner
+
+    def _zone_journal(self, persistant=False):
+        """persistant=True (page Automatiser) : journal avec historique conservé.
+        Sinon : log transitoire de l'action en cours seulement."""
+        self.journal_est_auto = persistant
+        c = ctk.CTkFrame(self.contenu, fg_color=CARD, corner_radius=16,
+                         border_width=1, border_color=BORDER)
+        c.pack(fill="both", expand=True, padx=36, pady=(8, 22))
+        haut = ctk.CTkFrame(c, fg_color="transparent")
+        haut.pack(fill="x", padx=16, pady=(12, 0))
+        ctk.CTkLabel(haut, text="Journal", font=(POLICE, 12, "bold"),
+                     text_color=MUTED).pack(side="left")
+        ctk.CTkButton(haut, text="Effacer", width=70, height=28, command=self._effacer_journal,
+                      fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER, hover_color="#E1DDFA",
+                      corner_radius=8, font=(POLICE, 12)).pack(side="right")
+        self.log = ctk.CTkTextbox(c, height=170, font=("Consolas", 12.5),
+                                  fg_color=("#FBFBFE", "#0F1019"), text_color=TEXT,
+                                  corner_radius=10)
+        self.log.pack(fill="both", expand=True, padx=14, pady=(6, 14))
+        # Sur la page Automatiser : on ré-affiche tout l'historique.
+        if persistant and self.journal_buffer:
+            self.log.insert("end", self.journal_buffer)
+            self.log.see("end")
+        self.log.configure(state="disabled")
+
+    def _effacer_journal(self):
+        if self.log is not None:
+            try:
+                self.log.configure(state="normal")
+                self.log.delete("1.0", "end")
+                self.log.configure(state="disabled")
+            except Exception:
+                pass
+        # Sur le journal d'automatisation, on vide aussi l'historique gardé.
+        if self.journal_est_auto:
+            self.journal_buffer = ""
+            self._journal_jour = None
+
+    def _btn(self, parent, texte, cmd, primaire=False):
+        if primaire:
+            return ctk.CTkButton(parent, text=texte, command=cmd, height=42, corner_radius=12,
+                                 fg_color=ACCENT_HOVER, hover_color="#4A3FCC",
+                                 font=(POLICE, 14, "bold"))
+        return ctk.CTkButton(parent, text=texte, command=cmd, height=42, corner_radius=12,
+                             fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER,
+                             hover_color="#E1DDFA", font=(POLICE, 14))
+
+    def _maj_besoins_ranger(self):
+        """Rafraîchit le texte « besoins » de la page Ranger (après édition du
+        calendrier), pour qu'il reste cohérent avec le calendrier enregistré."""
+        lbl = getattr(self, "lbl_ranger_besoins", None)
+        if lbl is None:
+            return
+        try:
+            if not lbl.winfo_exists():
+                return
+            r, c, s, img = self._besoins()
+            lbl.configure(text=f"Besoin : {r} vidéo(s) (reels) · {s} image(s) (stories)")
+        except Exception:
+            pass
+
+    def _besoins(self):
+        cal = calendrier.charger_calendrier()
+        r = c = s = 0
+        for jours in cal.values():
+            for creneaux in jours.values():
+                for x in creneaux:
+                    t = x.get("type")
+                    r += t == "reel"
+                    c += t == "carousel"
+                    s += t == "story"
+        return r, c, s, c * rangement.IMAGES_PAR_CAROUSEL + s
+
+    # ==================================================================
+    #  Page : Ranger les médias
+    # ==================================================================
+    def _page_ranger(self):
+        self._entete_page("Ranger les médias",
+                          "Classe automatiquement vos photos/vidéos selon le calendrier.",
+                          action=("Modifier le calendrier", self.ouvrir_editeur_calendrier))
+        r, c, s, _img = self._besoins()
+
+        # --- Section 1 : Reels + Stories ---
+        inner = self._carte()
+        ctk.CTkLabel(inner, text="1) Reels + Stories", font=(POLICE, 15, "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(inner, justify="left", font=(POLICE, 13), text_color=MUTED,
+                     text="Prépare un dossier avec ces 2 sous-dossiers :\n"
+                          "     videos\\   →  vos vidéos (Reels)\n"
+                          "     images\\   →  vos images (Stories)").pack(anchor="w", pady=(4, 0))
+        self.lbl_ranger_besoins = ctk.CTkLabel(
+            inner, font=(POLICE, 14, "bold"), text_color=ACCENT_HOVER,
+            text=f"Besoin : {r} vidéo(s) (reels) · {s} image(s) (stories)")
+        self.lbl_ranger_besoins.pack(anchor="w", pady=(12, 8))
+        self.chk_aleatoire_ranger = ctk.CTkCheckBox(
+            inner, text="Répartir au hasard (au lieu de l'ordre 1, 2, 3…)",
+            font=(POLICE, 14), fg_color=ACCENT_HOVER)
+        self.chk_aleatoire_ranger.select()   # coché par défaut
+        self.chk_aleatoire_ranger.pack(anchor="w", pady=(0, 8))
+        ligne = ctk.CTkFrame(inner, fg_color="transparent")
+        ligne.pack(anchor="w", pady=(6, 4))
+        self._btn(ligne, "Importer un dossier…", self._choisir_dossier_ranger).pack(side="left", padx=(0, 10))
+        self._btn(ligne, "Ranger reels + stories", self._lancer_ranger, primaire=True).pack(side="left")
+        txt = f"Dossier : {self.dossier_ranger_src}" if self.dossier_ranger_src else "Aucun dossier sélectionné"
+        self.lbl_ranger = ctk.CTkLabel(inner, text=txt, font=(POLICE, 13), text_color=MUTED)
+        self.lbl_ranger.pack(anchor="w", pady=(10, 0))
+
+        # --- Section 2 : Carrousels (dossier dédié, ordre respecté) ---
+        cc = self._carte()
+        ctk.CTkLabel(cc, text="2) Carrousels", font=(POLICE, 15, "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(cc, justify="left", font=(POLICE, 13), text_color=MUTED,
+                     text="Dossier séparé de photos que TU nommes 1, 2, 3… (les photos qui se\n"
+                          "ressemblent se suivent). Rangées DANS L'ORDRE par groupes de "
+                          f"{rangement.IMAGES_PAR_CAROUSEL} :\n"
+                          "1-2-3 → 1er carrousel, 4-5-6 → 2e, etc.\n"
+                          "⚠️ Fais d'abord « Ranger reels + stories » ci-dessus.").pack(anchor="w", pady=(4, 0))
+        ctk.CTkLabel(cc, font=(POLICE, 14, "bold"), text_color=ACCENT_HOVER,
+                     text=f"Besoin : {c} carrousel(s) = {c * rangement.IMAGES_PAR_CAROUSEL} photos").pack(
+                     anchor="w", pady=(12, 8))
+        lc = ctk.CTkFrame(cc, fg_color="transparent")
+        lc.pack(anchor="w", pady=(6, 4))
+        self._btn(lc, "Importer le dossier carrousel…", self._choisir_dossier_carrousel).pack(side="left", padx=(0, 10))
+        self._btn(lc, "Ranger les carrousels", self._lancer_carrousels, primaire=True).pack(side="left")
+        txt2 = (f"Dossier : {self.dossier_carrousel_src}" if self.dossier_carrousel_src
+                else "Aucun dossier carrousel sélectionné")
+        self.lbl_carrousel = ctk.CTkLabel(cc, text=txt2, font=(POLICE, 13), text_color=MUTED)
+        self.lbl_carrousel.pack(anchor="w", pady=(10, 0))
+
+        self._zone_journal()
+
+    def _choisir_dossier_ranger(self):
+        dossier = filedialog.askdirectory(title="Choisir le dossier à ranger")
+        if not dossier:
+            return
+        dv, di = os.path.join(dossier, "videos"), os.path.join(dossier, "images")
+        if not (os.path.isdir(dv) and os.path.isdir(di)):
+            messagebox.showerror("Format du dossier",
+                                 "Le dossier doit contenir 2 sous-dossiers :\n\n   videos\\\n   images\\")
+            return
+        self.dossier_ranger_src = dossier
+        self.lbl_ranger.configure(text=f"Dossier : {dossier}")
+
+    def _choisir_dossier_carrousel(self):
+        dossier = filedialog.askdirectory(title="Choisir le dossier des photos de carrousels (1, 2, 3…)")
+        if not dossier:
+            return
+        self.dossier_carrousel_src = dossier
+        self.lbl_carrousel.configure(text=f"Dossier : {dossier}")
+
+    def _lancer_carrousels(self):
+        dossier = self.dossier_carrousel_src
+        if not dossier:
+            messagebox.showwarning("Carrousels", "Importe d'abord le dossier carrousel.")
+            return
+        sortie = os.path.join(self.dossier_modele(), "ranger")
+        if not os.path.isdir(sortie):
+            if not messagebox.askyesno(
+                    "Carrousels",
+                    "Le dossier « ranger » n'existe pas encore.\n"
+                    "Fais d'abord « Ranger reels + stories » pour créer le planning.\n\n"
+                    "Continuer quand même ?"):
+                return
+
+        def job():
+            res = rangement.ranger_carrousels(dossier, sortie, simuler=False)
+            self.file_log.put(("fini_carrousels", sortie, res))
+        self._tache(job, "Rangement des carrousels…")
+
+    def _lancer_ranger(self):
+        dossier = self.dossier_ranger_src
+        if not dossier:
+            messagebox.showwarning("Ranger", "Importe d'abord un dossier.")
+            return
+        dv, di = os.path.join(dossier, "videos"), os.path.join(dossier, "images")
+        infos = rangement.verifier_dossiers(dv, di)
+        if infos["img_dans_videos"] or infos["vid_dans_images"]:
+            msg = "Des fichiers semblent mal placés (ils seront ignorés) :"
+            if infos["img_dans_videos"]:
+                msg += f"\n• {len(infos['img_dans_videos'])} image(s) dans « videos »"
+            if infos["vid_dans_images"]:
+                msg += f"\n• {len(infos['vid_dans_images'])} vidéo(s) dans « images »"
+            if not messagebox.askyesno("Fichiers mal placés", msg + "\n\nContinuer quand même ?"):
+                return
+        sortie = os.path.join(self.dossier_modele(), "ranger")
+        existe = os.path.exists(sortie)
+        msg = (f"{infos['nb_videos']} vidéo(s) et {infos['nb_images']} image(s) vont être rangées.\n\n"
+               f"Destination :\n{sortie}\n")
+        if existe:
+            msg += "\n⚠️ Ce dossier existe déjà et sera REMPLACÉ.\n"
+        if not messagebox.askyesno("Confirmer le rangement", msg + "\nContinuer ?"):
+            return
+
+        aleatoire = bool(self.chk_aleatoire_ranger.get())
+
+        def job():
+            if existe:
+                shutil.rmtree(sortie, ignore_errors=True)
+            res = rangement.ranger(dv, di, sortie, simuler=False, aleatoire=aleatoire)
+            self.file_log.put(("fini_ranger", sortie, res))
+        self._tache(job, "Rangement en cours…")
+
+    # ==================================================================
+    #  Page : Changer les métadonnées
+    # ==================================================================
+    def _page_metadonnees(self):
+        self._entete_page("Changer les métadonnées",
+                          "Rend chaque image et vidéo unique (anti-doublon entre comptes).")
+        inner = self._carte()
+        ctk.CTkLabel(inner, justify="left", font=(POLICE, 14), text_color=MUTED,
+                     text="Choisissez un dossier d'images et/ou de vidéos. HelpVA crée une version\n"
+                          "unique de chaque média. Résultat dans « media (métadonnées changées) »\n"
+                          "(sous-dossiers images\\ et videos\\). Vos originaux ne sont pas touchés.").pack(anchor="w")
+        self.chk_renommer = ctk.CTkCheckBox(inner, text="Renommer les médias (1, 2, 3…)",
+                                            font=(POLICE, 14), fg_color=ACCENT_HOVER)
+        self.chk_renommer.select()
+        self.chk_renommer.pack(anchor="w", pady=(14, 6))
+        self.chk_filtre = ctk.CTkCheckBox(inner, text="Appliquer un filtre léger sur les images "
+                                                      "(chaud/froid/vif/doux, discret)",
+                                          font=(POLICE, 14), fg_color=ACCENT_HOVER)
+        self.chk_filtre.select()
+        self.chk_filtre.pack(anchor="w", pady=(0, 8))
+        ligne = ctk.CTkFrame(inner, fg_color="transparent")
+        ligne.pack(anchor="w", pady=(4, 4))
+        self._btn(ligne, "Importer un dossier…", self._choisir_dossier_uniq).pack(side="left", padx=(0, 8))
+        self._btn(ligne, "Importer des images…", self._choisir_images_uniq).pack(side="left", padx=(0, 8))
+        self._btn(ligne, "Lancer", self._lancer_uniquiser, primaire=True).pack(side="left")
+        self.lbl_uniq = ctk.CTkLabel(inner, text=self._txt_source_uniq(),
+                                     font=(POLICE, 12), text_color=MUTED)
+        self.lbl_uniq.pack(anchor="w", pady=(8, 0))
+        self._zone_journal()
+
+    def _txt_source_uniq(self):
+        if self.fichiers_uniq_src:
+            return f"{len(self.fichiers_uniq_src)} image(s)/vidéo(s) sélectionnée(s)"
+        if self.dossier_uniq_src:
+            return f"Dossier : {self.dossier_uniq_src}"
+        return "Aucune source sélectionnée"
+
+    def _choisir_dossier_uniq(self):
+        dossier = filedialog.askdirectory(title="Choisir le dossier (images ou vidéos)")
+        if not dossier:
+            return
+        self.dossier_uniq_src = dossier
+        self.fichiers_uniq_src = None          # le dossier remplace la sélection de fichiers
+        self.lbl_uniq.configure(text=self._txt_source_uniq())
+
+    def _choisir_images_uniq(self):
+        fichiers = filedialog.askopenfilenames(
+            title="Choisir des images / vidéos",
+            filetypes=[("Médias", "*.jpg *.jpeg *.png *.webp *.mp4 *.mov *.m4v *.avi *.mkv"),
+                       ("Tous", "*.*")])
+        if not fichiers:
+            return
+        self.fichiers_uniq_src = list(fichiers)
+        self.dossier_uniq_src = None           # la sélection de fichiers remplace le dossier
+        self.lbl_uniq.configure(text=self._txt_source_uniq())
+
+    def _lancer_uniquiser(self):
+        if not self.fichiers_uniq_src and not self.dossier_uniq_src:
+            messagebox.showwarning("Métadonnées", "Importe d'abord un dossier ou des images.")
+            return
+        sortie = os.path.join(self.dossier_modele(), "media (métadonnées changées)")
+        renommer = bool(self.chk_renommer.get())
+        filtre = bool(self.chk_filtre.get())
+        fichiers = list(self.fichiers_uniq_src) if self.fichiers_uniq_src else None
+        dossier = self.dossier_uniq_src
+        if os.path.exists(sortie):
+            if not messagebox.askyesno("Remplacer ?",
+                                       f"Le dossier existe déjà et sera REMPLACÉ :\n{sortie}\n\nContinuer ?"):
+                return
+
+        def job():
+            if os.path.exists(sortie):
+                shutil.rmtree(sortie, ignore_errors=True)
+            if fichiers:
+                n = unicite.uniquiser_fichiers(fichiers, sortie, renommer=renommer, filtre=filtre)
+            else:
+                n = unicite.uniquiser_dossier(dossier, sortie, renommer=renommer, filtre=filtre)
+            print(f"\n✅ {n} média(s) traité(s) → {sortie}")
+            self._notifier("Métadonnées changées",
+                           f"✅ {n} média(s) traité(s) !\n\nRésultat :\n{sortie}\n"
+                           "(sous-dossiers images\\ et videos\\)")
+        self._tache(job, "Changement des métadonnées…")
+
+    # ==================================================================
+    #  Page : Convertir en MP4
+    # ==================================================================
+    def _page_convertir(self):
+        self._entete_page("Convertir en MP4",
+                          "Transforme vos vidéos (.mov, .avi, .mkv…) en .mp4.")
+        inner = self._carte()
+        ctk.CTkLabel(inner, justify="left", font=(POLICE, 14), text_color=MUTED,
+                     text="Choisissez des vidéos (ou un dossier). HelpVA en crée une version .mp4\n"
+                          "dans « media (mp4) ». Vos originaux ne sont pas touchés.\n\n"
+                          "⚡ Rapide quand c'est possible (change juste le conteneur), sinon\n"
+                          "ré-encodage automatique (H.264/AAC) pour que ça marche à coup sûr.").pack(anchor="w")
+        ligne = ctk.CTkFrame(inner, fg_color="transparent")
+        ligne.pack(anchor="w", pady=(14, 4))
+        self._btn(ligne, "Importer un dossier…", self._choisir_dossier_convert).pack(side="left", padx=(0, 8))
+        self._btn(ligne, "Importer des vidéos…", self._choisir_videos_convert).pack(side="left", padx=(0, 8))
+        self._btn(ligne, "Convertir", self._lancer_convert, primaire=True).pack(side="left")
+        self.lbl_convert = ctk.CTkLabel(inner, text=self._txt_source_convert(),
+                                        font=(POLICE, 12), text_color=MUTED)
+        self.lbl_convert.pack(anchor="w", pady=(8, 0))
+        self._zone_journal()
+
+    def _txt_source_convert(self):
+        if self.fichiers_convert_src:
+            return f"{len(self.fichiers_convert_src)} vidéo(s) sélectionnée(s)"
+        if self.dossier_convert_src:
+            return f"Dossier : {self.dossier_convert_src}"
+        return "Aucune source sélectionnée"
+
+    def _choisir_dossier_convert(self):
+        dossier = filedialog.askdirectory(title="Choisir le dossier de vidéos")
+        if not dossier:
+            return
+        self.dossier_convert_src = dossier
+        self.fichiers_convert_src = None
+        self.lbl_convert.configure(text=self._txt_source_convert())
+
+    def _choisir_videos_convert(self):
+        fichiers = filedialog.askopenfilenames(
+            title="Choisir des vidéos",
+            filetypes=[("Vidéos", "*.mov *.mp4 *.m4v *.avi *.mkv *.webm *.mpg *.mpeg *.wmv *.flv"),
+                       ("Tous", "*.*")])
+        if not fichiers:
+            return
+        self.fichiers_convert_src = list(fichiers)
+        self.dossier_convert_src = None
+        self.lbl_convert.configure(text=self._txt_source_convert())
+
+    def _lancer_convert(self):
+        if not self.fichiers_convert_src and not self.dossier_convert_src:
+            messagebox.showwarning("Convertir", "Importe d'abord un dossier ou des vidéos.")
+            return
+        sortie = os.path.join(self.dossier_modele(), "media (mp4)")
+        fichiers = list(self.fichiers_convert_src) if self.fichiers_convert_src else None
+        dossier = self.dossier_convert_src
+
+        def job():
+            os.makedirs(sortie, exist_ok=True)
+            if fichiers:
+                n, echecs = conversion.convertir_fichiers(fichiers, sortie)
+            else:
+                n, echecs = conversion.convertir_dossier(dossier, sortie)
+            print(f"\n✅ {n} vidéo(s) converties en .mp4 → {sortie}")
+            msg = f"✅ {n} vidéo(s) en .mp4 !\n\nRésultat :\n{sortie}"
+            if echecs:
+                msg += (f"\n\n⚠️ {len(echecs)} fichier(s) ignorés (vides/corrompus, "
+                        "à re-télécharger).")
+            self._notifier("Conversion terminée", msg)
+        self._tache(job, "Conversion en MP4… (peut être long)", annulable=True)
+
+    # ==================================================================
+    #  Page : Télécharger depuis Google Drive
+    # ==================================================================
+    def _page_drive(self):
+        self._entete_page("Télécharger depuis Google Drive",
+                          "Récupère les médias d'un dossier Drive partagé, classés par type.")
+        inner = self._carte()
+        ctk.CTkLabel(inner, justify="left", font=(POLICE, 14), text_color=MUTED,
+                     text="Le dossier Google Drive doit être partagé\n"
+                          "« Tous les utilisateurs disposant du lien ».\n\n"
+                          "Collez le lien, choisissez quoi prendre, puis Télécharger. Les médias\n"
+                          "seront rangés dans images\\ et videos\\ (prêts pour Ranger / Métadonnées).").pack(anchor="w")
+
+        ctk.CTkLabel(inner, text="Lien(s) du/des dossier(s) Google Drive — UN PAR LIGNE",
+                     font=(POLICE, 13, "bold"), text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
+        self.champ_drive = ctk.CTkTextbox(inner, height=90, font=(POLICE, 13), corner_radius=10)
+        self.champ_drive.pack(fill="x")
+        ctk.CTkLabel(inner, text="Collez plusieurs liens (un par ligne) : ils seront téléchargés "
+                                 "l'un après l'autre, dans le même dossier de sortie.",
+                     font=(POLICE, 11), text_color=MUTED).pack(anchor="w", pady=(3, 0))
+
+        ctk.CTkLabel(inner, text="Que télécharger ?", font=(POLICE, 13, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
+        self.seg_drive = ctk.CTkSegmentedButton(inner, values=["Images", "Vidéos", "Les deux"],
+                                               selected_color=ACCENT_HOVER,
+                                               selected_hover_color="#4A3FCC", font=(POLICE, 14))
+        self.seg_drive.set("Les deux")
+        self.seg_drive.pack(anchor="w")
+
+        ctk.CTkLabel(inner, text="Ordre", font=(POLICE, 13, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
+        self.seg_tri_drive = ctk.CTkSegmentedButton(inner, values=["Plus récents", "Par nom"],
+                                                    selected_color=ACCENT_HOVER,
+                                                    selected_hover_color="#4A3FCC", font=(POLICE, 14))
+        self.seg_tri_drive.set("Plus récents")
+        self.seg_tri_drive.pack(anchor="w")
+        ctk.CTkLabel(inner, text="« Plus récents » : prend d'abord les médias les plus "
+                                 "récemment ajoutés au dossier Drive.",
+                     font=(POLICE, 11), text_color=MUTED).pack(anchor="w", pady=(3, 0))
+
+        ctk.CTkLabel(inner, text="Combien de médias prendre ? (vide = tout)",
+                     font=(POLICE, 13, "bold"), text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
+        self.champ_nb_drive = ctk.CTkEntry(inner, width=160, height=42, font=(POLICE, 14),
+                                           placeholder_text="Ex : 35  (ou vide)")
+        self.champ_nb_drive.pack(anchor="w")
+
+        lg = ctk.CTkFrame(inner, fg_color="transparent")
+        lg.pack(anchor="w", pady=(16, 0))
+        self._btn(lg, "Voir le contenu", self._apercu_drive).pack(side="left", padx=(0, 10))
+        self._btn(lg, "Télécharger", self._importer_drive, primaire=True).pack(side="left")
+        self._zone_journal()
+
+    def _liens_drive(self):
+        """Liste des liens Drive saisis (un par ligne, vides ignorés)."""
+        txt = self.champ_drive.get("1.0", "end")
+        return [l.strip() for l in txt.splitlines() if l.strip()]
+
+    def _apercu_drive(self):
+        liens = self._liens_drive()
+        if not liens:
+            messagebox.showwarning("Google Drive", "Collez d'abord au moins un lien de dossier partagé.")
+            return
+        lien = liens[0]   # l'aperçu se base sur le PREMIER lien
+        choix = self.seg_drive.get()
+        prendre = {"Images": {"images"}, "Vidéos": {"videos"},
+                   "Les deux": {"images", "videos"}}.get(choix, {"images", "videos"})
+        txt_nb = self.champ_nb_drive.get().strip()
+        limite = int(txt_nb) if (txt_nb.isdigit() and int(txt_nb) > 0) else None
+        tri = "recent" if self.seg_tri_drive.get() == "Plus récents" else "nom"
+
+        def job():
+            import tempfile
+            items = drive.lister_apercu(lien, prendre, limite, tri=tri)
+            cap = items[:40]
+            print(f"Chargement de l'aperçu ({len(cap)} vignette(s))…")
+            vignettes = []
+            for i, it in enumerate(cap, 1):
+                tmp = os.path.join(tempfile.gettempdir(), f"helpva_thumb_{i}.jpg")
+                ok = drive.telecharger_vignette(it["id"], tmp)
+                vignettes.append((i, it["est_video"], tmp if ok else None))
+            self.file_log.put(("drive_apercu", vignettes, len(items)))
+        self._tache(job, "Chargement de l'aperçu…")
+
+    def _popup_apercu_drive(self, vignettes, total):
+        top = ctk.CTkToplevel(self)
+        top.title("Aperçu Google Drive")
+        top.geometry("790x650")
+        top.configure(fg_color=BG)
+        top.transient(self)
+        self._modale_devant(top)
+        top.after(200, lambda: top.winfo_exists() and top.grab_set())
+        ctk.CTkLabel(top, text=f"Aperçu — {total} média(s) dans le dossier",
+                     font=(POLICE, 19, "bold"), text_color=TEXT).pack(pady=(16, 2))
+        if total > 40:
+            ctk.CTkLabel(top, text="(aperçu des 40 premiers)", font=(POLICE, 12),
+                         text_color=MUTED).pack()
+        sc = ctk.CTkScrollableFrame(top, fg_color="transparent")
+        sc.pack(fill="both", expand=True, padx=16, pady=12)
+        self._thumb_refs = []
+        from PIL import Image
+        col = 5
+        for idx, (num, est_video, path) in enumerate(vignettes):
+            cell = ctk.CTkFrame(sc, fg_color=CARD, corner_radius=10,
+                                border_width=1, border_color=BORDER)
+            cell.grid(row=idx // col, column=idx % col, padx=6, pady=6)
+            try:
+                if path and os.path.isfile(path):
+                    img = Image.open(path)
+                    img.thumbnail((120, 120))
+                    cimg = ctk.CTkImage(img, size=img.size)
+                    self._thumb_refs.append(cimg)
+                    ctk.CTkLabel(cell, image=cimg, text="").pack(padx=8, pady=(8, 2))
+                else:
+                    ctk.CTkLabel(cell, text=("vidéo" if est_video else "image"),
+                                 font=(POLICE, 13), text_color=MUTED).pack(padx=28, pady=(26, 2))
+            except Exception:
+                ctk.CTkLabel(cell, text="?", font=(POLICE, 20)).pack(padx=28, pady=26)
+            ctk.CTkLabel(cell, text=f"{'vidéo' if est_video else 'image'} {num}",
+                         font=(POLICE, 11), text_color=MUTED).pack(pady=(0, 8))
+
+    def _importer_drive(self):
+        liens = self._liens_drive()
+        if not liens:
+            messagebox.showwarning("Google Drive", "Collez d'abord au moins un lien de dossier partagé.")
+            return
+        choix = self.seg_drive.get()
+        prendre = {"Images": {"images"}, "Vidéos": {"videos"},
+                   "Les deux": {"images", "videos"}}.get(choix, {"images", "videos"})
+        txt_nb = self.champ_nb_drive.get().strip()
+        limite = None
+        if txt_nb:
+            if not txt_nb.isdigit() or int(txt_nb) <= 0:
+                messagebox.showwarning("Nombre", "Entre un nombre valide (ex : 35), ou laisse vide pour tout.")
+                return
+            limite = int(txt_nb)
+        sortie = os.path.join(self.dossier_modele(), "telechargement drive")
+        tri = "recent" if self.seg_tri_drive.get() == "Plus récents" else "nom"
+
+        def job():
+            n = len(liens)
+            print(f"Téléchargement de {n} dossier(s) Drive…")
+            total_i = total_v = total_err = 0
+            bloque = False
+            for idx, lien in enumerate(liens, 1):
+                if self._annule_tache:
+                    print("⛔ Annulé — dossiers suivants ignorés.")
+                    break
+                print(f"\n=== Dossier {idx}/{n} ===")
+
+                def prog(i, total, nom):
+                    print(f"  [{i}/{total}] {nom}")
+                try:
+                    ni, nv, err = drive.telecharger_dossier(
+                        lien, sortie, prendre=prendre, limite=limite, progress=prog,
+                        tri=tri, doit_arreter=lambda: self._annule_tache)
+                    total_i += ni; total_v += nv; total_err += err
+                    print(f"  → Dossier {idx} : {ni} image(s), {nv} vidéo(s), {err} erreur(s)")
+                except drive.BlocageGoogleError:
+                    bloque = True
+                    print("  ⛔ Google a bloqué les téléchargements depuis votre réseau.")
+                    break   # inutile de continuer, tout échouera
+                except Exception as e:
+                    print(f"  ❌ Dossier {idx} échoué : {e}")
+                    total_err += 1
+            self.file_log.put(("drive_fini", sortie, total_i, total_v, total_err, bloque))
+        self._tache(job, "Téléchargement Google Drive…", annulable=True)
+
+    # ==================================================================
+    #  Page : Paramètres
+    # ==================================================================
+    def _page_parametres(self):
+        self._entete_page("Paramètres", "Réglages du modèle, de la connexion et de la licence.")
+
+        # --- Modèle ---
+        inner = self._carte()
+        genre = "Féminin" if self.genre == "feminin" else "Masculin"
+        ctk.CTkLabel(inner, text="Modèle actif", font=(POLICE, 14, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w")
+        ligne = ctk.CTkFrame(inner, fg_color="transparent")
+        ligne.pack(fill="x", pady=(10, 0))
+        ctk.CTkLabel(ligne, text=(f"{self.modele} ({genre})" if self.modele else "Aucun modèle"),
+                     font=(POLICE, 18, "bold"), text_color=TEXT).pack(side="left")
+        self._btn(ligne, "Changer le modèle", self._modal_modele).pack(side="right")
+
+        # --- Apparence ---
+        ap = self._carte()
+        ctk.CTkLabel(ap, text="Apparence", font=(POLICE, 14, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w")
+        ctk.CTkLabel(ap, text="Thème de l'application", font=(POLICE, 13),
+                     text_color=MUTED).pack(anchor="w", pady=(8, 6))
+        _v2m = {"Clair": "light", "Sombre": "dark", "Système": "system"}
+        _m2v = {v: k for k, v in _v2m.items()}
+
+        def _set_theme(v):
+            ctk.set_appearance_mode(_v2m[v])
+            self.params["theme"] = _v2m[v]
+            parametres.sauver(self.params)
+        seg_theme = ctk.CTkSegmentedButton(ap, values=list(_v2m.keys()),
+                                           command=_set_theme,
+                                           font=(POLICE, 13),
+                                           selected_color=ACCENT, selected_hover_color=ACCENT_HOVER)
+        seg_theme.set(_m2v.get(self.params.get("theme", "light"), "Clair"))
+        seg_theme.pack(anchor="w")
+
+        # --- Licence & abonnement ---
+        lic = self._carte()
+        ctk.CTkLabel(lic, text="Licence & abonnement", font=(POLICE, 14, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w")
+        nom_det = (self.statut or {}).get("nom")
+        if nom_det:
+            ctk.CTkLabel(lic, text=f"Détenteur : {nom_det}", font=(POLICE, 15, "bold"),
+                         text_color=TEXT).pack(anchor="w", pady=(8, 0))
+        typ = (self.statut or {}).get("type")
+        fin = (self.statut or {}).get("expire_le")
+        if typ == "vie" or not fin:
+            ctk.CTkLabel(lic, text="Abonnement à vie — sans expiration",
+                         font=(POLICE, 15), text_color=TEXT).pack(anchor="w", pady=(8, 12))
+        else:
+            debut = None
+            if typ == "an":
+                debut = licence._ajouter_mois(fin, -12)
+            elif typ == "mois":
+                debut = licence._ajouter_mois(fin, -1)
+            if debut:
+                ctk.CTkLabel(lic, text=f"Début de l'abonnement : {_date_fr(debut)}",
+                             font=(POLICE, 15), text_color=TEXT).pack(anchor="w", pady=(8, 0))
+            ctk.CTkLabel(lic, text=f"Fin de l'abonnement : {_date_fr(fin)}",
+                         font=(POLICE, 15), text_color=TEXT).pack(anchor="w", pady=(2, 12))
+
+        # Résilier / changer de licence
+        ctk.CTkButton(lic, text="Résilier / changer de licence", command=self._resilier_licence,
+                      fg_color=("#FDECEA", "#3A1E1E"), text_color="#E5484D", hover_color="#F8D7D5",
+                      height=40, corner_radius=10, font=(POLICE, 13)).pack(anchor="w", pady=(14, 0))
+
+        # --- Clé API AdsPower : masquée (liée à la publication, cachée pour
+        #     l'instant). La logique reste ; la clé en paramètres est conservée. ---
+
+    # ==================================================================
+    #  Connexion AdsPower (partagée Publier / Automatiser)
+    # ==================================================================
+    def _profil(self):
+        nom = self.combo_profil.get() if getattr(self, "combo_profil", None) else ""
+        uid = self.profils.get(nom)
+        if not uid:
+            print("[!] Choisissez d'abord un profil (Charger profils).")
+        else:
+            self.params["profil"] = uid
+            parametres.sauver(self.params)
+        return uid
+
+    def enregistrer_et_charger(self):
+        self.params["api_key"] = self.champ_cle.get().strip()
+        parametres.sauver(self.params)
+
+        def job():
+            # 1) AdsPower doit être ouvert (sinon son API ne répond pas).
+            if not adspower.api_joignable():
+                print("[!] AdsPower ne répond pas (fermé ?).")
+                self._notifier(
+                    "AdsPower n'est pas ouvert",
+                    "Impossible de charger les profils : AdsPower ne répond pas.\n\n"
+                    "1) Ouvrez AdsPower et connectez-vous à votre compte.\n"
+                    "2) Vérifiez que l'API locale est activée.\n"
+                    "3) Reclique sur « Charger profils ».", erreur=True)
+                return
+            # 2) AdsPower ouvert : on récupère les profils.
+            try:
+                print("Chargement des profils AdsPower…")
+                liste = adspower.lister_profils()
+                profils = {f"{p['name']} ({p['user_id']})": p["user_id"] for p in liste}
+                self.file_log.put(("profils", profils))
+                print(f"{len(profils)} profil(s) trouvé(s).")
+                if not profils:
+                    self._notifier("Aucun profil",
+                                   "AdsPower répond mais aucun profil n'a été trouvé.\n"
+                                   "Vérifiez votre clé API.", erreur=True)
+            except Exception as e:
+                self._notifier(
+                    "Erreur de chargement",
+                    "Impossible de charger les profils.\n\n"
+                    "Vérifiez qu'AdsPower est ouvert et que votre CLÉ API est correcte.\n\n"
+                    f"Détail : {e}", erreur=True)
+        self._tache(job, "Chargement des profils…")
+
+    def _cadre_connexion(self):
+        inner = self._carte()
+        ctk.CTkLabel(inner, text="Connexion AdsPower", font=(POLICE, 12, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w")
+        l1 = ctk.CTkFrame(inner, fg_color="transparent")
+        l1.pack(fill="x", pady=(6, 6))
+        self.champ_cle = ctk.CTkEntry(l1, height=40, font=(POLICE, 13),
+                                      placeholder_text="Clé API AdsPower")
+        self.champ_cle.insert(0, self.params.get("api_key", ""))
+        self.champ_cle.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self._btn(l1, "Charger profils", self.enregistrer_et_charger).pack(side="left")
+        l2 = ctk.CTkFrame(inner, fg_color="transparent")
+        l2.pack(fill="x")
+        ctk.CTkLabel(l2, text="Profil :", font=(POLICE, 13), text_color=MUTED).pack(side="left", padx=(0, 8))
+        noms = list(self.profils.keys()) or ["(charge d'abord les profils)"]
+        self.combo_profil = ctk.CTkOptionMenu(l2, values=noms, width=320, fg_color="#FBFBFE",
+                                              text_color=TEXT, button_color=ACCENT_SOFT,
+                                              button_hover_color="#E1DDFA", dropdown_fg_color="#FFFFFF")
+        self.combo_profil.pack(side="left")
+        cible = self.params.get("profil", "")
+        choisi = next((n for n, u in self.profils.items() if u == cible), None)
+        if choisi:
+            self.combo_profil.set(choisi)
+
+    # ------------------------------------------------------------------
+    #  Sélecteur « méthode de publication » (Instagram web / Inssist).
+    #  Choix commun mémorisé dans les paramètres (methode_pub).
+    # ------------------------------------------------------------------
+    _METHODES = {"Instagram web": "web", "Inssist": "inssist"}
+
+    def _set_methode_pub(self, libelle):
+        self.params["methode_pub"] = self._METHODES.get(libelle, "web")
+        parametres.sauver(self.params)
+        print(f"[publication] méthode : {self.params['methode_pub']}")
+
+    def _cadre_methode(self, parent):
+        """Ajoute un sélecteur Instagram web / Inssist dans `parent`."""
+        ctk.CTkLabel(parent, text="Méthode de publication", font=(POLICE, 12, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(2, 2))
+        seg = ctk.CTkSegmentedButton(
+            parent, values=list(self._METHODES.keys()),
+            command=self._set_methode_pub, selected_color=ACCENT_HOVER,
+            selected_hover_color="#4A3FCC", font=(POLICE, 13))
+        actuel = self.params.get("methode_pub", "web")
+        seg.set("Inssist" if actuel == "inssist" else "Instagram web")
+        seg.pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(parent, text="Inssist = passe par l'extension (interface mobile) · "
+                     "Instagram web = interface classique",
+                     font=(POLICE, 11), text_color=MUTED).pack(anchor="w", pady=(0, 6))
+        return seg
+
+    # ==================================================================
+    #  Page : Publier
+    # ==================================================================
+    def _page_publier(self):
+        self._entete_page("Publier le contenu", "Publie une photo, un carrousel ou un réel.")
+        self._cadre_connexion()
+        inner = self._carte()
+        ctk.CTkLabel(inner, text="Type de publication", font=(POLICE, 12, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w")
+        self.type_seg = ctk.CTkSegmentedButton(inner, values=["carrousel", "reel"],
+                                               selected_color=ACCENT_HOVER,
+                                               selected_hover_color="#4A3FCC", font=(POLICE, 14))
+        self.type_seg.set("carrousel")
+        self.type_seg.pack(anchor="w", pady=(6, 4))
+        ctk.CTkLabel(inner, text="Carrousel = 2 photos minimum   ·   Réel = 1 seule vidéo",
+                     font=(POLICE, 12), text_color=MUTED).pack(anchor="w", pady=(0, 10))
+
+        self._cadre_methode(inner)
+
+        lf = ctk.CTkFrame(inner, fg_color="transparent")
+        lf.pack(fill="x", pady=(0, 6))
+        self._btn(lf, "Choisir fichier(s)…", self._choisir_fichiers).pack(side="left", padx=(0, 8))
+        self._btn(lf, "Ouvrir un créneau…", self._ouvrir_creneau).pack(side="left")
+        self.lbl_fichiers = ctk.CTkLabel(inner, text=(f"{len(self.fichiers)} fichier(s)" if self.fichiers else "Aucun fichier"),
+                                        font=(POLICE, 13), text_color=MUTED)
+        self.lbl_fichiers.pack(anchor="w", pady=(6, 6))
+
+        ctk.CTkLabel(inner, text="Aperçu", font=(POLICE, 13, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(6, 2))
+        self.cadre_apercu = ctk.CTkFrame(inner, fg_color="#FBFBFE", corner_radius=10)
+        self.cadre_apercu.pack(fill="x", pady=(0, 8))
+        self._afficher_apercu(self.fichiers)
+
+        ctk.CTkLabel(inner, text="Légende", font=(POLICE, 13, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(6, 2))
+        self.champ_leg = ctk.CTkTextbox(inner, height=90, font=(POLICE, 12), corner_radius=10)
+        self.champ_leg.pack(fill="x")
+
+        self.chk_essai = ctk.CTkCheckBox(inner, text="Essai (ne publie pas vraiment)",
+                                        font=(POLICE, 13), fg_color=ACCENT_HOVER)
+        self.chk_essai.pack(anchor="w", pady=(12, 8))
+        lb = ctk.CTkFrame(inner, fg_color="transparent")
+        lb.pack(anchor="w")
+        self._btn(lb, "Publier", self.publier, primaire=True).pack(side="left", padx=(0, 8))
+        self._btn(lb, "Effacer", self.effacer_publier).pack(side="left")
+        self._zone_journal()
+
+    def _choisir_fichiers(self):
+        sel = filedialog.askopenfilenames(title="Choisir le(s) média(s)")
+        if sel:
+            self.fichiers = list(sel)
+            self.lbl_fichiers.configure(text=f"{len(sel)} fichier(s) sélectionné(s)")
+            self._afficher_apercu(self.fichiers)
+
+    def _afficher_apercu(self, medias):
+        """Affiche des vignettes des médias (images + 1re image des vidéos)."""
+        if not hasattr(self, "cadre_apercu") or not self.cadre_apercu.winfo_exists():
+            return
+        for w in self.cadre_apercu.winfo_children():
+            w.destroy()
+        self._apercu_imgs = []
+        if not medias:
+            ctk.CTkLabel(self.cadre_apercu, text="(aucun média sélectionné)",
+                         font=(POLICE, 12), text_color=MUTED).pack(pady=14)
+            return
+        try:
+            import tempfile
+            from PIL import Image
+            grille = ctk.CTkFrame(self.cadre_apercu, fg_color="transparent")
+            grille.pack(pady=10)
+            VID = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
+            par_ligne = 1 if len(medias) == 1 else 4
+            for i, media in enumerate(medias[:8]):
+                if os.path.splitext(media)[1].lower() in VID:
+                    tmp = os.path.join(tempfile.gettempdir(), f"helpva_apercu_{i}.png")
+                    montage.vignette(media, tmp)
+                    img = Image.open(tmp)
+                else:
+                    img = Image.open(media)
+                taille = (230, 300) if len(medias) == 1 else (120, 160)
+                img.thumbnail(taille)
+                cimg = ctk.CTkImage(img, size=img.size)
+                self._apercu_imgs.append(cimg)
+                ctk.CTkLabel(grille, image=cimg, text="").grid(
+                    row=i // par_ligne, column=i % par_ligne, padx=6, pady=6)
+            if len(medias) > 8:
+                ctk.CTkLabel(self.cadre_apercu, text=f"… et {len(medias) - 8} autre(s)",
+                             font=(POLICE, 11), text_color=MUTED).pack(pady=(0, 8))
+        except Exception:
+            for w in self.cadre_apercu.winfo_children():
+                w.destroy()
+            ctk.CTkLabel(self.cadre_apercu, text="(aperçu indisponible)",
+                         font=(POLICE, 12), text_color=MUTED).pack(pady=14)
+
+    def _ouvrir_creneau(self):
+        dossier = filedialog.askdirectory(title="Ouvrir un créneau (dossier ranger)")
+        if not dossier:
+            return
+        fichiers = sorted(os.listdir(dossier))
+        IMG = {".jpg", ".jpeg", ".png", ".webp"}
+        VID = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
+        images = [os.path.join(dossier, f) for f in fichiers if os.path.splitext(f)[1].lower() in IMG]
+        videos = [os.path.join(dossier, f) for f in fichiers if os.path.splitext(f)[1].lower() in VID]
+        if videos:
+            self.fichiers = [videos[0]]; self.type_seg.set("reel")
+        elif len(images) >= 2:
+            self.fichiers = images; self.type_seg.set("carrousel")
+        elif len(images) == 1:
+            messagebox.showwarning("Créneau", "Ce dossier n'a qu'UNE image.\n"
+                                   "Un carrousel nécessite au moins 2 images.")
+            return
+        else:
+            messagebox.showwarning("Créneau", "Aucun média dans ce dossier.")
+            return
+        self.lbl_fichiers.configure(text=f"{len(self.fichiers)} fichier(s) — {os.path.basename(dossier)}")
+        self._afficher_apercu(self.fichiers)
+        leg = ""
+        p = os.path.join(dossier, "legende.txt")
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                leg = f.read().strip()
+        self.champ_leg.delete("1.0", "end")
+        self.champ_leg.insert("1.0", leg)
+
+    def effacer_publier(self):
+        self.fichiers = []
+        self.lbl_fichiers.configure(text="Aucun fichier")
+        self.champ_leg.delete("1.0", "end")
+        self.type_seg.set("carrousel")
+        self.chk_essai.deselect()
+        self._afficher_apercu([])
+        print("[publier] formulaire vidé.")
+
+    def publier(self):
+        uid = self._profil()
+        if not uid:
+            messagebox.showwarning("Profil", "Choisissez d'abord un profil (Charger profils).")
+            return
+        if not self.fichiers:
+            messagebox.showwarning("Publier", "Choisissez au moins un fichier.")
+            return
+        legende = self.champ_leg.get("1.0", "end").strip()
+        essai = bool(self.chk_essai.get())
+        fichiers = list(self.fichiers)
+        type_post = self.type_seg.get()
+        methode = self.params.get("methode_pub", "web")
+        IMG = {".jpg", ".jpeg", ".png", ".webp"}
+        VID = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
+        ext = lambda f: os.path.splitext(f)[1].lower()
+
+        # Vérifie que les fichiers existent toujours.
+        manquants = [f for f in fichiers if not os.path.isfile(f)]
+        if manquants:
+            messagebox.showwarning("Fichiers", "Un ou plusieurs fichiers sont introuvables.\n"
+                                   "Re-sélectionne les médias.")
+            return
+
+        if type_post == "reel":
+            if len(fichiers) != 1:
+                messagebox.showwarning("Réel", "Un réel nécessite UNE SEULE vidéo "
+                                       f"(vous en avez {len(fichiers)}).")
+                return
+            if ext(fichiers[0]) not in VID:
+                messagebox.showwarning("Réel", "Le fichier d'un réel doit être une VIDÉO "
+                                       "(.mp4, .mov…).")
+                return
+        elif type_post == "carrousel":
+            if len(fichiers) < 2:
+                messagebox.showwarning("Carrousel", "Un carrousel nécessite AU MOINS 2 photos "
+                                       f"(vous en avez {len(fichiers)}).")
+                return
+            if not all(ext(f) in IMG for f in fichiers):
+                messagebox.showwarning("Carrousel", "Un carrousel ne doit contenir que des "
+                                       "PHOTOS (.jpg, .png…), pas de vidéo.")
+                return
+
+        def job():
+            # La pub manuelle est maintenant interruptible via le bouton Annuler.
+            instagram.definir_arret(lambda: self._annule_tache)
+            # AdsPower doit être OUVERT au moment de publier (il a pu se fermer
+            # depuis le chargement des profils).
+            if not adspower.api_joignable():
+                self._notifier(
+                    "AdsPower est fermé",
+                    "Impossible de publier : AdsPower n'est pas ouvert "
+                    "(ou son API locale ne répond pas).\n\n"
+                    "1) Ouvrez AdsPower et connectez-vous à votre compte.\n"
+                    "2) Vérifiez que l'API locale est activée.\n"
+                    "3) Recommence la publication.", erreur=True)
+                return
+            try:
+                with navigateur_du_profil(uid) as driver:
+                    if type_post == "carrousel":
+                        instagram.poster_carrousel(driver, fichiers, legende, essai, methode=methode)
+                    elif type_post == "reel":
+                        instagram.poster_reel(driver, fichiers[0], legende, essai, methode=methode)
+                print("✅ Terminé.")
+                self._notifier("Publication",
+                               "✅ ESSAI OK — rien n'a été publié." if essai
+                               else f"✅ Contenu publié avec succès !\n({type_post})")
+            except Exception as e:
+                print(f"[ERREUR] {e}")
+                if self._annule_tache:
+                    self._notifier("Publication annulée",
+                                   "⛔ Opération annulée — rien n'a été publié.")
+                    return
+                inssist_hint = ("\n4) Mode Inssist : vérifie que l'extension Inssist "
+                                "est bien INSTALLÉE et ACTIVE dans ce profil AdsPower "
+                                "(et connectée à Instagram).") if methode == "inssist" else ""
+                if self._est_erreur_environnement(str(e)):
+                    self._notifier(
+                        "Publication interrompue",
+                        "La connexion a été perdue pendant la publication "
+                        "(AdsPower fermé ? plus d'internet ?).\n\n"
+                        "1) Vérifiez qu'AdsPower est bien OUVERT.\n"
+                        "2) Vérifiez votre connexion internet.\n"
+                        "3) Recommence la publication." + inssist_hint, erreur=True)
+                else:
+                    self._notifier("Publication", f"❌ Échec :\n\n{e}" + inssist_hint,
+                                   erreur=True)
+        self._tache(job, "Publication en cours…", annulable=True)
+
+    # ==================================================================
+    #  Page : Automatiser
+    # ==================================================================
+    def _dossier_planning(self):
+        if self.dossier_planif_src and os.path.isdir(self.dossier_planif_src):
+            return self.dossier_planif_src
+        return os.path.join(self.dossier_modele(), "ranger")
+
+    def _lire_date_debut(self):
+        txt = self.champ_date.get().strip()
+        for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y"):
+            try:
+                return datetime.strptime(txt, fmt).date()
+            except ValueError:
+                continue
+        messagebox.showwarning("Date de début", "Date invalide (format JJ/MM/AAAA).")
+        return None
+
+    def choisir_dossier_planif(self):
+        dossier = filedialog.askdirectory(title="Choisir le dossier du modèle (ranger)")
+        if not dossier:
+            return
+        sous = os.path.join(dossier, "ranger")
+        if os.path.isdir(sous):
+            dossier = sous
+        a_sem = any(n.startswith("semaine-") and os.path.isdir(os.path.join(dossier, n))
+                    for n in os.listdir(dossier)) if os.path.isdir(dossier) else False
+        self.dossier_planif_src = dossier
+        if getattr(self, "lbl_dossier_planif", None) is not None:
+            self.lbl_dossier_planif.configure(text=f"Dossier : {dossier}")
+        if not a_sem:
+            messagebox.showwarning("Dossier",
+                                   "Ce dossier ne contient pas de « semaine-XX ».\n"
+                                   "Choisissez le dossier « ranger ».")
+
+    def choisir_adspower(self):
+        chemin = filedialog.askopenfilename(title="Choisir AdsPower Global.exe",
+                                            filetypes=[("AdsPower", "*.exe"), ("Tous", "*.*")])
+        if not chemin:
+            return
+        self.params["adspower_exe"] = chemin
+        parametres.sauver(self.params)
+        if getattr(self, "lbl_adspower", None) is not None:
+            self.lbl_adspower.configure(text=f"AdsPower : {os.path.basename(chemin)} (ouverture auto)")
+
+    def _maj_demarrage_windows(self):
+        if self.chk_winstart.get():
+            if demarrage.activer():
+                messagebox.showinfo("Démarrage Windows",
+                                    "✅ HelpVA se lancera au démarrage de Windows.")
+            else:
+                self.chk_winstart.deselect()
+                messagebox.showwarning("Démarrage Windows", "Impossible d'activer.")
+        else:
+            demarrage.desactiver()
+
+    def _resilier_licence(self):
+        if not messagebox.askyesno(
+                "Résilier la licence",
+                "Cela SUPPRIME la licence de ce PC et revient à l'écran d'activation.\n\n"
+                "⚠️ Cette licence sera définitivement bloquée : il faudra un "
+                "NOUVEAU code pour réactiver.\n\nContinuer ?"):
+            return
+        try:
+            if self.planif_actif:
+                self.arreter_planif()
+        except Exception:
+            pass
+        licence.supprimer_licence()
+        self.params["auto_actif"] = False
+        parametres.sauver(self.params)
+        self.statut = {"ok": False, "raison": "pas_active"}
+        self._router_licence()   # -> écran d'activation
+
+    def _page_premium_verrou(self):
+        self._entete_page("Automatiser les publications",
+                          "Fonctionnalité Premium.")
+        c = self._carte()
+        ctk.CTkLabel(c, text="🔒 Fonctionnalité Premium", font=(POLICE, 20, "bold"),
+                     text_color=TEXT).pack(anchor="w", pady=(0, 6))
+        ctk.CTkLabel(c, justify="left", font=(POLICE, 14), text_color=MUTED,
+                     text="L'automatisation des publications n'est pas incluse dans votre licence.\n"
+                          "Contacte le vendeur pour l'activer (option Premium).").pack(anchor="w")
+        emp = licence.empreinte_machine()
+        ctk.CTkLabel(c, text="Votre empreinte (à envoyer au vendeur) :", font=(POLICE, 13),
+                     text_color=MUTED).pack(anchor="w", pady=(14, 4))
+        le = ctk.CTkFrame(c, fg_color="transparent")
+        le.pack(fill="x")
+        ch = ctk.CTkEntry(le, height=42, font=("Consolas", 15))
+        ch.insert(0, emp)
+        ch.configure(state="readonly")
+        ch.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        def cop():
+            self.clipboard_clear(); self.clipboard_append(emp)
+            messagebox.showinfo("Copié", "Empreinte copiée.")
+        self._btn(le, "Copier", cop).pack(side="left")
+
+    def _page_automatiser(self):
+        # Automatisation = fonctionnalité PREMIUM (débloquée dans la licence).
+        if not (self.statut or {}).get("premium"):
+            self._page_premium_verrou()
+            return
+        self._entete_page("Automatiser les publications",
+                          "Ajoutez vos comptes — HelpVA les publie tous, tout seul, aux heures du calendrier.")
+        info = self._carte()
+        ctk.CTkLabel(info, justify="left", font=(POLICE, 13), text_color=MUTED,
+                     text="🔁 App fermée / PC redémarré → reprise seule + rattrapage des posts manqués.\n"
+                          "📌 Stories = manuelles. AdsPower s'ouvre tout seul au besoin.\n"
+                          "📌 Chaque compte a son profil AdsPower, son dossier rangé et sa date de début.").pack(anchor="w")
+        # Avertissement anti-blocage (espacement automatique).
+        av = ctk.CTkFrame(info, fg_color="#FFF7E6", corner_radius=10)
+        av.pack(fill="x", pady=(12, 0))
+        ctk.CTkLabel(av, justify="left", font=(POLICE, 13), text_color="#8A6D1B",
+                     text="⚠️ Ne mettez PAS tous vos comptes à la même seconde : Instagram peut "
+                          "flaguer un « réseau de bots ».\n"
+                          "Pas d'inquiétude — HelpVA espace AUTOMATIQUEMENT les publications de "
+                          "~5-6 min entre chaque compte pour rester naturel.").pack(anchor="w", padx=12, pady=10)
+
+        self._cadre_connexion()
+
+        ap = self._carte()
+        detect = adspower.chemin_adspower()
+        la = ctk.CTkFrame(ap, fg_color="transparent")
+        la.pack(fill="x")
+        self.lbl_adspower = ctk.CTkLabel(la, font=(POLICE, 13), text_color=MUTED,
+                                        text="AdsPower (ouvert automatiquement par HelpVA au besoin)")
+        self.lbl_adspower.pack(side="left")
+        if detect:
+            btn_ap = self._btn(la, "✓  AdsPower.exe détecté", self.choisir_adspower)
+            btn_ap.configure(state="disabled")
+        else:
+            btn_ap = self._btn(la, "Choisir AdsPower.exe…", self.choisir_adspower)
+        btn_ap.pack(side="right")
+
+        # --- Liste des comptes ---
+        cc = self._carte()
+        entete = ctk.CTkFrame(cc, fg_color="transparent")
+        entete.pack(fill="x")
+        ctk.CTkLabel(entete, text=f"Comptes automatisés ({len(self.comptes)})",
+                     font=(POLICE, 14, "bold"), text_color=ACCENT_HOVER).pack(side="left")
+        self._btn(entete, "+ Ajouter un compte", self._modal_ajouter_compte).pack(side="right")
+        if not self.comptes:
+            ctk.CTkLabel(cc, text="Aucun compte. Cliquez « + Ajouter un compte » pour commencer.",
+                         font=(POLICE, 13), text_color=MUTED).pack(anchor="w", pady=(12, 0))
+        for i, cpt in enumerate(self.comptes):
+            ignore = bool(cpt.get("ignore"))
+            row = ctk.CTkFrame(cc, fg_color=("#F3F1F8" if ignore else "#FBFBFE"), corner_radius=10)
+            row.pack(fill="x", pady=6)
+            ri = ctk.CTkFrame(row, fg_color="transparent")
+            ri.pack(fill="x", padx=14, pady=10)
+            g = ctk.CTkFrame(ri, fg_color="transparent")
+            g.pack(side="left", fill="x", expand=True)
+            titre = cpt.get("nom", "Compte") + ("   ⏸ ignoré" if ignore else "")
+            ctk.CTkLabel(g, text=titre, font=(POLICE, 14, "bold"),
+                         text_color=(MUTED if ignore else TEXT), anchor="w").pack(anchor="w")
+            ctk.CTkLabel(g, text=f"Dossier : {os.path.basename(cpt.get('dossier',''))}   ·   "
+                         f"Début : {cpt.get('date_debut','?')}", font=(POLICE, 12),
+                         text_color=MUTED, anchor="w").pack(anchor="w")
+            ctk.CTkButton(ri, text="Retirer", width=80, height=32,
+                          command=lambda k=i: self._retirer_compte(k),
+                          fg_color=("#FDECEA", "#3A1E1E"), text_color="#E5484D", hover_color="#F8D7D5",
+                          corner_radius=8, font=(POLICE, 12)).pack(side="right", padx=(8, 0))
+            ctk.CTkButton(ri, text=("▶ Reprendre" if ignore else "⏸ Ignorer"), width=104, height=32,
+                          command=lambda k=i: self._basculer_ignore_compte(k),
+                          fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER, hover_color="#E1DDFA",
+                          corner_radius=8, font=(POLICE, 12)).pack(side="right")
+
+        # --- Réglages globaux ---
+        pl = self._carte()
+        self._cadre_methode(pl)
+        self.chk_rattrapage = ctk.CTkCheckBox(pl, text="Rattraper les créneaux déjà passés",
+                                             font=(POLICE, 14), fg_color=ACCENT_HOVER)
+        self.chk_rattrapage.pack(anchor="w", pady=(2, 4))
+        self.chk_winstart = ctk.CTkCheckBox(pl, text="Lancer au démarrage de Windows (reprise auto)",
+                                           font=(POLICE, 14), fg_color=ACCENT_HOVER,
+                                           command=self._maj_demarrage_windows)
+        if demarrage.est_actif():
+            self.chk_winstart.select()
+        self.chk_winstart.pack(anchor="w", pady=(4, 2))
+
+        self.lbl_planif = ctk.CTkLabel(self.contenu, text="⏸ Automatisation arrêtée",
+                                      font=(POLICE, 14), text_color=MUTED)
+        self.lbl_planif.pack(anchor="w", padx=38, pady=(12, 6))
+        lb = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        lb.pack(anchor="w", padx=36)
+        self.btn_demarrer = self._btn(lb, "▶ Démarrer l'automatisation", self.demarrer_planif, primaire=True)
+        self.btn_demarrer.pack(side="left", padx=(0, 8))
+        self.btn_arreter = ctk.CTkButton(lb, text="■ Arrêter", command=self.arreter_planif,
+                                        state="disabled", height=42, corner_radius=12,
+                                        fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER, hover_color="#E1DDFA")
+        self.btn_arreter.pack(side="left", padx=(0, 8))
+        ctk.CTkButton(lb, text="🔍 Vérifier le planning", command=self.verifier_planning,
+                      height=42, corner_radius=12, fg_color=ACCENT_SOFT,
+                      text_color=ACCENT_HOVER, hover_color="#E1DDFA",
+                      font=(POLICE, 14)).pack(side="left")
+        self._zone_journal(persistant=True)
+        if self.planif_actif:
+            self._maj_boutons_planif(True)
+
+    def _rafraichir_auto(self):
+        self.page = ""
+        self._vider(self.contenu)
+        self._page_automatiser()
+
+    def _retirer_compte(self, index):
+        if 0 <= index < len(self.comptes):
+            nom = self.comptes[index].get("nom", "ce compte")
+            if messagebox.askyesno("Retirer", f"Retirer {nom} de la liste ?"):
+                del self.comptes[index]
+                self.params["auto_comptes"] = self.comptes
+                parametres.sauver(self.params)
+                self._rafraichir_auto()
+
+    def _basculer_ignore_compte(self, index):
+        """Met en pause / réactive un compte (pris en compte même auto en cours)."""
+        if 0 <= index < len(self.comptes):
+            self.comptes[index]["ignore"] = not self.comptes[index].get("ignore")
+            self.params["auto_comptes"] = self.comptes
+            parametres.sauver(self.params)
+            nom = self.comptes[index].get("nom", "ce compte")
+            if self.comptes[index]["ignore"]:
+                print(f"[auto] ⏸ {nom} est IGNORÉ — l'automatisation ne le publiera plus.")
+            else:
+                print(f"[auto] ▶ {nom} est RÉACTIVÉ.")
+            self._rafraichir_auto()
+
+    def _modal_ajouter_compte(self):
+        if not self.profils:
+            messagebox.showwarning("Comptes",
+                                   "Charge d'abord les profils AdsPower (bouton « Charger profils »).")
+            return
+        top = ctk.CTkToplevel(self)
+        top.title("Ajouter un compte")
+        top.geometry("480x430")
+        top.configure(fg_color=BG)
+        top.transient(self)
+        self._modale_devant(top)
+        top.after(200, lambda: top.winfo_exists() and top.grab_set())
+        c = ctk.CTkFrame(top, fg_color=CARD, corner_radius=18, border_width=1, border_color=BORDER)
+        c.pack(fill="both", expand=True, padx=16, pady=16)
+        ctk.CTkLabel(c, text="Ajouter un compte", font=(POLICE, 20, "bold"),
+                     text_color=TEXT).pack(anchor="w", padx=22, pady=(20, 12))
+
+        ctk.CTkLabel(c, text="Profil AdsPower", font=(POLICE, 13, "bold"),
+                     text_color=MUTED).pack(anchor="w", padx=22)
+        noms = list(self.profils.keys())
+        prof_menu = ctk.CTkOptionMenu(c, values=noms, width=380, fg_color="#FBFBFE",
+                                      text_color=TEXT, button_color=ACCENT_SOFT,
+                                      button_hover_color="#E1DDFA")
+        prof_menu.pack(anchor="w", padx=22, pady=(6, 12))
+
+        ctk.CTkLabel(c, text="Dossier rangé du compte", font=(POLICE, 13, "bold"),
+                     text_color=MUTED).pack(anchor="w", padx=22)
+        etat = {"dossier": None}
+        ld = ctk.CTkFrame(c, fg_color="transparent")
+        ld.pack(fill="x", padx=22, pady=(6, 4))
+        lbl_dos = ctk.CTkLabel(ld, text="Aucun dossier", font=(POLICE, 12), text_color=MUTED)
+
+        def choisir():
+            dossier = filedialog.askdirectory(title="Choisir le dossier rangé du compte")
+            if not dossier:
+                return
+            sous = os.path.join(dossier, "ranger")
+            if os.path.isdir(sous):
+                dossier = sous
+            a_sem = any(n.startswith("semaine-") and os.path.isdir(os.path.join(dossier, n))
+                        for n in os.listdir(dossier)) if os.path.isdir(dossier) else False
+            if not a_sem:
+                messagebox.showwarning("Dossier", "Pas de « semaine-XX » ici. Choisissez le dossier « ranger ».")
+                return
+            etat["dossier"] = dossier
+            lbl_dos.configure(text=os.path.basename(dossier))
+        self._btn(ld, "Importer…", choisir).pack(side="left", padx=(0, 8))
+        lbl_dos.pack(side="left")
+
+        ctk.CTkLabel(c, text="Date de début (JJ/MM/AAAA)", font=(POLICE, 13, "bold"),
+                     text_color=MUTED).pack(anchor="w", padx=22, pady=(10, 0))
+        champ_d = ctk.CTkEntry(c, width=160, font=(POLICE, 14))
+        champ_d.insert(0, date.today().strftime("%d/%m/%Y"))
+        champ_d.pack(anchor="w", padx=22, pady=(6, 0))
+
+        def ajouter():
+            if not etat["dossier"]:
+                messagebox.showwarning("Compte", "Importe le dossier rangé du compte.")
+                return
+            txt = champ_d.get().strip()
+            d = None
+            for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y"):
+                try:
+                    d = datetime.strptime(txt, fmt).date(); break
+                except ValueError:
+                    continue
+            if not d:
+                messagebox.showwarning("Date", "Date invalide (JJ/MM/AAAA).")
+                return
+            nom = prof_menu.get()
+            uid = self.profils.get(nom)
+            if any(cpt.get("profil") == uid and cpt.get("dossier") == etat["dossier"]
+                   for cpt in self.comptes):
+                messagebox.showinfo("Compte", "Ce compte (même profil + dossier) existe déjà.")
+                return
+            self.comptes.append({"nom": nom, "profil": uid,
+                                 "dossier": etat["dossier"], "date_debut": d.isoformat()})
+            self.params["auto_comptes"] = self.comptes
+            parametres.sauver(self.params)
+            top.destroy()
+            self._rafraichir_auto()
+
+        act = ctk.CTkFrame(c, fg_color="transparent")
+        act.pack(fill="x", padx=22, pady=20, side="bottom")
+        ctk.CTkButton(act, text="Annuler", command=top.destroy, width=90, fg_color=ACCENT_SOFT,
+                      text_color=ACCENT_HOVER, hover_color="#E1DDFA", corner_radius=10).pack(side="right", padx=(8, 0))
+        self._btn(act, "Ajouter", ajouter, primaire=True).pack(side="right")
+
+    def verifier_planning(self):
+        """Récapitulatif par compte : déjà publiées / à venir / en retard + prochaine."""
+        if not self.comptes:
+            messagebox.showinfo("Planning", "Ajoutez au moins un compte d'abord.")
+            return
+        offset = self._offset_horloge() or timedelta(0)
+        maintenant = datetime.now() + offset
+        lignes = []
+        tot_pub = tot_avenir = tot_retard = 0
+        for cpt in self.comptes:
+            nom = cpt.get("nom", "compte")
+            dossier = cpt.get("dossier", "")
+            try:
+                d = date.fromisoformat(cpt.get("date_debut"))
+                creneaux = planificateur.lister_creneaux(dossier, d)
+                etat = planificateur.charger_etat(dossier)
+                r = planificateur.resume(creneaux, etat, maintenant)
+            except Exception:
+                lignes.append(f"• {nom} : ⚠️ dossier introuvable")
+                continue
+            tot_pub += r["publies"]; tot_avenir += r["a_venir"]; tot_retard += r["en_retard"]
+            pr = r["prochain"]
+            suite = (f" → prochaine {pr['type']} le {_date_fr(pr['quand'].date())} "
+                     f"à {pr['quand'].strftime('%Hh%M')}" if pr else " → rien à venir")
+            lignes.append(f"• {nom} : {r['publies']} publiées · {r['a_venir']} à venir · "
+                          f"{r['en_retard']} en retard{suite}")
+            # Détail de CE qui est en retard (type + jour + heure).
+            for cr in r.get("en_retard_liste", []):
+                lignes.append(f"      ⏳ en retard : {cr['type']} du "
+                              f"{_date_fr(cr['quand'].date())} à {cr['quand'].strftime('%Hh%M')}")
+        msg = (f"Récapitulatif — {len(self.comptes)} compte(s)\n"
+               f"TOTAL : {tot_pub} publiées · {tot_avenir} à venir · {tot_retard} en retard\n\n"
+               + "\n\n".join(lignes))
+        print("\n=== Vérification du planning ===\n" + msg)
+        messagebox.showinfo("Planning", msg)
+
+    def demarrer_planif(self):
+        if self.planif_actif:
+            return
+        if not self.comptes:
+            messagebox.showwarning("Comptes", "Ajoutez au moins un compte avant de démarrer.")
+            return
+        invalides = [c for c in self.comptes if not os.path.isdir(c.get("dossier", ""))]
+        if invalides:
+            messagebox.showwarning("Comptes",
+                                   "Certains comptes ont un dossier introuvable.\n"
+                                   "Retire-les ou refais leur rangement.")
+            return
+        rattrapage = bool(self.chk_rattrapage.get())
+        self.params.update({"auto_actif": True, "auto_comptes": self.comptes,
+                            "auto_rattrapage": rattrapage})
+        self.params.pop("auto_essai", None)
+        parametres.sauver(self.params)
+        # Reprise après extinction/redémarrage : on active le démarrage Windows.
+        ok_dem = demarrage.activer()
+        if ok_dem:
+            try:
+                if getattr(self, "chk_winstart", None) is not None:
+                    self.chk_winstart.select()
+            except Exception:
+                pass
+        self.planif_actif = True
+        instagram.definir_arret(lambda: not self.planif_actif)   # arrêt interruptible
+        self._maj_boutons_planif(True)
+        print(f"\n▶ Automatisation démarrée pour {len(self.comptes)} compte(s).")
+        if ok_dem and demarrage.est_actif():
+            print(f"[auto] ✅ Reprise après redémarrage activée.\n"
+                  f"       (au démarrage Windows : {demarrage.commande()})")
+        else:
+            print("[auto] ⚠️ Impossible d'activer le démarrage Windows — la reprise "
+                  "après redémarrage risque de ne pas se faire.")
+        self.planif_thread = threading.Thread(
+            target=self._boucle_planif, args=(list(self.comptes), rattrapage, False), daemon=True)
+        self.planif_thread.start()
+
+    def arreter_planif(self):
+        if not self.planif_actif:
+            return
+        self.planif_actif = False
+        self.params["auto_actif"] = False
+        parametres.sauver(self.params)
+        demarrage.desactiver()          # plus de relance auto au démarrage Windows
+        try:
+            if getattr(self, "chk_winstart", None) is not None:
+                self.chk_winstart.deselect()
+        except Exception:
+            pass
+        self._maj_boutons_planif(False)
+        print("\n■ Automatisation arrêtée.")
+
+    def _reprendre_auto(self):
+        if not (self.statut or {}).get("premium"):
+            return
+        if self.planif_actif or not self.params.get("auto_actif"):
+            return
+        comptes = [c for c in self.params.get("auto_comptes", [])
+                   if c.get("dossier") and os.path.isdir(c["dossier"])]
+        if not comptes:
+            return
+        essai = self.params.get("auto_essai", False)
+        self.comptes = comptes
+        self.planif_actif = True
+        instagram.definir_arret(lambda: not self.planif_actif)   # arrêt interruptible
+        demarrage.activer()   # re-arme le démarrage Windows pour le PROCHAIN reboot
+        self._maj_boutons_planif(True)
+        print(f"\n▶ Automatisation REPRISE automatiquement — {len(comptes)} compte(s) (rattrapage)…")
+        self._notifier("Automatisation", "▶ Automatisation reprise automatiquement.\n"
+                       "Les publications manquées vont être rattrapées.")
+        self.planif_thread = threading.Thread(
+            target=self._boucle_planif, args=(comptes, True, essai), daemon=True)
+        self.planif_thread.start()
+
+    def _maj_boutons_planif(self, actif):
+        try:
+            self.btn_demarrer.configure(state="disabled" if actif else "normal")
+            self.btn_arreter.configure(state="normal" if actif else "disabled")
+            self.lbl_planif.configure(text="⏺ Automatisation ACTIVE — laisse l'app ouverte."
+                                      if actif else "⏸ Automatisation arrêtée")
+        except Exception:
+            pass
+
+    def _publier_creneau(self, driver, creneau, essai=False):
+        typ, medias, legende = creneau["type"], creneau["medias"], creneau["legende"]
+        methode = self.params.get("methode_pub", "web")
+        if typ == "reel":
+            instagram.poster_reel(driver, medias[0], legende, essai=essai, methode=methode)
+        elif typ == "carousel":
+            if len(medias) >= 2:
+                instagram.poster_carrousel(driver, medias, legende, essai=essai, methode=methode)
+            else:
+                instagram.poster_publication(driver, medias[0], legende, essai=essai, methode=methode)
+        else:
+            instagram.poster_publication(driver, medias[0], legende, essai=essai, methode=methode)
+
+    def _dormir_planif(self, secondes):
+        import time
+        fin = time.time() + secondes
+        while time.time() < fin and self.planif_actif:
+            time.sleep(1)
+
+    def _offset_horloge(self):
+        """Décalage entre la VRAIE heure (internet) et l'horloge du PC.
+        Retourne un timedelta, ou None si internet indisponible."""
+        try:
+            dt = horloge.date_reelle()   # datetime aware UTC, ou None
+            if dt is None:
+                return None
+            internet_local = dt.astimezone().replace(tzinfo=None)  # heure locale sans tz
+            return internet_local - datetime.now()
+        except Exception:
+            return None
+
+    def _est_erreur_environnement(self, msg):
+        """Vrai si l'erreur vient de l'ENVIRONNEMENT (disque plein, AdsPower,
+        internet) et non du contenu du post -> à corriger puis reprendre."""
+        m = (msg or "").lower()
+        cles = (
+            "disk space", "disque", "delete-cache", "out of disk", "espace",
+            "adspower", "50325", "local.adspower",
+            "connection", "connexion", "max retries", "refused", "getaddrinfo",
+            "failed to establish", "timed out", "timeout", "internet",
+            "réseau", "network", "err_internet", "newconnectionerror",
+            "chrome not reachable", "session not created",
+            "page d'accueil", "accueil", "charger la page", "composer",
+            "instagram est bien connecté", "err_",
+        )
+        return any(k in m for k in cles)
+
+    def _est_erreur_locale(self, msg):
+        """Problème LOCAL de la machine (disque plein, AdsPower KO) : ça bloque
+        TOUS les comptes -> pause + popup."""
+        m = (msg or "").lower()
+        cles = ("disk space", "disque", "delete-cache", "out of disk", "espace",
+                "adspower", "50325", "local.adspower",
+                "chrome not reachable", "session not created")
+        return any(k in m for k in cles)
+
+    def _est_erreur_connexion(self, msg):
+        """Problème de connexion/chargement (peut être global OU propre au compte)."""
+        m = (msg or "").lower()
+        cles = ("accueil", "page d'accueil", "charger la page", "composer",
+                "connection", "connexion", "max retries", "refused", "getaddrinfo",
+                "failed to establish", "timed out", "timeout", "internet",
+                "réseau", "network", "err_", "newconnectionerror")
+        return any(k in m for k in cles)
+
+    def _internet_ok(self):
+        """Test rapide : internet dispo (via l'horloge internet). True/False."""
+        try:
+            return horloge.date_reelle() is not None
+        except Exception:
+            return False
+
+    def _bloquer_pour_erreur(self, nom, msg):
+        """Met l'automatisation EN PAUSE et affiche un popup bloquant.
+        Reprend quand l'utilisateur clique « Continuer » (ou si on arrête)."""
+        ev = threading.Event()
+        self._event_continuer = ev
+        self.file_log.put(("planif_bloque", nom, msg))
+        print("[auto] ⏸ En pause — corrige le problème puis clique « Continuer ».")
+        while self.planif_actif:
+            if ev.wait(timeout=0.5):
+                break
+        if self.planif_actif:
+            print("[auto] ▶ Reprise — nouvelle tentative du post…")
+
+    def _popup_erreur_continuer(self, nom, msg):
+        """Popup rouge : montre l'erreur d'environnement et attend « Continuer »."""
+        top = ctk.CTkToplevel(self)
+        top.title("Automatisation en pause")
+        top.geometry("480x360")
+        top.configure(fg_color=BG)
+        top.transient(self)
+        self._modale_devant(top)
+        top.after(200, lambda: top.winfo_exists() and top.grab_set())
+
+        def reprendre():
+            ev = getattr(self, "_event_continuer", None)
+            if ev is not None:
+                ev.set()
+            if top.winfo_exists():
+                top.destroy()
+
+        top.protocol("WM_DELETE_WINDOW", reprendre)
+
+        c = ctk.CTkFrame(top, fg_color=CARD, corner_radius=18,
+                         border_width=1, border_color=BORDER)
+        c.pack(fill="both", expand=True, padx=16, pady=16)
+        ctk.CTkLabel(c, text="⏸ Automatisation en pause", font=(POLICE, 20, "bold"),
+                     text_color="#E24A4A").pack(anchor="w", padx=24, pady=(22, 6))
+        ctk.CTkLabel(c, text=f"Compte : {nom}", font=(POLICE, 14, "bold"),
+                     text_color=TEXT).pack(anchor="w", padx=24, pady=(0, 10))
+        cadre = ctk.CTkFrame(c, fg_color=BG, corner_radius=12)
+        cadre.pack(fill="x", padx=24, pady=(0, 8))
+        ctk.CTkLabel(cadre, text=msg, font=(POLICE, 13), text_color=TEXT,
+                     wraplength=380, justify="left").pack(anchor="w", padx=14, pady=12)
+        _sup = (" · extension Inssist installée/active"
+                if self.params.get("methode_pub") == "inssist" else "")
+        ctk.CTkLabel(c, text="Corrige le problème ci-dessus (espace disque, AdsPower "
+                             f"ouvert, connexion internet{_sup}…) puis clique « Continuer » : "
+                             "l'automatisation reprendra ce même post.",
+                     font=(POLICE, 12), text_color=MUTED, wraplength=420,
+                     justify="left").pack(anchor="w", padx=24, pady=(4, 12))
+        ctk.CTkButton(c, text="▶ Continuer", height=44, font=(POLICE, 15, "bold"),
+                      fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                      command=reprendre).pack(fill="x", padx=24, pady=(0, 20), side="bottom")
+
+    def _prochaine_globale(self, comptes, maintenant, essai_faits=None):
+        """(quand, nom, creneau) de la PROCHAINE publication à venir, ou None."""
+        meilleur = None
+        for cpt in comptes:
+            dossier = cpt.get("dossier")
+            nom = cpt.get("nom", "compte")
+            try:
+                d = date.fromisoformat(cpt.get("date_debut"))
+                creneaux = planificateur.lister_creneaux(dossier, d)
+                etat = planificateur.charger_etat(dossier)
+            except Exception:
+                continue
+            faits = (essai_faits or {}).get(dossier, set())
+            for c in creneaux:
+                if not planificateur.est_automatisable(c):
+                    continue
+                if c["id"] in etat or c["id"] in faits:
+                    continue
+                if c["quand"] <= maintenant:
+                    continue
+                if meilleur is None or c["quand"] < meilleur[0]:
+                    meilleur = (c["quand"], nom, c)
+        return meilleur
+
+    def _annoncer_prochaine(self, comptes, maintenant, essai_faits=None):
+        """Écrit dans le journal quand/où aura lieu la prochaine publication."""
+        p = self._prochaine_globale(comptes, maintenant, essai_faits)
+        if p is None:
+            print("[auto] 🎉 Plus aucune publication prévue — tout est fait pour ces comptes.")
+            return
+        quand, nom, c = p
+        h = quand.strftime("%Hh%M")
+        typ = c.get("type")
+        if quand.date() == maintenant.date():
+            print(f"[auto] 🗓️ Prochaine publication AUJOURD'HUI à {h} — {nom} ({typ}).")
+        elif quand.date() == maintenant.date() + timedelta(days=1):
+            print(f"[auto] 🗓️ Prochaine publication DEMAIN {_date_fr(quand.date())} "
+                  f"à {h} — {nom} ({typ}).")
+        else:
+            print(f"[auto] 🗓️ Prochaine publication le {_date_fr(quand.date())} "
+                  f"à {h} — {nom} ({typ}).")
+
+    def _reste_du_maintenant(self, comptes, maintenant, rattrapage, debut,
+                             essai_faits=None, essai=False):
+        """Vrai s'il reste AU MOINS un autre post à publier MAINTENANT (un autre
+        compte / créneau dû à cet instant). Sert à n'espacer que les pubs
+        rapprochées (anti-blocage)."""
+        for cpt in comptes:
+            dossier = cpt.get("dossier")
+            try:
+                d = date.fromisoformat(cpt.get("date_debut"))
+                creneaux = planificateur.lister_creneaux(dossier, d)
+                etat = planificateur.charger_etat(dossier)
+                dus = planificateur.a_publier_maintenant(
+                    creneaux, etat, maintenant, rattrapage, debut)
+            except Exception:
+                continue
+            if essai:
+                faits = (essai_faits or {}).get(dossier, set())
+                dus = [x for x in dus if x["id"] not in faits]
+            if dus:
+                return True
+        return False
+
+    def _boucle_planif(self, comptes, rattrapage, essai=False):
+        """Agent multi-comptes : fait le tour de tous les comptes en boucle,
+        et publie les créneaux dus de chacun (profil AdsPower + dossier propres)."""
+        import time as _time
+        essai_faits = {}   # dossier -> set d'ids déjà traités en essai
+        # Heure de référence = internet (pas l'horloge du PC qui peut être fausse).
+        offset = self._offset_horloge()
+        if offset is None:
+            print("[auto] ⚠️ Pas d'internet pour l'heure exacte — horloge du PC utilisée.")
+            offset = timedelta(0)
+        else:
+            print("[auto] ⏱️ Heure synchronisée sur internet.")
+        derniere_sync = _time.time()
+        debut = datetime.now() + offset
+        print(f"[auto] {len(comptes)} compte(s) à surveiller.")
+        self._annoncer_prochaine(comptes, datetime.now() + offset,
+                                 essai_faits if essai else None)
+        while self.planif_actif:
+            # Re-synchro l'heure toutes les heures (au cas où l'horloge dérive).
+            if _time.time() - derniere_sync > 3600:
+                o = self._offset_horloge()
+                if o is not None:
+                    offset = o
+                derniere_sync = _time.time()
+            maintenant = datetime.now() + offset
+            # Liste EN DIRECT : on relit self.comptes à chaque tour, en enlevant
+            # les comptes ignorés / retirés / au dossier disparu. Ainsi on peut
+            # retirer ou mettre en pause un compte pendant que l'auto tourne.
+            comptes_actifs = [c for c in self.comptes
+                              if not c.get("ignore")
+                              and c.get("dossier") and os.path.isdir(c["dossier"])]
+            for cpt in comptes_actifs:
+                if not self.planif_actif:
+                    break
+                uid = cpt.get("profil")
+                dossier = cpt.get("dossier")
+                nom = cpt.get("nom", "compte")
+                try:
+                    d = date.fromisoformat(cpt.get("date_debut"))
+                except Exception:
+                    continue
+                try:
+                    creneaux = planificateur.lister_creneaux(dossier, d)
+                    etat = planificateur.charger_etat(dossier)
+                    dus = planificateur.a_publier_maintenant(
+                        creneaux, etat, maintenant, rattrapage, debut)
+                except Exception:
+                    continue
+                if essai:
+                    faits = essai_faits.setdefault(dossier, set())
+                    dus = [c for c in dus if c["id"] not in faits]
+                if not dus:
+                    continue
+
+                c = dus[0]
+                # AdsPower doit répondre (on le lance au besoin).
+                if not adspower.api_joignable():
+                    print("[auto] AdsPower fermé — ouverture…")
+                    if not adspower.assurer_adspower():
+                        print("[auto] ❌ AdsPower introuvable. Réessai plus tard.")
+                        self._dormir_planif(60)
+                        continue
+                print(f"\n[auto] {nom} → {c['id']} "
+                      f"({c['quand'].strftime('%d/%m %Hh%M')}, {c['type']})…")
+
+                # On réessayez jusqu'à 3 fois avant d'abandonner un post
+                # (une pub Instagram peut rater pour un souci d'affichage passager).
+                MAX_ESSAIS = 3
+                succes = False
+                globale = None       # message si problème GLOBAL (bloque tout)
+                derniere_err = None
+                arrete = False
+                for tentative in range(1, MAX_ESSAIS + 1):
+                    if not self.planif_actif:
+                        arrete = True
+                        break
+                    if tentative == 1:
+                        print(f"[auto] 🌐 Ouverture du navigateur AdsPower pour {nom}…")
+                    else:
+                        print(f"[auto] 🔁 Nouvelle tentative {tentative}/{MAX_ESSAIS} pour {nom}…")
+                    try:
+                        with navigateur_du_profil(uid) as driver:
+                            self._publier_creneau(driver, c, essai)
+                        succes = True
+                    except Exception as e:
+                        derniere_err = str(e)
+                        if not self.planif_actif or "arrêtée par l'utilisateur" in str(e).lower():
+                            arrete = True   # l'utilisateur a cliqué Arrêter -> on sort net
+                        elif self._est_erreur_locale(str(e)):
+                            globale = str(e)   # disque/AdsPower : bloque tout -> popup
+                    finally:
+                        try:
+                            adspower.arreter_profil(uid)
+                        except Exception:
+                            pass
+                    if succes or globale or arrete:
+                        break
+                    print(f"[auto] ⚠️ {nom} : échec tentative {tentative}/{MAX_ESSAIS} — {derniere_err}")
+                    if tentative < MAX_ESSAIS and self.planif_actif:
+                        self._dormir_planif(20)   # petite pause avant de réessayer
+
+                if arrete or not self.planif_actif:
+                    print(f"[auto] ⏹ Arrêt demandé — {nom} : publication interrompue "
+                          "(le post n'est pas marqué échoué).")
+                    break   # on sort du tour de comptes sans rien marquer
+
+                # Après 3 échecs : si c'est une panne de connexion ET qu'internet
+                # est coupé pour de bon -> c'est GLOBAL (tous les comptes échoueront).
+                if not succes and globale is None:
+                    if self._est_erreur_connexion(derniere_err) and not self._internet_ok():
+                        globale = derniere_err
+
+                if globale is not None:
+                    # Problème global (disque/AdsPower/plus d'internet) : pause + popup,
+                    # sans perdre le post (retenté après « Continuer »).
+                    self._bloquer_pour_erreur(nom, globale)
+                    break
+
+                if succes:
+                    if essai:
+                        essai_faits.setdefault(dossier, set()).add(c["id"])
+                        print(f"[auto] ✅ ESSAI OK — {nom} ({c['type']}).")
+                    else:
+                        planificateur.marquer(dossier, etat, c["id"], "publie")
+                        print(f"[auto] ✅ {nom} — {c['type']} publié.")
+                else:
+                    # Échec propre à CE compte (checkpoint, refus de poster…) :
+                    # on marque et on CONTINUE avec les comptes suivants.
+                    if not essai:
+                        planificateur.marquer(dossier, etat, c["id"], "echec")
+                    else:
+                        essai_faits.setdefault(dossier, set()).add(c["id"])
+                    print(f"[auto] ⛔ {nom} : ce compte n'a pas pu poster après {MAX_ESSAIS} essais "
+                          f"— on passe au compte suivant. ({derniere_err})")
+
+                # Journal : dire quand aura lieu la prochaine publication.
+                self._annoncer_prochaine(comptes_actifs, datetime.now() + offset,
+                                         essai_faits if essai else None)
+
+                # Espacement anti-blocage : SEULEMENT si une autre pub arrive de
+                # près (même heure, à quelques minutes, ou un retard puis un
+                # nouveau). Si la prochaine pub est bien plus tard -> pas de pause.
+                if self.planif_actif:
+                    maintenant_reel = datetime.now() + offset
+                    du_maintenant = self._reste_du_maintenant(
+                        comptes_actifs, maintenant, rattrapage, debut, essai_faits, essai)
+                    proche = False
+                    prochaine = self._prochaine_globale(
+                        comptes_actifs, maintenant_reel, essai_faits if essai else None)
+                    if prochaine is not None:
+                        delai = (prochaine[0] - maintenant_reel).total_seconds()
+                        proche = 0 <= delai <= 360        # prochaine pub dans <= 6 min
+                    if du_maintenant or proche:
+                        pause = random.randint(300, 360)
+                        print(f"[auto] ⏱️ Pause anti-blocage de {pause // 60} min "
+                              f"{pause % 60}s avant la publication suivante…")
+                        self._dormir_planif(pause)
+            if self.planif_actif:
+                self._dormir_planif(30)   # rien à faire : on revérifie dans 30 s
+        self.planif_actif = False
+        self.file_log.put(("planif_arret",))
+        print("[auto] Automatisation terminée.")
+
+    # ---- re-contrôle périodique de l'abonnement ----
+    def _planifier_verif_periodique(self):
+        if self._timer_verif:
+            try:
+                self.after_cancel(self._timer_verif)
+            except Exception:
+                pass
+            self._timer_verif = None
+        self._echecs_verif = 0
+        if self.statut.get("type") in ("mois", "an", "essai"):
+            self._timer_verif = self.after(INTERVALLE_VERIF_MS, self._verif_periodique)
+
+    def _verif_periodique(self):
+        def job():
+            self.file_log.put(("verif_licence", licence.verifier()))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _traiter_verif(self, st):
+        if st["ok"]:
+            self.statut = st
+            self._echecs_verif = 0
+            self._planifier_verif_periodique()
+            return
+        if st["raison"] == "pas_internet":
+            self._echecs_verif = getattr(self, "_echecs_verif", 0) + 1
+            if self._echecs_verif <= MAX_ECHECS_VERIF:
+                self._timer_verif = self.after(RETRY_VERIF_MS, self._verif_periodique)
+                return
+        self.planif_actif = False
+        self.statut = st
+        self._vider()
+        if st["raison"] == "pas_internet":
+            self._ecran_internet()
+        else:
+            self._ecran_activation()
+
+    # ==================================================================
+    #  Éditeur de calendrier (semaines, max 4)
+    # ==================================================================
+    def ouvrir_editeur_calendrier(self):
+        """Éditeur de calendrier — UI en tkinter/ttk CLASSIQUE (widgets légers)
+        pour un rendu instantané (ajout/suppression/duplication de semaines)."""
+        import copy
+        cal = calendrier.charger_calendrier()
+        courant = {"nom": next(iter(cal), None)}
+
+        top = tk.Toplevel(self)
+        top.title("Calendrier")
+        top.geometry("700x760")
+        top.configure(bg=BG)
+        top.transient(self)
+        self._modale_devant(top)
+        top.after(200, lambda: top.winfo_exists() and top.grab_set())
+
+        def bouton(parent, texte, cmd, genre="doux", **kw):
+            couleurs = {"doux": (ACCENT_SOFT, ACCENT_HOVER),
+                        "primaire": (ACCENT, "#FFFFFF"),
+                        "danger": ("#FDECEA", "#E5484D")}
+            bg, fg = couleurs.get(genre, couleurs["doux"])
+            kw.setdefault("font", (POLICE, 12))
+            return tk.Button(parent, text=texte, command=cmd, bg=bg, fg=fg,
+                             activebackground=bg, activeforeground=fg, relief="flat",
+                             bd=0, cursor="hand2", padx=12, pady=6, **kw)
+
+        # --- en-tête ---
+        tk.Label(top, text="Ajuster le calendrier", bg=BG, fg=TEXT,
+                 font=(POLICE, 20, "bold")).pack(anchor="w", padx=22, pady=(16, 0))
+        tk.Label(top, text="Maximum 4 semaines (1 mois). Duplique ou supprime des semaines.",
+                 bg=BG, fg=MUTED, font=(POLICE, 12)).pack(anchor="w", padx=22, pady=(2, 8))
+        besoins_lbl = tk.Label(top, text="", bg=BG, fg=ACCENT_HOVER, font=(POLICE, 13, "bold"))
+        besoins_lbl.pack(anchor="w", padx=22, pady=(0, 8))
+
+        # --- Contenu : « Vidéos uniquement » (tout reels) ou « Images + Vidéos » ---
+        def _mode_actuel():
+            for jours in cal.values():
+                for creneaux in jours.values():
+                    for cr in creneaux:
+                        if cr.get("type") in ("carousel", "story"):
+                            return "mixte"
+            return "reels"
+
+        mode = {"val": _mode_actuel()}
+        mode_frame = tk.Frame(top, bg=BG)
+        mode_frame.pack(anchor="w", padx=22, pady=(0, 10))
+        tk.Label(mode_frame, text="Contenu :", bg=BG, fg=TEXT,
+                 font=(POLICE, 12, "bold")).pack(side="left", padx=(0, 8))
+
+        def construire_mode():
+            for w in mode_frame.winfo_children()[1:]:   # garde le label "Contenu :"
+                w.destroy()
+            for cle, libelle in (("mixte", "Images + Vidéos"), ("reels", "Vidéos uniquement")):
+                actif = mode["val"] == cle
+                tk.Button(mode_frame, text=libelle,
+                          command=lambda c=cle: appliquer_mode(c),
+                          bg=(ACCENT if actif else ACCENT_SOFT),
+                          fg=("#FFFFFF" if actif else ACCENT_HOVER),
+                          activebackground=(ACCENT if actif else ACCENT_SOFT),
+                          activeforeground=("#FFFFFF" if actif else ACCENT_HOVER),
+                          relief="flat", bd=0, cursor="hand2",
+                          font=(POLICE, 11, "bold"), padx=12, pady=5).pack(side="left", padx=(0, 6))
+
+        def appliquer_mode(nouveau):
+            if nouveau == mode["val"]:
+                return
+            if nouveau == "reels":
+                if not messagebox.askyesno(
+                        "Vidéos uniquement",
+                        "Mettre TOUT le calendrier en reels (vidéos) ?\n"
+                        "Les carrousels et stories deviendront des reels."):
+                    return
+                for jours in cal.values():
+                    for creneaux in jours.values():
+                        for cr in creneaux:
+                            cr["type"] = "reel"
+            else:
+                if not messagebox.askyesno(
+                        "Images + Vidéos",
+                        "Revenir au calendrier mixte par défaut (images + vidéos) ?\n"
+                        "Cela REMPLACE le calendrier actuel."):
+                    return
+                cal.clear()
+                cal.update(copy.deepcopy(calendrier.CALENDRIER))
+                courant["nom"] = next(iter(cal), None)
+            mode["val"] = nouveau
+            construire_mode()
+            construire_barre()
+            afficher_semaine(courant["nom"])
+
+        # --- barre des semaines ---
+        barre = tk.Frame(top, bg=BG)
+        barre.pack(fill="x", padx=18, pady=(0, 6))
+
+        # --- zone défilable (contenu de la semaine active) ---
+        zone = tk.Frame(top, bg=CARD)
+        zone.pack(fill="both", expand=True, padx=18, pady=4)
+        canvas = tk.Canvas(zone, bg=CARD, highlightthickness=0)
+        vsb = tk.Scrollbar(zone, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        inner = tk.Frame(canvas, bg=CARD)
+        win = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(win, width=e.width))
+        top.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+
+        def maj_besoins():
+            r = c = s = 0
+            for jours in cal.values():
+                for creneaux in jours.values():
+                    for x in creneaux:
+                        t = x.get("type")
+                        r += t == "reel"; c += t == "carousel"; s += t == "story"
+            img = c * rangement.IMAGES_PAR_CAROUSEL + s
+            besoins_lbl.configure(text=f"Besoins : {r} vidéo(s)   ·   {img} image(s)   "
+                                       f"({c} carrousels + {s} stories)")
+
+        def renumeroter():
+            vals = list(cal.values())
+            cal.clear()
+            for i, j in enumerate(vals, 1):
+                cal[f"semaine-{i:02d}"] = j
+
+        def selectionner(nom):
+            courant["nom"] = nom
+            construire_barre()
+            afficher_semaine(nom)
+
+        def dupliquer(nom):
+            if len(cal) >= 4:
+                messagebox.showwarning("Semaines", "Maximum 4 semaines (1 mois).")
+                return
+            vals = list(cal.values())
+            idx = list(cal.keys()).index(nom)
+            vals.insert(idx + 1, copy.deepcopy(cal[nom]))
+            cal.clear()
+            for i, j in enumerate(vals, 1):
+                cal[f"semaine-{i:02d}"] = j
+            selectionner(list(cal.keys())[idx + 1])
+
+        def supprimer_sem(nom):
+            if len(cal) <= 1:
+                messagebox.showwarning("Semaines", "Il faut au moins 1 semaine.")
+                return
+            if not messagebox.askyesno("Supprimer",
+                                       f"Supprimer {nom.replace('semaine-', 'la semaine ')} ?"):
+                return
+            idx = list(cal.keys()).index(nom)
+            del cal[nom]
+            renumeroter()
+            noms = list(cal.keys())
+            selectionner(noms[min(idx, len(noms) - 1)])
+
+        def construire_barre():
+            for w in barre.winfo_children():
+                w.destroy()
+            for nom in cal:
+                actif = nom == courant["nom"]
+                b = tk.Button(barre, text=nom.replace("semaine-", "Semaine "),
+                              command=lambda n=nom: selectionner(n),
+                              bg=(ACCENT if actif else ACCENT_SOFT),
+                              fg=("#FFFFFF" if actif else ACCENT_HOVER),
+                              activebackground=(ACCENT if actif else ACCENT_SOFT),
+                              activeforeground=("#FFFFFF" if actif else ACCENT_HOVER),
+                              relief="flat", bd=0, cursor="hand2",
+                              font=(POLICE, 12, "bold"), padx=14, pady=6)
+                b.pack(side="left", padx=(0, 8))
+
+        def _set_type(cr, val):
+            cr["type"] = val
+            maj_besoins()
+
+        def _rendre_ligne(cont, cr):
+            """Une ligne créneau : heure + type + supprimer. Widgets tk = rapide."""
+            row = tk.Frame(cont, bg=CARD)
+            row.pack(fill="x", pady=3, padx=(20, 8))
+            e = tk.Entry(row, width=8, font=(POLICE, 13), relief="solid", bd=1)
+            e.insert(0, cr["heure"])
+            e.pack(side="left")
+            e.bind("<KeyRelease>", lambda ev, c=cr, en=e: c.__setitem__("heure", en.get()))
+            var = tk.StringVar(value=cr["type"])
+            cb = ttk.Combobox(row, values=["reel", "carousel", "story"], textvariable=var,
+                              state="readonly", width=12, font=(POLICE, 12))
+            cb.pack(side="left", padx=10)
+            cb.bind("<<ComboboxSelected>>", lambda ev, c=cr, v=var: _set_type(c, v.get()))
+            tk.Button(row, text="×", command=lambda c=cr, r=row: supprimer_creneau(c, r),
+                      bg="#FDECEA", fg="#E5484D", activebackground="#F8D7D5",
+                      activeforeground="#E5484D", relief="flat", bd=0, cursor="hand2",
+                      font=(POLICE, 14, "bold"), width=3).pack(side="left")
+
+        def ajouter_creneau(j, cont):
+            cr = {"heure": "12h00", "type": "reel"}
+            cal[courant["nom"]][j].append(cr)
+            _rendre_ligne(cont, cr)          # AJOUTE une seule ligne -> instantané
+            maj_besoins()
+
+        def supprimer_creneau(cr, row):
+            for jours in cal.get(courant["nom"], {}).values():
+                for k, c in enumerate(jours):
+                    if c is cr:
+                        del jours[k]
+                        break
+            row.destroy()                    # RETIRE une seule ligne -> instantané
+            maj_besoins()
+
+        def afficher_semaine(nom):
+            for w in inner.winfo_children():
+                w.destroy()
+            if nom is None or nom not in cal:
+                return
+            act = tk.Frame(inner, bg=CARD)
+            act.pack(fill="x", pady=(10, 6), padx=16)
+            bouton(act, "Dupliquer cette semaine", lambda: dupliquer(nom)).pack(side="left", padx=(0, 8))
+            bouton(act, "Supprimer cette semaine", lambda: supprimer_sem(nom),
+                   genre="danger").pack(side="left")
+            for nom_jour, creneaux in cal[nom].items():
+                hj = tk.Frame(inner, bg=CARD)
+                hj.pack(fill="x", pady=(12, 2), padx=16)
+                tk.Label(hj, text=nom_jour.capitalize(), bg=CARD, fg=TEXT,
+                         font=(POLICE, 13, "bold")).pack(side="left")
+                cont = tk.Frame(inner, bg=CARD)
+                bouton(hj, "+ Ajouter un créneau",
+                       lambda j=nom_jour, ct=cont: ajouter_creneau(j, ct)).pack(side="left", padx=12)
+                cont.pack(fill="x")
+                for cr in creneaux:
+                    _rendre_ligne(cont, cr)
+            canvas.yview_moveto(0)
+            maj_besoins()
+
+        def reinit():
+            from agent.calendrier import CALENDRIER
+            cal.clear()
+            cal.update(copy.deepcopy(CALENDRIER))
+            courant["nom"] = next(iter(cal), None)
+            mode["val"] = "mixte"
+            construire_mode()
+            construire_barre()
+            afficher_semaine(courant["nom"])
+
+        def enreg():
+            calendrier.sauver_calendrier(cal)
+            messagebox.showinfo("Calendrier", f"Enregistré ({len(cal)} semaine(s)).\n"
+                                "Appliqué au prochain rangement.")
+            top.destroy()
+            self._maj_besoins_ranger()   # la page Ranger reste à jour
+
+        # --- bas : Réinitialiser / Enregistrer ---
+        bas = tk.Frame(top, bg=BG)
+        bas.pack(fill="x", padx=22, pady=12)
+        bouton(bas, "Réinitialiser", reinit).pack(side="left")
+        bouton(bas, "Enregistrer", enreg, genre="primaire",
+               font=(POLICE, 13, "bold")).pack(side="right")
+
+        construire_mode()
+        construire_barre()
+        afficher_semaine(courant["nom"])
+
+
+def main():
+    app = App()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

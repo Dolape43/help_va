@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HelpVA — Licences</title>
+<style>
+:root{--bg:#0d0d12;--card:#17171f;--line:#2a2a36;--txt:#eee;--mut:#9a9aa8;--acc:#5B4BFF;--ok:#2ecc71;--red:#E5484D;--warn:#e0a800}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px}
+.wrap{max-width:620px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:6px 0 14px}
+h2{font-size:15px;margin:18px 0 8px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+label{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}
+input,select,button,textarea{width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:#101016;color:var(--txt);font-size:15px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+button{background:var(--acc);border:none;font-weight:700;margin-top:12px;cursor:pointer}
+button.sec{background:#232330}button.mini{margin:0;padding:7px 9px;font-size:12px;font-weight:600}
+.chk{display:flex;align-items:center;gap:8px;margin-top:10px}.chk input{width:auto}
+.msg{font-size:13px;margin-top:8px;min-height:16px}
+.lic{font-family:Consolas,monospace;font-size:12px;word-break:break-all;background:#101016;border:1px dashed var(--line);border-radius:10px;padding:10px;margin-top:10px;white-space:pre-wrap}
+.item{border-top:1px solid var(--line);padding:10px 0}.item:first-child{border-top:none}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:700}
+.t-actif{background:#12351f;color:var(--ok)}.t-resiliee{background:#3a1414;color:var(--red)}.t-suspendu{background:#3a3110;color:var(--warn)}
+.small{font-size:12px;color:var(--mut)}
+.acts{display:flex;gap:6px;margin-top:8px}
+</style>
+</head>
+<body><div class="wrap">
+<h1>🔑 HelpVA — Licences</h1>
+
+<div class="card">
+  <label>Mot de passe admin</label>
+  <input id="mdp" type="password" placeholder="•••••••">
+  <div class="small" style="margin-top:6px">Retenu sur cet appareil uniquement.</div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Générer une licence</h2>
+  <label>Empreinte du PC client</label>
+  <input id="emp" placeholder="ABCD-EFGH-IJKL-MNOP" autocapitalize="characters">
+  <label>Nom du client (optionnel)</label>
+  <input id="nom" placeholder="Ex : Agence Erika">
+  <label>Type</label>
+  <select id="type"><option value="vie">À vie</option><option value="mois">1 mois</option>
+    <option value="an">1 an</option><option value="essai">Essai (3 j)</option></select>
+  <div class="chk"><input type="checkbox" id="premium"><label for="premium" style="margin:0">Premium (automatisation)</label></div>
+  <button onclick="generer()">Générer la licence</button>
+  <div class="msg" id="msgGen"></div>
+  <div id="resu" style="display:none"><div class="lic" id="lic"></div>
+    <button class="sec" onclick="copier()">📋 Copier la licence</button></div>
+</div>
+
+<div class="card">
+  <h2 style="margin:0 0 6px">Licences</h2>
+  <button class="sec" onclick="charger()">🔄 Rafraîchir la liste</button>
+  <div id="liste"><div class="small" style="margin-top:10px">Entre le mot de passe puis rafraîchis.</div></div>
+</div>
+
+<script>
+// URL de ton API (Edge Function Supabase)
+const API = "https://qjxhxhvdfcnikckakczk.supabase.co/functions/v1/admin";
+const $=id=>document.getElementById(id);
+try{$('mdp').value=localStorage.getItem('helpva_mdp')||''}catch(e){}
+$('mdp').addEventListener('change',()=>{try{localStorage.setItem('helpva_mdp',$('mdp').value)}catch(e){}});
+async function api(payload){
+  payload.mdp=$('mdp').value;
+  const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  return await r.json();
+}
+async function generer(){
+  $('msgGen').textContent='...';$('msgGen').style.color='#9a9aa8';$('resu').style.display='none';
+  const d=await api({action:'generer',empreinte:$('emp').value,nom:$('nom').value,type:$('type').value,premium:$('premium').checked});
+  if(d.ok){$('msgGen').textContent='✅ Licence créée'+(d.exp?(' (expire le '+d.exp+')'):' (à vie)');$('msgGen').style.color='#2ecc71';
+    $('lic').textContent=d.licence;$('resu').style.display='block';charger();}
+  else{$('msgGen').textContent='❌ '+(d.erreur||'erreur');$('msgGen').style.color='#E5484D';}
+}
+function copier(){navigator.clipboard.writeText($('lic').textContent).then(()=>{$('msgGen').textContent='📋 Copié !';});}
+async function charger(){
+  const d=await api({action:'lister'});
+  if(!d.ok){$('liste').innerHTML='<div class="small" style="margin-top:10px;color:#E5484D">❌ '+(d.erreur||'erreur')+'</div>';return;}
+  if(!d.licences.length){$('liste').innerHTML='<div class="small" style="margin-top:10px">Aucune licence.</div>';return;}
+  $('liste').innerHTML=d.licences.map(l=>{
+    const exp=l.exp?('exp. '+l.exp):'à vie';
+    return '<div class="item"><b>'+(l.nom_client||'—')+'</b> <span class="tag t-'+l.statut+'">'+l.statut+'</span>'
+      +'<div class="small">'+l.empreinte+' · '+l.type+' · '+exp+(l.premium?' · premium':'')+'</div>'
+      +'<div class="acts">'
+      +'<button class="mini sec" onclick="setStatut(\''+l.id+'\',\'actif\')">Activer</button>'
+      +'<button class="mini sec" onclick="setStatut(\''+l.id+'\',\'suspendu\')">Suspendre</button>'
+      +'<button class="mini sec" onclick="setStatut(\''+l.id+'\',\'resiliee\')">Résilier</button>'
+      +'</div></div>';
+  }).join('');
+}
+async function setStatut(id,statut){
+  if(statut==='resiliee'&&!confirm('Résilier cette licence ? Le client sera bloqué.'))return;
+  const d=await api({action:'statut',id,statut});
+  if(d.ok)charger();else alert(d.erreur||'erreur');
+}
+</script>
+</div></body></html>
