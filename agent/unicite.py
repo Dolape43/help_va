@@ -214,3 +214,88 @@ def uniquiser_fichiers(fichiers: list, dossier_sortie: str = None,
             n_vid += 1
 
     return n_img + n_vid
+
+
+def _dest_libre(cible: str, base: str) -> str:
+    """Chemin de sortie qui n'écrase pas un fichier existant (ajoute _2, _3…)."""
+    dest = os.path.join(cible, base)
+    stem, ext = os.path.splitext(base)
+    k = 2
+    while os.path.exists(dest):
+        dest = os.path.join(cible, f"{stem}_{k}{ext}")
+        k += 1
+    return dest
+
+
+def uniquiser_arbre(dossier: str, dossier_sortie: str, renommer: bool = False,
+                    filtre: bool = False, progress=None, doit_arreter=None) -> dict:
+    """Uniquise un dossier EN CONSERVANT son arborescence (sous-dossiers inclus).
+
+    Reproduit, sous <dossier_sortie>, la même structure que <dossier> mais avec
+    chaque image/vidéo uniquifiée. Les fichiers non-médias sont ignorés ; un
+    sous-dossier sans média n'est pas recréé.
+
+    progress(texte) : appelé (thread-safe côté appelant) à l'entrée et à la fin
+        de chaque sous-dossier, pour un affichage vivant (« Dossier i/N … »).
+    doit_arreter() : si fourni et renvoie True, on s'arrête proprement.
+    Retourne {"medias": int, "dossiers": int, "arrete": bool}.
+    """
+    if not os.path.isdir(dossier):
+        raise RuntimeError(f"Dossier introuvable : {dossier}")
+
+    # Recense les sous-dossiers CONTENANT au moins un média (racine incluse).
+    groupes = []
+    for racine, _sous, noms in os.walk(dossier):
+        medias = [os.path.join(racine, f) for f in sorted(noms)
+                  if os.path.splitext(f)[1].lower() in (EXT_IMAGES | EXT_VIDEOS)]
+        if medias:
+            groupes.append((racine, medias))
+    groupes.sort(key=lambda g: g[0].lower())
+    total_d = len(groupes)
+    if total_d == 0:
+        raise RuntimeError("Aucune image ni vidéo trouvée dans ce dossier.")
+
+    n_total = 0
+    arrete = False
+    for i, (racine, medias) in enumerate(groupes, 1):
+        if doit_arreter and doit_arreter():
+            arrete = True
+            break
+        rel = os.path.relpath(racine, dossier)
+        nom_aff = "(dossier principal)" if rel == "." else rel
+        cible = dossier_sortie if rel == "." else os.path.join(dossier_sortie, rel)
+        os.makedirs(cible, exist_ok=True)
+        if progress:
+            try:
+                progress(f"Dossier {i}/{total_d} : {nom_aff} — en cours…")
+            except Exception:
+                pass
+        n_img = n_vid = 0
+        for source in medias:
+            if doit_arreter and doit_arreter():
+                arrete = True
+                break
+            ext = os.path.splitext(source)[1].lower()
+            base_nom = os.path.splitext(os.path.basename(source))[0]
+            try:
+                if ext in EXT_IMAGES:
+                    base = f"{n_img + 1}.jpg" if renommer else base_nom + ".jpg"
+                    uniquiser_image(source, _dest_libre(cible, base), filtre=filtre)
+                    n_img += 1
+                elif ext in EXT_VIDEOS:
+                    base = f"{n_vid + 1}.mp4" if renommer else base_nom + ".mp4"
+                    uniquiser_video(source, _dest_libre(cible, base))
+                    n_vid += 1
+            except Exception as e:
+                print(f"   [!] {os.path.basename(source)} ignoré : {e}", flush=True)
+        n_total += n_img + n_vid
+        print(f"[{i}/{total_d}] {nom_aff} : {n_img} image(s), {n_vid} vidéo(s)", flush=True)
+        if progress:
+            try:
+                progress(f"Dossier {i}/{total_d} : {nom_aff} — terminé "
+                         f"({n_img + n_vid} média(s))")
+            except Exception:
+                pass
+        if arrete:
+            break
+    return {"medias": n_total, "dossiers": total_d, "arrete": arrete}

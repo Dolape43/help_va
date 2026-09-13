@@ -783,6 +783,14 @@ class App(ctk.CTk):
         tag = item[0]
         if tag == "loading_fini":
             self._cacher_loading()
+        elif tag == "uniq_progres":
+            # Met à jour en direct la ligne du popup de chargement.
+            try:
+                lbl = getattr(self, "_lbl_loading", None)
+                if lbl is not None and lbl.winfo_exists():
+                    lbl.configure(text=item[1])
+            except Exception:
+                pass
         elif tag == "verif_licence":
             self._traiter_verif(item[1])
         elif tag == "drive_apercu":
@@ -1300,6 +1308,7 @@ class App(ctk.CTk):
             text="Chaque média devient unique (métadonnées + pixels invisibles) pour éviter la\n"
                  "détection de doublon entre comptes. Les photos iPhone HEIC / HEIF — qui ne\n"
                  "s'affichent pas sur Instagram — sont aussi converties en .jpg automatiquement.\n"
+                 "Importez un dossier même avec des sous-dossiers : la structure est conservée.\n"
                  "Vos fichiers originaux ne sont jamais modifiés.").pack(anchor="w", pady=(2, 0))
 
         # ---------- Étape 1 : choisir la source ----------
@@ -1343,7 +1352,7 @@ class App(ctk.CTk):
                   primaire=True).pack(fill="x")
         ctk.CTkLabel(
             action, justify="left", font=(POLICE, 11, "bold"), text_color=MUTED,
-            text="Résultat dans « media (métadonnées changées) » (sous-dossiers images\\ et videos\\)."
+            text="Résultat dans « media (métadonnées changées) » — même arborescence que votre dossier."
         ).pack(anchor="w", pady=(8, 0))
 
         self._zone_journal()
@@ -1393,13 +1402,26 @@ class App(ctk.CTk):
                 shutil.rmtree(sortie, ignore_errors=True)
             if fichiers:
                 n = unicite.uniquiser_fichiers(fichiers, sortie, renommer=renommer, filtre=filtre)
+                print(f"\n✅ {n} média(s) traité(s) → {sortie}")
+                self._notifier("Métadonnées changées",
+                               f"✅ {n} média(s) traité(s) !\n\nRésultat :\n{sortie}")
+                return
+            # Dossier : on conserve l'arborescence (sous-dossiers) + progression vivante.
+            def progres(txt):
+                self.file_log.put(("uniq_progres", txt))
+            res = unicite.uniquiser_arbre(
+                dossier, sortie, renommer=renommer, filtre=filtre,
+                progress=progres, doit_arreter=lambda: self._annule_tache)
+            if res["arrete"]:
+                print(f"\n⛔ Arrêté. {res['medias']} média(s) déjà traité(s) → {sortie}")
+                self._notifier("Interrompu",
+                               f"Opération arrêtée.\n{res['medias']} média(s) déjà traité(s).")
             else:
-                n = unicite.uniquiser_dossier(dossier, sortie, renommer=renommer, filtre=filtre)
-            print(f"\n✅ {n} média(s) traité(s) → {sortie}")
-            self._notifier("Métadonnées changées",
-                           f"✅ {n} média(s) traité(s) !\n\nRésultat :\n{sortie}\n"
-                           "(sous-dossiers images\\ et videos\\)")
-        self._tache(job, "Changement des métadonnées…")
+                print(f"\n✅ {res['medias']} média(s) dans {res['dossiers']} dossier(s) → {sortie}")
+                self._notifier("Métadonnées changées",
+                               f"✅ {res['medias']} média(s) traité(s) dans {res['dossiers']} "
+                               f"dossier(s) !\n\nMême arborescence que votre dossier, dans :\n{sortie}")
+        self._tache(job, "Changement des métadonnées…", annulable=True)
 
     # ==================================================================
     #  Page : Convertir en MP4
