@@ -103,7 +103,7 @@ def est_revoquee(licence_txt: str) -> bool:
 # L'app confirme l'accès auprès du serveur régulièrement. Si elle ne peut PAS
 # joindre le serveur (hors-ligne), elle tolère quelques heures grâce à la
 # dernière confirmation, puis se bloque tant qu'une connexion n'est pas revenue.
-GRACE_HORS_LIGNE_H = float(os.environ.get("HELPVA_GRACE_H", "3"))
+GRACE_HORS_LIGNE_H = float(os.environ.get("HELPVA_GRACE_H", "72"))  # 3 jours
 NOM_FICHIER_CONFIRM = "derniere_verif.txt"
 
 
@@ -161,31 +161,33 @@ def _statut_serveur(empreinte: str, cle_hash: str):
 def _blocage_serveur(licence_txt: str, empreinte: str):
     """Contrôle d'accès auprès du serveur, avec tolérance hors-ligne.
 
-    Renvoie un dict BLOQUANT, ou None si l'accès peut continuer.
+    Renvoie un couple (bloc, hors_ligne) :
+      - bloc : dict BLOQUANT, ou None si l'accès peut continuer.
+      - hors_ligne : True si on tolère faute d'avoir pu joindre le serveur.
 
     - Serveur joignable :
         * 'resiliee'/'suspendu' -> bloque (réversible : réactiver côté serveur
           débloque au prochain contrôle) ;
         * sinon -> on mémorise la confirmation et on autorise.
     - Serveur injoignable (hors-ligne) :
-        * on tolère tant que la dernière confirmation date de moins de
-          GRACE_HORS_LIGNE_H heures ; au-delà -> bloque (raison 'pas_internet')
-          pour forcer une reconnexion et re-vérifier la résiliation.
+        * on tolère (sans bloquer) tant que la dernière confirmation date de
+          moins de GRACE_HORS_LIGNE_H heures ; au-delà -> bloque
+          (raison 'pas_internet') pour forcer une reconnexion.
     """
     joignable, srv = _statut_serveur(empreinte, _hash_licence(licence_txt))
     if joignable:
         if srv == "resiliee":
-            return {"ok": False, "raison": "revoquee", "type": None,
-                    "expire_le": None, "jours_restants": None}
+            return ({"ok": False, "raison": "revoquee", "type": None,
+                     "expire_le": None, "jours_restants": None}, False)
         if srv == "suspendu":
-            return {"ok": False, "raison": "suspendu", "type": None,
-                    "expire_le": None, "jours_restants": None}
+            return ({"ok": False, "raison": "suspendu", "type": None,
+                     "expire_le": None, "jours_restants": None}, False)
         _marquer_confirmation()
-        return None
+        return (None, False)
     if _confirmation_recente():
-        return None
-    return {"ok": False, "raison": "pas_internet", "type": None,
-            "expire_le": None, "jours_restants": None}
+        return (None, True)
+    return ({"ok": False, "raison": "pas_internet", "type": None,
+             "expire_le": None, "jours_restants": None}, True)
 
 
 def activer_par_code(code: str):
@@ -399,7 +401,7 @@ def verifier() -> dict:
     if payload.get("emp") != empreinte_machine():
         return {"ok": False, "raison": "mauvais_pc", "type": payload.get("type"),
                 "expire_le": None, "jours_restants": None, "nom": nom, "premium": premium}
-    bloc = _blocage_serveur(licence, payload.get("emp"))
+    bloc, hors_ligne = _blocage_serveur(licence, payload.get("emp"))
     if bloc:
         bloc["type"] = payload.get("type")
         return bloc
@@ -410,7 +412,8 @@ def verifier() -> dict:
     # À vie : rien à vérifier en ligne (marche hors-ligne).
     if type_l == "vie" or not exp:
         return {"ok": True, "raison": "actif", "type": "vie",
-                "expire_le": None, "jours_restants": None, "nom": nom, "premium": premium}
+                "expire_le": None, "jours_restants": None, "nom": nom,
+                "premium": premium, "hors_ligne": hors_ligne}
 
     # Mois / an : il FAUT la vraie date (internet).
     # "exp" peut être une DATE (produit) ou un DATETIME ISO (tests à la minute).
@@ -429,9 +432,13 @@ def verifier() -> dict:
     from . import horloge
     maintenant = horloge.date_reelle()   # datetime aware UTC, ou None
     if maintenant is None:
-        return {"ok": False, "raison": "pas_internet", "type": type_l,
+        # Hors-ligne mais dans la tolérance (sinon _blocage_serveur aurait déjà
+        # bloqué) : on laisse travailler ; l'expiration sera revérifiée dès le
+        # retour de la connexion.
+        return {"ok": True, "raison": "actif", "type": type_l,
                 "expire_le": (exp_dt.date() if precis else exp_date),
-                "jours_restants": None, "nom": nom, "premium": premium}
+                "jours_restants": None, "nom": nom, "premium": premium,
+                "hors_ligne": True}
 
     # Expiration EXACTE : aucune tolérance après la date de fin.
     if precis:
@@ -445,7 +452,7 @@ def verifier() -> dict:
 
     return {"ok": actif, "raison": "actif" if actif else "expire",
             "type": type_l, "expire_le": expire_le, "jours_restants": jours,
-            "nom": nom, "premium": premium}
+            "nom": nom, "premium": premium, "hors_ligne": False}
 
 
 def enregistrer_licence(licence: str) -> dict:
@@ -457,7 +464,7 @@ def enregistrer_licence(licence: str) -> dict:
     if payload.get("emp") != empreinte_machine():
         return {"ok": False, "raison": "mauvais_pc", "type": payload.get("type"),
                 "expire_le": None, "jours_restants": None}
-    bloc = _blocage_serveur(licence, payload.get("emp"))
+    bloc, _ = _blocage_serveur(licence, payload.get("emp"))
     if bloc:
         bloc["type"] = payload.get("type")
         return bloc

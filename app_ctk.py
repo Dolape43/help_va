@@ -149,6 +149,7 @@ class App(ctk.CTk):
         self.fichiers = []
         self._timer_verif = None
         self._echecs_verif = 0
+        self._bandeau_hl = None   # bandeau discret « hors-ligne »
         sys.stdout = FluxVersLog(self.file_log, est_auto=self._ecrit_par_auto)
         sys.stderr = FluxVersLog(self.file_log)
         self.after(120, self._pomper_log)
@@ -444,6 +445,25 @@ class App(ctk.CTk):
 
         # Re-contrôle de l'abonnement (une fois).
         self._planifier_verif_periodique()
+        # Rappel discret si on tourne en mode hors-ligne toléré.
+        self._montrer_bandeau_horsligne((self.statut or {}).get("hors_ligne", False))
+
+    def _montrer_bandeau_horsligne(self, afficher):
+        """Petit bandeau flottant, NON bloquant, en bas à droite quand l'app
+        n'arrive pas à confirmer l'abonnement en ligne (dans la tolérance)."""
+        if afficher:
+            b = getattr(self, "_bandeau_hl", None)
+            if b is None or not b.winfo_exists():
+                self._bandeau_hl = ctk.CTkLabel(
+                    self, text="  Hors-ligne — reconnexion en cours…  ",
+                    font=(POLICE, 12, "bold"), corner_radius=8,
+                    fg_color=("#FDECEA", "#3A1E1E"), text_color="#E5844D")
+            self._bandeau_hl.place(relx=0.985, rely=0.97, anchor="se")
+            self._bandeau_hl.lift()
+        else:
+            b = getattr(self, "_bandeau_hl", None)
+            if b is not None and b.winfo_exists():
+                b.place_forget()
 
     def _construire_sidebar(self):
         # Marque
@@ -1672,14 +1692,18 @@ class App(ctk.CTk):
         if st["ok"]:
             self.statut = st
             self._echecs_verif = 0
-            self._planifier_verif_periodique()
-            return
-        if st["raison"] == "pas_internet":
-            self._echecs_verif = getattr(self, "_echecs_verif", 0) + 1
-            if self._echecs_verif <= MAX_ECHECS_VERIF:
+            if st.get("hors_ligne"):
+                # Toléré (hors-ligne) : on NE bloque PAS. Bandeau discret +
+                # re-contrôle rapproché pour effacer le bandeau au retour du réseau.
+                self._montrer_bandeau_horsligne(True)
                 self._timer_verif = self.after(RETRY_VERIF_MS, self._verif_periodique)
-                return
+            else:
+                self._montrer_bandeau_horsligne(False)
+                self._planifier_verif_periodique()
+            return
+        # Non OK : résiliée / suspendue / expirée / hors-ligne au-delà de la tolérance.
         self.statut = st
+        self._montrer_bandeau_horsligne(False)
         self._vider()
         if st["raison"] == "pas_internet":
             self._ecran_internet()
