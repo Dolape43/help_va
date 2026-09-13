@@ -1214,29 +1214,85 @@ class App(ctk.CTk):
     # ==================================================================
     def _page_metadonnees(self):
         self._entete_page("Changer les métadonnées",
-                          "Rend chaque image et vidéo unique (anti-doublon entre comptes).")
-        inner = self._carte()
-        ctk.CTkLabel(inner, justify="left", font=(POLICE, 14), text_color=MUTED,
-                     text="Choisissez un dossier d'images et/ou de vidéos. HelpVA crée une version\n"
-                          "unique de chaque média. Résultat dans « media (métadonnées changées) »\n"
-                          "(sous-dossiers images\\ et videos\\). Vos originaux ne sont pas touchés.").pack(anchor="w")
-        self.chk_renommer = ctk.CTkCheckBox(inner, text="Renommer les médias (1, 2, 3…)",
+                          "Rendez chaque photo et vidéo unique — en 2 étapes simples.")
+
+        # ---------- Encart info : anti-doublon + conversion HEIC iPhone ----------
+        info = self._carte(pad=18)
+        info_row = ctk.CTkFrame(info, fg_color="transparent")
+        info_row.pack(fill="x")
+        self._badge(info_row, "bulb", taille=46).pack(side="left", padx=(0, 14))
+        info_txt = ctk.CTkFrame(info_row, fg_color="transparent")
+        info_txt.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(info_txt, text="Ce que fait ce module", font=(POLICE, 14, "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(
+            info_txt, justify="left", font=(POLICE, 13), text_color=MUTED,
+            text="Chaque média devient unique (métadonnées + pixels invisibles) pour éviter la\n"
+                 "détection de doublon entre comptes. Les photos iPhone HEIC / HEIF — qui ne\n"
+                 "s'affichent pas sur Instagram — sont aussi converties en .jpg automatiquement.\n"
+                 "Vos fichiers originaux ne sont jamais modifiés.").pack(anchor="w", pady=(2, 0))
+
+        # ---------- Outil interne : en-tête d'étape (pastille N° + titre) ----------
+        def entete_etape(inner, num, titre, sous):
+            barre = ctk.CTkFrame(inner, fg_color="transparent")
+            barre.pack(fill="x")
+            past = ctk.CTkFrame(barre, fg_color=ACCENT_SOFT, corner_radius=16,
+                                width=32, height=32)
+            past.pack_propagate(False)
+            past.pack(side="left")
+            ctk.CTkLabel(past, text=str(num), font=(POLICE, 15, "bold"),
+                         text_color=ACCENT_HOVER).pack(expand=True)
+            bloc = ctk.CTkFrame(barre, fg_color="transparent")
+            bloc.pack(side="left", padx=(12, 0), fill="x", expand=True)
+            ctk.CTkLabel(bloc, text=titre, font=(POLICE, 16, "bold"),
+                         text_color=TEXT).pack(anchor="w")
+            ctk.CTkLabel(bloc, text=sous, font=(POLICE, 12),
+                         text_color=MUTED).pack(anchor="w")
+
+        # ---------- Étape 1 : choisir la source ----------
+        c1 = self._carte()
+        entete_etape(c1, 1, "Choisir la source",
+                     "Un dossier entier, ou des images / vidéos précises.")
+        boutons = ctk.CTkFrame(c1, fg_color="transparent")
+        boutons.pack(fill="x", pady=(16, 14))
+        self._btn(boutons, "Importer un dossier…",
+                  self._choisir_dossier_uniq).pack(side="left", padx=(0, 10))
+        self._btn(boutons, "Importer des images / vidéos…",
+                  self._choisir_images_uniq).pack(side="left")
+        zone = ctk.CTkFrame(c1, fg_color=ACCENT_SOFTER, corner_radius=12,
+                            border_width=1, border_color=BORDER)
+        zone.pack(fill="x")
+        zone_row = ctk.CTkFrame(zone, fg_color="transparent")
+        zone_row.pack(fill="x", padx=16, pady=14)
+        self._badge(zone_row, "folder", taille=40).pack(side="left", padx=(0, 12))
+        src = ctk.CTkFrame(zone_row, fg_color="transparent")
+        src.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(src, text="SOURCE SÉLECTIONNÉE", font=(POLICE, 11, "bold"),
+                     text_color=MUTED).pack(anchor="w")
+        self.lbl_uniq = ctk.CTkLabel(src, text=self._txt_source_uniq(), justify="left",
+                                     font=(POLICE, 14), text_color=TEXT)
+        self.lbl_uniq.pack(anchor="w", pady=(2, 0))
+
+        # ---------- Étape 2 : options ----------
+        c2 = self._carte()
+        entete_etape(c2, 2, "Options", "Un réglage, c'est tout.")
+        self.chk_renommer = ctk.CTkCheckBox(c2, text="Renommer les médias (1, 2, 3…)",
                                             font=(POLICE, 14), fg_color=ACCENT_HOVER)
         self.chk_renommer.select()
-        self.chk_renommer.pack(anchor="w", pady=(14, 6))
-        self.chk_filtre = ctk.CTkCheckBox(inner, text="Appliquer un filtre léger sur les images "
-                                                      "(chaud/froid/vif/doux, discret)",
-                                          font=(POLICE, 14), fg_color=ACCENT_HOVER)
-        self.chk_filtre.select()
-        self.chk_filtre.pack(anchor="w", pady=(0, 8))
-        ligne = ctk.CTkFrame(inner, fg_color="transparent")
-        ligne.pack(anchor="w", pady=(4, 4))
-        self._btn(ligne, "Importer un dossier…", self._choisir_dossier_uniq).pack(side="left", padx=(0, 8))
-        self._btn(ligne, "Importer des images…", self._choisir_images_uniq).pack(side="left", padx=(0, 8))
-        self._btn(ligne, "Lancer", self._lancer_uniquiser, primaire=True).pack(side="left")
-        self.lbl_uniq = ctk.CTkLabel(inner, text=self._txt_source_uniq(),
-                                     font=(POLICE, 12), text_color=MUTED)
-        self.lbl_uniq.pack(anchor="w", pady=(8, 0))
+        self.chk_renommer.pack(anchor="w", pady=(16, 2))
+        ctk.CTkLabel(c2, text="Renumérote proprement les fichiers de sortie (recommandé).",
+                     font=(POLICE, 12), text_color=MUTED).pack(anchor="w", padx=(30, 0))
+
+        # ---------- Action : bouton « Lancer » pleine largeur ----------
+        action = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        action.pack(fill="x", padx=36, pady=(14, 2))
+        self._btn(action, "Lancer  →", self._lancer_uniquiser,
+                  primaire=True).pack(fill="x")
+        ctk.CTkLabel(
+            action, justify="left", font=(POLICE, 11, "bold"), text_color=MUTED,
+            text="Résultat dans « media (métadonnées changées) » (sous-dossiers images\\ et videos\\)."
+        ).pack(anchor="w", pady=(8, 0))
+
         self._zone_journal()
 
     def _txt_source_uniq(self):
@@ -1271,7 +1327,7 @@ class App(ctk.CTk):
             return
         sortie = os.path.join(self.dossier_sortie(), "media (métadonnées changées)")
         renommer = bool(self.chk_renommer.get())
-        filtre = bool(self.chk_filtre.get())
+        filtre = False   # option de filtre retirée : uniquisation invisible uniquement
         fichiers = list(self.fichiers_uniq_src) if self.fichiers_uniq_src else None
         dossier = self.dossier_uniq_src
         if os.path.exists(sortie):
