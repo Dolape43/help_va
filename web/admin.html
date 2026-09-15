@@ -171,18 +171,13 @@ input::placeholder{color:var(--faint)}
         </div>
 
         <div id="w1">
-          <h1>Que veux-tu créer&nbsp;?</h1>
-          <p class="sub">Choisis la méthode d'activation.</p>
+          <h1>Créer des codes d'activation</h1>
+          <p class="sub">Le client saisit un code dans l'app, l'activation est automatique.</p>
           <div class="choice">
             <button class="opt" aria-pressed="true" onclick="choisir(this,'code')">
               <span class="tick"></span>
               <span><span class="ttl">Codes d'activation</span>
-              <span class="ds">Le client saisit un code dans l'app, l'activation est automatique. Recommandé.</span></span>
-            </button>
-            <button class="opt" aria-pressed="false" onclick="choisir(this,'lic')">
-              <span class="tick"></span>
-              <span><span class="ttl">Licence directe</span>
-              <span class="ds">Tu génères la licence à partir de l'empreinte du PC du client.</span></span>
+              <span class="ds">Génère un ou plusieurs codes à envoyer à tes clients.</span></span>
             </button>
           </div>
           <button class="btn primary" onclick="etape(2)">Continuer</button>
@@ -204,18 +199,6 @@ input::placeholder{color:var(--faint)}
             <input class="f" type="text" id="cNom" placeholder="Ex. Agence Erika">
           </div>
 
-          <div id="f-lic" hidden>
-            <label>Empreinte du PC client</label>
-            <input class="f mono" type="text" id="emp" placeholder="ABCD-EFGH-IJKL-MNOP" autocapitalize="characters">
-            <label>Nom du client <span style="color:var(--faint)">— optionnel</span></label>
-            <input class="f" type="text" id="lNom" placeholder="Ex. Agence Erika">
-            <label>Formule</label>
-            <div class="seg" id="seg-lic">
-              <button aria-pressed="true">À vie</button><button aria-pressed="false">1 mois</button>
-              <button aria-pressed="false">1 an</button><button aria-pressed="false">Essai</button>
-            </div>
-          </div>
-
           <button class="btn primary" id="btnGen" onclick="generer()">Générer</button>
           <button class="btn ghost" onclick="etape(1)">Retour</button>
         </div>
@@ -224,10 +207,6 @@ input::placeholder{color:var(--faint)}
           <div class="result" id="r-code">
             <div class="done-h"><span class="r"></span><b id="r-code-h">Codes créés</b></div>
             <div class="codeblock" id="r-code-list"></div>
-          </div>
-          <div class="result" id="r-lic" hidden>
-            <div class="done-h"><span class="r"></span><b id="r-lic-h">Licence créée</b></div>
-            <div class="licblock" id="r-lic-block"></div>
           </div>
           <button class="btn primary" onclick="copier()">Copier</button>
           <button class="btn ghost" onclick="etape(1)">Créer d'autres</button>
@@ -326,9 +305,9 @@ function etape(n){
   const S=[$("s1"),$("s2"),$("s3")];
   S.forEach((s,i)=>{s.classList.remove("on","done");if(i<n-1)s.classList.add("done");else if(i===n-1)s.classList.add("on");});
   if(n===2){
-    $("f-code").hidden=mode!=="code";$("f-lic").hidden=mode==="code";
-    $("w2t").textContent=mode==="code"?"Détails des codes":"Détails de la licence";
-    $("w2s").textContent=mode==="code"?"Configure la formule puis génère.":"Renseigne l'empreinte du client puis génère.";
+    $("f-code").hidden=false;
+    $("w2t").textContent="Détails des codes";
+    $("w2s").textContent="Configure la formule puis génère.";
   }
 }
 
@@ -336,28 +315,13 @@ function etape(n){
 let dernier={mode:"code",codes:[],licence:""};
 async function generer(){
   const btn=$("btnGen");btn.disabled=true;btn.textContent="Génération…";
-  let d;
-  if(mode==="code"){
-    d=await api({action:"creer_codes",n:$("cN").value,type:typeDe("seg-code"),nom:$("cNom").value});
-  }else{
-    const emp=$("emp").value.trim().toUpperCase();
-    if(!/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(emp)){
-      btn.disabled=false;btn.textContent="Générer";toast("Empreinte invalide");return;}
-    d=await api({action:"generer",empreinte:emp,type:typeDe("seg-lic"),nom:$("lNom").value});
-  }
+  const d=await api({action:"creer_codes",n:$("cN").value,type:typeDe("seg-code"),nom:$("cNom").value});
   btn.disabled=false;btn.textContent="Générer";
   if(!d.ok){toast(d.erreur||"Erreur");return;}
-  if(mode==="code"){
-    dernier={mode:"code",codes:d.codes};
-    $("r-code").hidden=false;$("r-lic").hidden=true;
-    $("r-code-h").textContent=d.codes.length+(d.codes.length>1?" codes créés":" code créé");
-    $("r-code-list").innerHTML=d.codes.map(c=>'<div class="codeline clic" onclick="copyTxt(\''+c+'\')" title="Cliquer pour copier">'+c+'</div>').join("");
-  }else{
-    dernier={mode:"lic",licence:d.licence};
-    $("r-code").hidden=true;$("r-lic").hidden=false;
-    $("r-lic-h").textContent="Licence créée — "+(d.exp?("exp. "+d.exp):"à vie");
-    $("r-lic-block").textContent=d.licence;
-  }
+  dernier={mode:"code",codes:d.codes};
+  $("r-code").hidden=false;
+  $("r-code-h").textContent=d.codes.length+(d.codes.length>1?" codes créés":" code créé");
+  $("r-code-list").innerHTML=d.codes.map(c=>'<div class="codeline clic" onclick="copyTxt(\''+c+'\')" title="Cliquer pour copier">'+c+'</div>').join("");
   etape(3);
 }
 function copier(){
