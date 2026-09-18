@@ -14,10 +14,9 @@ licences_generees.txt
 calendrier_utilisateur.json
 *.log
 
-# Build PyInstaller
+# Build PyInstaller (les .spec SONT suivis : nécessaires pour builder, sans secret)
 build/
 dist/
-*.spec
 
 # Python
 __pycache__/
