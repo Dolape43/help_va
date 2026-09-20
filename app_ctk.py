@@ -139,6 +139,8 @@ class App(ctk.CTk):
         self.dossier_carrousel_src = None
         self.dossier_convert_src = None
         self.fichiers_convert_src = None
+        self.dossier_imgconv_src = None
+        self.fichiers_imgconv_src = None
         self.dossier_planif_src = None
         self.fichiers = []
         self._timer_verif = None
@@ -660,7 +662,7 @@ class App(ctk.CTk):
         g1.pack(fill="x", padx=36)
         for i in range(2):
             g1.grid_columnconfigure(i, weight=1, uniform="c")
-        feats1 = [("drive", "Télécharger depuis Drive", "Récupère vos médias (Google Drive)", "drive"),
+        feats1 = [("convertir", "Convertir les images", "En .jpg ou .png (HEIC iPhone inclus)", "images_convert"),
                   ("convertir", "Convertir en MP4", "Transforme .mov, .avi… en .mp4", "convertir"),
                   ("tag", "Changer les métadonnées", "Uniquifie vos photos et vidéos", "metadonnees"),
                   ("folder", "Ranger les médias", "Organise vos images et vidéos", "ranger")]
@@ -699,7 +701,7 @@ class App(ctk.CTk):
         self.journal_est_auto = False
         self._maj_nav()
         self._vider(self.contenu)
-        pages = {"drive": self._page_drive, "ranger": self._page_ranger,
+        pages = {"images_convert": self._page_convertir_images, "ranger": self._page_ranger,
                  "metadonnees": self._page_metadonnees,
                  "convertir": self._page_convertir}
         pages.get(cle, self._page_accueil)()
@@ -1549,6 +1551,140 @@ class App(ctk.CTk):
                         "à re-télécharger).")
             self._notifier("Conversion terminée", msg)
         self._tache(job, "Conversion en MP4… (peut être long)", annulable=True)
+
+    # ==================================================================
+    #  Page : Convertir les images (JPG / PNG)
+    # ==================================================================
+    def _page_convertir_images(self):
+        self._entete_page("Convertir les images",
+                          "Convertit vos images en .jpg ou .png (HEIC iPhone inclus).")
+
+        # ---------- Encart info ----------
+        info = self._carte(pad=18)
+        info_row = ctk.CTkFrame(info, fg_color="transparent")
+        info_row.pack(fill="x")
+        self._badge(info_row, "convertir", taille=46).pack(side="left", padx=(0, 14))
+        info_txt = ctk.CTkFrame(info_row, fg_color="transparent")
+        info_txt.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(info_txt, text="Ce que fait ce module", font=(POLICE, 14, "bold"),
+                     text_color=TEXT).pack(anchor="w")
+        ctk.CTkLabel(
+            info_txt, justify="left", font=(POLICE, 13), text_color=MUTED,
+            text="Convertit chaque image au format choisi (.jpg ou .png). Les photos iPhone\n"
+                 "HEIC / HEIF — qui ne s'affichent pas sur Instagram — deviennent lisibles.\n"
+                 "Vos fichiers originaux ne sont jamais modifiés.").pack(anchor="w", pady=(2, 0))
+
+        # ---------- Étape 1 : choisir les images ----------
+        c1 = self._carte()
+        self._entete_etape(c1, 1, "Choisir les images",
+                           "Un dossier entier, ou des images précises.")
+        boutons = ctk.CTkFrame(c1, fg_color="transparent")
+        boutons.pack(fill="x", pady=(16, 14))
+        self._btn(boutons, "Importer un dossier…",
+                  self._choisir_dossier_imgconv).pack(side="left", padx=(0, 10))
+        self._btn(boutons, "Importer des images…",
+                  self._choisir_images_imgconv).pack(side="left")
+        zone = ctk.CTkFrame(c1, fg_color=ACCENT_SOFTER, corner_radius=12,
+                            border_width=1, border_color=BORDER)
+        zone.pack(fill="x")
+        zone_row = ctk.CTkFrame(zone, fg_color="transparent")
+        zone_row.pack(fill="x", padx=16, pady=14)
+        self._badge(zone_row, "folder", taille=40).pack(side="left", padx=(0, 12))
+        src = ctk.CTkFrame(zone_row, fg_color="transparent")
+        src.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(src, text="SOURCE SÉLECTIONNÉE", font=(POLICE, 11, "bold"),
+                     text_color=MUTED).pack(anchor="w")
+        self.lbl_imgconv = ctk.CTkLabel(src, text=self._txt_source_imgconv(), justify="left",
+                                        font=(POLICE, 14), text_color=TEXT)
+        self.lbl_imgconv.pack(anchor="w", pady=(2, 0))
+
+        # ---------- Étape 2 : format de sortie ----------
+        c2 = self._carte()
+        self._entete_etape(c2, 2, "Format de sortie", "Choisissez le format des images.")
+        self.seg_format_imgconv = ctk.CTkSegmentedButton(
+            c2, values=["JPG", "PNG"], selected_color=ACCENT_HOVER,
+            selected_hover_color="#4A3FCC", font=(POLICE, 14))
+        self.seg_format_imgconv.set("JPG")
+        self.seg_format_imgconv.pack(anchor="w", pady=(16, 2))
+        ctk.CTkLabel(c2, text="JPG = plus léger (recommandé pour Instagram) · "
+                              "PNG = sans perte, garde la transparence.",
+                     font=(POLICE, 12), text_color=MUTED).pack(anchor="w", pady=(4, 0))
+
+        # ---------- Action ----------
+        action = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        action.pack(fill="x", padx=36, pady=(14, 2))
+        self._btn(action, "Convertir  →", self._lancer_imgconv, primaire=True).pack(fill="x")
+        self._zone_journal()
+
+    def _txt_source_imgconv(self):
+        if self.fichiers_imgconv_src:
+            return f"{len(self.fichiers_imgconv_src)} image(s) sélectionnée(s)"
+        if self.dossier_imgconv_src:
+            return f"Dossier : {self.dossier_imgconv_src}"
+        return "Aucune source sélectionnée"
+
+    def _choisir_dossier_imgconv(self):
+        dossier = filedialog.askdirectory(title="Choisir le dossier d'images")
+        if not dossier:
+            return
+        self.dossier_imgconv_src = dossier
+        self.fichiers_imgconv_src = None
+        self.lbl_imgconv.configure(text=self._txt_source_imgconv())
+
+    def _choisir_images_imgconv(self):
+        fichiers = filedialog.askopenfilenames(
+            title="Choisir des images",
+            filetypes=[("Images", "*.jpg *.jpeg *.png *.webp *.heic *.heif *.bmp *.tif *.tiff"),
+                       ("Tous", "*.*")])
+        if not fichiers:
+            return
+        self.fichiers_imgconv_src = list(fichiers)
+        self.dossier_imgconv_src = None
+        self.lbl_imgconv.configure(text=self._txt_source_imgconv())
+
+    def _lancer_imgconv(self):
+        if not self.fichiers_imgconv_src and not self.dossier_imgconv_src:
+            messagebox.showwarning("Convertir les images", "Importe d'abord un dossier ou des images.")
+            return
+        fmt = "png" if self.seg_format_imgconv.get() == "PNG" else "jpg"
+        fichiers = list(self.fichiers_imgconv_src) if self.fichiers_imgconv_src else None
+        dossier = self.dossier_imgconv_src
+        sortie = os.path.join(self.dossier_sortie(), f"images ({fmt})")
+        if dossier:
+            a_src, a_out = os.path.abspath(dossier), os.path.abspath(sortie)
+            if a_src == a_out or a_src.startswith(a_out + os.sep):
+                messagebox.showerror("Dossier invalide",
+                                     "Choisissez un autre dossier : la source ne peut pas être le "
+                                     "dossier de sortie.")
+                return
+        if os.path.exists(sortie):
+            if not messagebox.askyesno("Remplacer ?",
+                                       f"Le dossier existe déjà et sera REMPLACÉ :\n{sortie}\n\nContinuer ?"):
+                return
+
+        def job():
+            if os.path.exists(sortie):
+                shutil.rmtree(sortie, ignore_errors=True)
+
+            def progres(txt):
+                self.file_log.put(("uniq_progres", txt))
+            try:
+                if fichiers:
+                    n = unicite.convertir_images_fichiers(fichiers, sortie, fmt,
+                                                          progress=progres,
+                                                          doit_arreter=lambda: self._annule_tache)
+                else:
+                    n = unicite.convertir_images_dossier(dossier, sortie, fmt,
+                                                         progress=progres,
+                                                         doit_arreter=lambda: self._annule_tache)
+            except Exception as e:
+                print(f"\n[ERREUR] {e}")
+                self._notifier("Convertir les images", str(e), erreur=True)
+                return
+            print(f"\n✅ {n} image(s) converties en .{fmt} → {sortie}")
+            self._notifier("Images converties",
+                           f"✅ {n} image(s) converties en .{fmt} !\n\nRésultat :\n{sortie}")
+        self._tache(job, f"Conversion des images en .{fmt}…", annulable=bool(dossier))
 
     # ==================================================================
     #  Page : Télécharger depuis Google Drive

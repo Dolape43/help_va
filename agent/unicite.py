@@ -308,3 +308,62 @@ def uniquiser_arbre(dossier: str, dossier_sortie: str, renommer: bool = False,
         if arrete:
             break
     return {"medias": n_total, "dossiers": total_d, "arrete": arrete}
+
+
+# ======================================================================
+#  Conversion de format d'images (JPG / PNG) — SANS uniquisation.
+#  Convertit n'importe quelle image (y compris HEIC/HEIF iPhone, webp…) au
+#  format choisi. Corrige juste l'orientation ; ne modifie pas les pixels.
+# ======================================================================
+def convertir_image_format(source: str, dossier_sortie: str, fmt: str = "jpg") -> str:
+    """Convertit UNE image vers dossier_sortie au format fmt ('jpg' ou 'png')."""
+    fmt = "png" if str(fmt).lower() == "png" else "jpg"
+    ext = ".png" if fmt == "png" else ".jpg"
+    img = Image.open(source)
+    img = ImageOps.exif_transpose(img)           # redresse selon l'EXIF
+    base = os.path.splitext(os.path.basename(source))[0] + ext
+    dest = _dest_libre(dossier_sortie, base)
+    if fmt == "png":
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGBA")
+        img.save(dest, "PNG")
+    else:
+        img.convert("RGB").save(dest, "JPEG", quality=95)
+    return dest
+
+
+def convertir_images_fichiers(fichiers: list, dossier_sortie: str, fmt: str = "jpg",
+                              progress=None, doit_arreter=None) -> int:
+    """Convertit une liste d'images vers dossier_sortie. Retourne le nb converti."""
+    imgs = [f for f in fichiers if os.path.splitext(f)[1].lower() in EXT_IMAGES]
+    os.makedirs(dossier_sortie, exist_ok=True)
+    n = 0
+    for i, source in enumerate(imgs, 1):
+        if doit_arreter and doit_arreter():
+            break
+        try:
+            convertir_image_format(source, dossier_sortie, fmt)
+            n += 1
+            if progress:
+                try:
+                    progress(f"{i}/{len(imgs)} — {os.path.basename(source)}")
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"   [!] {os.path.basename(source)} ignoré : {e}", flush=True)
+    return n
+
+
+def convertir_images_dossier(dossier: str, dossier_sortie: str, fmt: str = "jpg",
+                             progress=None, doit_arreter=None) -> int:
+    """Convertit toutes les images d'un dossier (et sous-dossiers) vers dossier_sortie."""
+    if not os.path.isdir(dossier):
+        raise RuntimeError(f"Dossier introuvable : {dossier}")
+    fichiers = []
+    for racine, _sous, noms in os.walk(dossier):
+        for f in sorted(noms):
+            if os.path.splitext(f)[1].lower() in EXT_IMAGES:
+                fichiers.append(os.path.join(racine, f))
+    if not fichiers:
+        raise RuntimeError("Aucune image trouvée dans ce dossier.")
+    return convertir_images_fichiers(fichiers, dossier_sortie, fmt, progress, doit_arreter)
