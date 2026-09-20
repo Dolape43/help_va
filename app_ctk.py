@@ -154,6 +154,8 @@ class App(ctk.CTk):
             self.iconbitmap(chemin_ressource("assets/logo.ico"))
         except Exception:
             pass
+        # Fermeture de la fenêtre -> on demande l'arrêt des traitements en cours.
+        self.protocol("WM_DELETE_WINDOW", self._fermer_app)
 
         self._router_licence()
 
@@ -859,11 +861,13 @@ class App(ctk.CTk):
         if self.occupe:
             print("[!] Une action est déjà en cours, patiente…")
             return
+        # Armé SYNCHRONEMENT (avant le thread) : deux clics rapides ne peuvent
+        # plus lancer deux fois la même opération.
+        self.occupe = True
         self._annule_tache = False
         self._afficher_loading(message, annulable=annulable)
 
         def envelopper():
-            self.occupe = True
             try:
                 fn()
             except Exception as e:
@@ -872,6 +876,19 @@ class App(ctk.CTk):
                 self.occupe = False
                 self.file_log.put(("loading_fini",))
         threading.Thread(target=envelopper, daemon=True).start()
+
+    def _fermer_app(self):
+        """Fermeture propre : demande l'arrêt des traitements en cours puis quitte.
+
+        Sans ça, un lot d'images lancé en parallèle continuerait en arrière-plan
+        (les threads du pool ne sont pas daemon) : fenêtre fermée mais processus
+        toujours vivant à 100 % de CPU.
+        """
+        self._annule_tache = True
+        try:
+            self.destroy()
+        except Exception:
+            pass
 
     def _notifier(self, titre, message, erreur=False):
         self.file_log.put(("popup", titre, message, erreur))
@@ -1417,33 +1434,51 @@ class App(ctk.CTk):
         def job():
             if os.path.exists(sortie):
                 shutil.rmtree(sortie, ignore_errors=True)
-            if fichiers:
-                n = unicite.uniquiser_fichiers(fichiers, sortie, renommer=renommer, filtre=filtre)
-                print(f"\n✅ {n} média(s) traité(s) → {sortie}")
-                self._notifier("Métadonnées changées",
-                               f"✅ {n} média(s) traité(s) !\n\nRésultat :\n{sortie}")
-                return
-            # Dossier : on conserve l'arborescence (sous-dossiers) + progression vivante.
+
             def progres(txt):
                 self.file_log.put(("uniq_progres", txt))
             try:
-                res = unicite.uniquiser_arbre(
-                    dossier, sortie, renommer=renommer, filtre=filtre,
-                    progress=progres, doit_arreter=lambda: self._annule_tache)
+                if fichiers:
+                    res = unicite.uniquiser_fichiers(
+                        fichiers, sortie, renommer=renommer, filtre=filtre,
+                        progress=progres, doit_arreter=lambda: self._annule_tache)
+                    res["arrete"] = bool(self._annule_tache)
+                    res.setdefault("dossiers", 0)
+                else:
+                    # Dossier : arborescence conservée + progression fichier par fichier.
+                    res = unicite.uniquiser_arbre(
+                        dossier, sortie, renommer=renommer, filtre=filtre,
+                        progress=progres, doit_arreter=lambda: self._annule_tache)
             except Exception as e:
                 print(f"\n[ERREUR] {e}")
                 self._notifier("Métadonnées", str(e), erreur=True)
                 return
-            if res["arrete"]:
-                print(f"\n⛔ Arrêté. {res['medias']} média(s) déjà traité(s) → {sortie}")
-                self._notifier("Interrompu",
-                               f"Opération arrêtée.\n{res['medias']} média(s) déjà traité(s).")
-            else:
-                print(f"\n✅ {res['medias']} média(s) dans {res['dossiers']} dossier(s) → {sortie}")
-                self._notifier("Métadonnées changées",
-                               f"✅ {res['medias']} média(s) traité(s) dans {res['dossiers']} "
-                               f"dossier(s) !\n\nMême arborescence que votre dossier, dans :\n{sortie}")
-        self._tache(job, "Changement des métadonnées…", annulable=bool(dossier))
+            self._fin_traitement("Métadonnées changées", res, sortie,
+                                 "média(s)", res.get("dossiers"))
+        self._tache(job, "Changement des métadonnées…", annulable=True)
+
+    def _fin_traitement(self, titre, res, sortie, mot="fichier(s)", nb_dossiers=None):
+        """Message de fin commun : annulation, échecs éventuels, résultat."""
+        n = res.get("medias", res.get("images", 0))
+        echecs = res.get("echecs") or []
+        if res.get("arrete"):
+            print(f"\n⛔ Arrêté. {n} {mot} déjà traité(s) → {sortie}")
+            self._notifier("Interrompu", f"Opération arrêtée.\n{n} {mot} déjà traité(s).")
+            return
+        detail = f"\n\nRésultat :\n{sortie}"
+        if nb_dossiers:
+            detail = (f" dans {nb_dossiers} dossier(s) !\n\nMême arborescence que "
+                      f"votre dossier, dans :\n{sortie}")
+            msg = f"✅ {n} {mot} traité(s)" + detail
+        else:
+            msg = f"✅ {n} {mot} traité(s) !" + detail
+        print(f"\n✅ {n} {mot} → {sortie}")
+        if echecs:
+            apercu = ", ".join(echecs[:5]) + ("…" if len(echecs) > 5 else "")
+            print(f"⚠️ {len(echecs)} fichier(s) illisibles : {apercu}")
+            msg += (f"\n\n⚠️ {len(echecs)} fichier(s) n'ont PAS pu être traités "
+                    f"(illisibles/corrompus) :\n{apercu}\n\nVoir le journal pour le détail.")
+        self._notifier(titre, msg, erreur=bool(echecs))
 
     # ==================================================================
     #  Page : Convertir en MP4
@@ -1670,21 +1705,20 @@ class App(ctk.CTk):
                 self.file_log.put(("uniq_progres", txt))
             try:
                 if fichiers:
-                    n = unicite.convertir_images_fichiers(fichiers, sortie, fmt,
-                                                          progress=progres,
-                                                          doit_arreter=lambda: self._annule_tache)
+                    res = unicite.convertir_images_fichiers(
+                        fichiers, sortie, fmt, progress=progres,
+                        doit_arreter=lambda: self._annule_tache)
                 else:
-                    n = unicite.convertir_images_dossier(dossier, sortie, fmt,
-                                                         progress=progres,
-                                                         doit_arreter=lambda: self._annule_tache)
+                    res = unicite.convertir_images_dossier(
+                        dossier, sortie, fmt, progress=progres,
+                        doit_arreter=lambda: self._annule_tache)
             except Exception as e:
                 print(f"\n[ERREUR] {e}")
                 self._notifier("Convertir les images", str(e), erreur=True)
                 return
-            print(f"\n✅ {n} image(s) converties en .{fmt} → {sortie}")
-            self._notifier("Images converties",
-                           f"✅ {n} image(s) converties en .{fmt} !\n\nRésultat :\n{sortie}")
-        self._tache(job, f"Conversion des images en .{fmt}…", annulable=bool(dossier))
+            res["arrete"] = bool(self._annule_tache)
+            self._fin_traitement("Images converties", res, sortie, f"image(s) en .{fmt}")
+        self._tache(job, f"Conversion des images en .{fmt}…", annulable=True)
 
     # ==================================================================
     #  Page : Télécharger depuis Google Drive

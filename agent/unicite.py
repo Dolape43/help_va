@@ -22,9 +22,13 @@ import os
 import random
 import subprocess
 import sys
+import threading
 
 import numpy as np
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image, ImageFile, ImageOps
+
+# Récupère les JPEG légèrement tronqués au lieu de planter (téléchargements coupés).
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # Active la lecture des photos iPhone (.heic/.heif) dans PIL, si dispo.
 try:
@@ -40,20 +44,19 @@ EXT_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 EXT_VIDEOS = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
 
 
-def _filtre_leger(img: "Image.Image") -> "Image.Image":
-    """Filtre UNIQUE : un léger ton FROID (bleuté/cinéma), discret.
+def _aplatir_sur_blanc(img: "Image.Image") -> "Image.Image":
+    """Passe l'image en RGB en COMPOSANT la transparence sur du blanc.
 
-    Le même rendu pour TOUTES les images (plus de styles chaud/vif/doux ni de
-    vignette). Léger : on baisse un peu le rouge et on remonte un peu le bleu.
-    De petites variations aléatoires (imperceptibles) suffisent à garder chaque
-    copie unique côté pixels.
+    Sans ça, un PNG à fond transparent (export Canva, sticker, logo) ressortirait
+    avec un rectangle NOIR : convert("RGB") jette le canal alpha et garde les
+    valeurs stockées dessous, souvent (0,0,0).
     """
-    r, g, b = img.split()
-    r = r.point(lambda p: int(p * random.uniform(0.95, 0.98)))          # un peu moins de rouge
-    b = b.point(lambda p: min(255, int(p * random.uniform(1.02, 1.05))))  # un peu plus de bleu
-    img = Image.merge("RGB", (r, g, b))
-    img = ImageEnhance.Contrast(img).enhance(random.uniform(1.00, 1.02))
-    return img
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        img = img.convert("RGBA")
+        fond = Image.new("RGB", img.size, (255, 255, 255))
+        fond.paste(img, mask=img.split()[-1])
+        return fond
+    return img.convert("RGB")
 
 
 def uniquiser_image(source: str, dest: str | None = None, filtre: bool = False) -> str:
@@ -66,36 +69,43 @@ def uniquiser_image(source: str, dest: str | None = None, filtre: bool = False) 
         dest = source
 
     # 1) Ouverture. draft() demande au décodeur JPEG de décoder DIRECTEMENT à une
-    #    échelle réduite (il saute des coefficients) : énorme gain sur les grosses
-    #    photos. Sans effet sur les autres formats.
+    #    échelle réduite (il saute des coefficients) : gros gain sur les grosses
+    #    photos. On lui donne la taille FINALE visée (calculée sur les dimensions
+    #    réelles) : sinon, sur une image PAYSAGE, il ne réduirait rien du tout.
     MAX_L, MAX_H = 1080, 1920
     img = Image.open(source)
+    icc = img.info.get("icc_profile")      # profil couleur (photos iPhone P3)
     try:
-        img.draft("RGB", (MAX_L, MAX_H))
+        w, h = img.size
+        r = min(MAX_L / w, MAX_H / h, 1.0)
+        img.draft("RGB", (max(1, round(w * r)), max(1, round(h * r))))
     except Exception:
         pass
     # Redresser selon l'orientation EXIF AVANT de retirer l'EXIF, sinon les photos
     # de téléphone sortiraient couchées.
     img = ImageOps.exif_transpose(img)
-    img = img.convert("RGB")
-    # Réduction à la taille utile pour Instagram (max 1080 x 1920) : plus rapide,
-    # fichiers plus légers, sans perte visible (Instagram plafonne à ~1080 px).
+    # Réduction à la taille utile pour Instagram (max 1080 x 1920) AVANT la
+    # conversion RGB : plus rapide, moins de mémoire, sans perte visible.
     w0, h0 = img.size
     if w0 > MAX_L or h0 > MAX_H:
         ratio = min(MAX_L / w0, MAX_H / h0)
         img = img.resize((max(1, round(w0 * ratio)), max(1, round(h0 * ratio))), Image.LANCZOS)
+    # Transparence composée sur blanc (sinon fond NOIR sur les PNG/stickers).
+    img = _aplatir_sur_blanc(img)
 
     # 2) Miroir horizontal (optionnel, visible)
     if UNICITE_FLIP_HORIZONTAL:
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
 
-    # 3) Micro-recadrage (1 à 4 px par bord) : décale les pixels et change la
-    #    taille -> hash cassé. On ne redimensionne PAS pour revenir à la taille
-    #    d'origine (gain de temps ; quelques pixels de moins sont invisibles).
+    # 3) Micro-recadrage (jusqu'à 4 px par bord) : décale les pixels et change la
+    #    taille -> hash cassé. Pas de resize retour (gain de temps, invisible).
+    #    Marge bornée : une toute petite image ne doit pas être détruite.
     L, H = img.size
-    g = random.randint(1, 4); h = random.randint(1, 4)
-    d = random.randint(1, 4); b = random.randint(1, 4)
-    img = img.crop((g, h, L - d, H - b))
+    marge = max(0, min(4, (min(L, H) - 1) // 4))
+    if marge >= 1 and min(L, H) >= 32:
+        g = random.randint(1, marge); h = random.randint(1, marge)
+        d = random.randint(1, marge); b = random.randint(1, marge)
+        img = img.crop((g, h, L - d, H - b))
 
     # 4) UNE SEULE passe numpy : saturation + luminosité + contraste + bruit.
     #    (remplace 3 passes PIL + une passe bruit -> beaucoup plus rapide)
@@ -104,26 +114,37 @@ def uniquiser_image(source: str, dest: str | None = None, filtre: bool = False) 
     f_lum = random.uniform(0.97, 1.03)
     f_con = random.uniform(0.97, 1.03)
     arr = np.asarray(img, dtype=np.float32)
-    lum = (0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2])[..., None]
-    arr = arr * f_sat + lum * (1.0 - f_sat)            # saturation
-    if filtre:                                          # ton légèrement froid
+    lum = arr @ np.array([0.299, 0.587, 0.114], dtype=np.float32)   # (H, W)
+    moyenne = float(lum.mean())            # pivot du contraste = moyenne réelle
+    arr = arr * f_sat + lum[..., None] * (1.0 - f_sat)              # saturation
+    if filtre:                                                       # ton froid
         arr[..., 0] *= random.uniform(0.95, 0.98)
         arr[..., 2] *= random.uniform(1.02, 1.05)
-    bruit = rng.integers(-2, 3, arr.shape, dtype=np.int16).astype(np.float32)
-    arr = arr * (f_lum * f_con) + (128.0 * (1.0 - f_con) * f_lum) + bruit
+    arr = arr * (f_lum * f_con) + (moyenne * (1.0 - f_con) * f_lum)  # lum + contraste
+    # On laisse 2 niveaux de marge pour que le bruit ne soit pas avalé par le clip
+    # (sinon une image unie ressortirait identique à chaque passage).
+    np.clip(arr, 2, 253, out=arr)
+    arr += rng.integers(-2, 3, arr.shape, dtype=np.int16)
     np.clip(arr, 0, 255, out=arr)
+    np.rint(arr, out=arr)                  # arrondi (sinon biais de -0,5 niveau)
     img = Image.fromarray(arr.astype(np.uint8), "RGB")
 
     # 5) Ré-encodage JPEG, qualité variable, SANS EXIF (optimize off = plus rapide).
     if os.path.splitext(dest)[1].lower() not in {".jpg", ".jpeg"}:
         dest = os.path.splitext(dest)[0] + ".jpg"
-    img.save(dest, "JPEG", quality=random.randint(90, 96))
+    options = {"quality": random.randint(90, 96)}
+    if icc:
+        options["icc_profile"] = icc       # garde les couleurs d'origine (P3…)
+    img.save(dest, "JPEG", **options)
 
-    # 6) Nouvelle date de fichier (modifie une métadonnée du fichier).
-    #    Décalage aléatoire dans les ~30 derniers jours.
-    decalage = random.randint(0, 30 * 24 * 3600)
-    t = os.path.getmtime(dest) - decalage
-    os.utime(dest, (t, t))
+    # 6) Nouvelle date de fichier (bonus : une métadonnée de plus qui change).
+    #    Un échec ici ne doit PAS faire compter le fichier comme raté.
+    try:
+        decalage = random.randint(0, 30 * 24 * 3600)
+        t = os.path.getmtime(dest) - decalage
+        os.utime(dest, (t, t))
+    except OSError:
+        pass
 
     return dest
 
@@ -177,8 +198,8 @@ def uniquiser_video(source: str, dest: str | None = None) -> str:
 
 
 def uniquiser_dossier(dossier: str, dossier_sortie: str = None,
-                      renommer: bool = False, filtre: bool = False) -> int:
-    """Uniquise images ET vidéos d'un dossier. Retourne le nombre traité.
+                      renommer: bool = False, filtre: bool = False) -> dict:
+    """Uniquise images ET vidéos d'un dossier. Renvoie {"medias", "echecs"}.
 
     dossier_sortie=None : modifie les fichiers sur place.
     dossier_sortie fourni : écrit des COPIES uniques dans deux sous-dossiers :
@@ -198,45 +219,68 @@ def uniquiser_dossier(dossier: str, dossier_sortie: str = None,
 
 
 def uniquiser_fichiers(fichiers: list, dossier_sortie: str = None,
-                       renommer: bool = False, filtre: bool = False) -> int:
-    """Uniquise une LISTE de fichiers (images/vidéos) choisis. Retourne le nb traité.
+                       renommer: bool = False, filtre: bool = False,
+                       progress=None, doit_arreter=None) -> dict:
+    """Uniquise une LISTE de fichiers (images/vidéos) choisis.
 
     Mêmes règles que uniquiser_dossier (sortie en images\\ et videos\\).
+    Renvoie {"medias": int, "echecs": [noms]}.
     """
     images = [f for f in fichiers if os.path.splitext(f)[1].lower() in EXT_IMAGES]
     videos = [f for f in fichiers if os.path.splitext(f)[1].lower() in EXT_VIDEOS]
 
     # Modification SUR PLACE (pas de dossier de sortie) : séquentiel.
     if not dossier_sortie:
-        n = 0
-        for source in images + videos:
+        n, echecs = 0, []
+        for source in images:
+            if doit_arreter and doit_arreter():
+                break
             try:
-                if source in images:
-                    uniquiser_image(source, filtre=filtre)
-                else:
-                    uniquiser_video(source)
+                uniquiser_image(source, filtre=filtre)
                 n += 1
             except Exception as e:
-                print(f"   [!] {os.path.basename(source)} ignoré : {e}", flush=True)
-        return n
+                echecs.append(os.path.basename(source))
+                sys.stdout.write(f"   [!] {os.path.basename(source)} ignoré : {e}\n")
+        for source in videos:
+            if doit_arreter and doit_arreter():
+                break
+            try:
+                uniquiser_video(source)
+                n += 1
+            except Exception as e:
+                echecs.append(os.path.basename(source))
+                sys.stdout.write(f"   [!] {os.path.basename(source)} ignoré : {e}\n")
+        return {"medias": n, "echecs": echecs}
 
     sortie_images = os.path.join(dossier_sortie, "images")
     sortie_videos = os.path.join(dossier_sortie, "videos")
     n_img = n_vid = 0
+    echecs = []
     if images:
         os.makedirs(sortie_images, exist_ok=True)
-        n_img = _traiter_parallele(
+        n_img, e = _traiter_parallele(
             _planifier(sortie_images, images, renommer, ".jpg"),
-            lambda s, d: uniquiser_image(s, d, filtre=filtre))
+            lambda s, d: uniquiser_image(s, d, filtre=filtre),
+            doit_arreter, progress, "image(s)")
+        echecs += e
     if videos:
         os.makedirs(sortie_videos, exist_ok=True)
-        for source, dest in _planifier(sortie_videos, videos, renommer, ".mp4"):
+        plans_v = _planifier(sortie_videos, videos, renommer, ".mp4")
+        for i, (source, dest) in enumerate(plans_v, 1):
+            if doit_arreter and doit_arreter():
+                break
+            if progress:
+                try:
+                    progress(f"Vidéo {i}/{len(plans_v)} — {os.path.basename(source)}…")
+                except Exception:
+                    pass
             try:
                 uniquiser_video(source, dest)
                 n_vid += 1
             except Exception as e:
-                print(f"   [!] {os.path.basename(source)} ignoré : {e}", flush=True)
-    return n_img + n_vid
+                echecs.append(os.path.basename(source))
+                sys.stdout.write(f"   [!] {os.path.basename(source)} ignoré : {e}\n")
+    return {"medias": n_img + n_vid, "echecs": echecs}
 
 
 def _nb_travailleurs() -> int:
@@ -267,32 +311,60 @@ def _planifier(cible: str, sources: list, renommer: bool, ext: str) -> list:
     return plans
 
 
-def _traiter_parallele(plans: list, fn, doit_arreter=None) -> int:
+def _traiter_parallele(plans: list, fn, doit_arreter=None, progress=None,
+                       etiquette: str = "fichier(s)"):
     """Applique fn(source, dest) à tous les plans, en parallèle sur les cœurs.
 
-    Un fichier en erreur est ignoré (il n'arrête pas le lot). Renvoie le nombre
-    de fichiers réellement traités.
+    Un fichier en erreur est ignoré (il n'arrête pas le lot) mais il est REMONTÉ.
+    progress(texte) est appelé après chaque fichier (compteur protégé par verrou)
+    pour que l'utilisateur voie l'avancement en direct.
+    Renvoie (nombre_traité, [noms des fichiers en échec]).
     """
     if not plans:
-        return 0
-    travailleurs = _nb_travailleurs()
+        return 0, []
+    total = len(plans)
+    verrou = threading.Lock()
+    etat = {"fait": 0, "ok": 0}
+    echecs = []
 
     def _un(plan):
         src, dest = plan
         if doit_arreter and doit_arreter():
-            return 0
+            return
+        ok = True
         try:
             fn(src, dest)
-            return 1
         except Exception as e:
-            print(f"   [!] {os.path.basename(src)} ignoré : {e}", flush=True)
-            return 0
+            ok = False
+            # une seule écriture -> pas d'entrelacement entre threads
+            sys.stdout.write(f"   [!] {os.path.basename(src)} ignoré : {e}\n")
+        with verrou:
+            etat["fait"] += 1
+            k = etat["fait"]
+            if ok:
+                etat["ok"] += 1
+            else:
+                echecs.append(os.path.basename(src))
+            if progress:
+                try:
+                    progress(f"{k}/{total} {etiquette}…")
+                except Exception:
+                    pass
 
-    if travailleurs == 1 or len(plans) == 1:
-        return sum(_un(p) for p in plans)
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=travailleurs) as ex:
-        return sum(ex.map(_un, plans))
+    travailleurs = _nb_travailleurs()
+    if travailleurs == 1 or total == 1:
+        for p in plans:
+            _un(p)
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        ex = ThreadPoolExecutor(max_workers=travailleurs)
+        try:
+            for f in [ex.submit(_un, p) for p in plans]:
+                f.result()
+        finally:
+            # cancel_futures : si on a demandé l'arrêt, on ne traîne pas.
+            ex.shutdown(wait=False, cancel_futures=True)
+    return etat["ok"], echecs
 
 
 def _dest_libre(cible: str, base: str) -> str:
@@ -336,6 +408,7 @@ def uniquiser_arbre(dossier: str, dossier_sortie: str, renommer: bool = False,
 
     n_total = 0
     arrete = False
+    echecs = []
     for i, (racine, medias) in enumerate(groupes, 1):
         if doit_arreter and doit_arreter():
             arrete = True
@@ -351,22 +424,34 @@ def uniquiser_arbre(dossier: str, dossier_sortie: str, renommer: bool = False,
                 pass
         images = [f for f in medias if os.path.splitext(f)[1].lower() in EXT_IMAGES]
         videos = [f for f in medias if os.path.splitext(f)[1].lower() in EXT_VIDEOS]
+        # Préfixe du message de progression : on garde le contexte du dossier,
+        # mais on affiche l'avancement FICHIER PAR FICHIER (sinon ça paraît figé).
+        prefixe = f"Dossier {i}/{total_d} · " if total_d > 1 else ""
+        avance = (lambda t: progress(prefixe + t)) if progress else None
         # Images : en parallèle (plusieurs cœurs). Noms attribués avant -> pas de collision.
-        n_img = _traiter_parallele(
+        n_img, ech = _traiter_parallele(
             _planifier(cible, images, renommer, ".jpg"),
             lambda s, d: uniquiser_image(s, d, filtre=filtre),
-            doit_arreter)
+            doit_arreter, avance, "image(s)")
+        echecs += ech
         # Vidéos : en séquentiel (ffmpeg sature déjà tous les cœurs à lui seul).
         n_vid = 0
-        for source, dest in _planifier(cible, videos, renommer, ".mp4"):
+        plans_v = _planifier(cible, videos, renommer, ".mp4")
+        for j, (source, dest) in enumerate(plans_v, 1):
             if doit_arreter and doit_arreter():
                 arrete = True
                 break
+            if avance:
+                try:
+                    avance(f"vidéo {j}/{len(plans_v)} — {os.path.basename(source)}…")
+                except Exception:
+                    pass
             try:
                 uniquiser_video(source, dest)
                 n_vid += 1
             except Exception as e:
-                print(f"   [!] {os.path.basename(source)} ignoré : {e}", flush=True)
+                echecs.append(os.path.basename(source))
+                sys.stdout.write(f"   [!] {os.path.basename(source)} ignoré : {e}\n")
         if doit_arreter and doit_arreter():
             arrete = True
         n_total += n_img + n_vid
@@ -379,7 +464,8 @@ def uniquiser_arbre(dossier: str, dossier_sortie: str, renommer: bool = False,
                 pass
         if arrete:
             break
-    return {"medias": n_total, "dossiers": total_d, "arrete": arrete}
+    return {"medias": n_total, "dossiers": total_d, "arrete": arrete,
+            "echecs": echecs}
 
 
 # ======================================================================
@@ -409,33 +495,22 @@ def convertir_image_format(source: str, dossier_sortie: str, fmt: str = "jpg") -
 
 
 def convertir_images_fichiers(fichiers: list, dossier_sortie: str, fmt: str = "jpg",
-                              progress=None, doit_arreter=None) -> int:
-    """Convertit une liste d'images vers dossier_sortie (en parallèle)."""
-    import threading
+                              progress=None, doit_arreter=None) -> dict:
+    """Convertit une liste d'images vers dossier_sortie (en parallèle).
+
+    Renvoie {"images": int, "echecs": [noms]}.
+    """
     imgs = [f for f in fichiers if os.path.splitext(f)[1].lower() in EXT_IMAGES]
     os.makedirs(dossier_sortie, exist_ok=True)
     ext = ".png" if str(fmt).lower() == "png" else ".jpg"
     plans = _planifier(dossier_sortie, imgs, False, ext)
-    total = len(plans)
-    verrou = threading.Lock()
-    fait = [0]
-
-    def _conv(src, dest):
-        _convertir_vers(src, dest, fmt)
-        if progress:
-            with verrou:
-                fait[0] += 1
-                k = fait[0]
-            try:
-                progress(f"{k}/{total} — {os.path.basename(src)}")
-            except Exception:
-                pass
-
-    return _traiter_parallele(plans, _conv, doit_arreter)
+    n, echecs = _traiter_parallele(plans, lambda s, d: _convertir_vers(s, d, fmt),
+                                   doit_arreter, progress, "image(s)")
+    return {"images": n, "echecs": echecs}
 
 
 def convertir_images_dossier(dossier: str, dossier_sortie: str, fmt: str = "jpg",
-                             progress=None, doit_arreter=None) -> int:
+                             progress=None, doit_arreter=None) -> dict:
     """Convertit toutes les images d'un dossier (et sous-dossiers) vers dossier_sortie."""
     if not os.path.isdir(dossier):
         raise RuntimeError(f"Dossier introuvable : {dossier}")
