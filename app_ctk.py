@@ -70,6 +70,44 @@ def chemin_ressource(rel: str) -> str:
     return os.path.join(base, rel)
 
 
+def icones_nettes(fenetre):
+    """Pose l'icône de la fenêtre via Windows, à la taille EXACTE de l'écran.
+
+    Tk fabrique lui-même une icône floue (visible dans la barre des tâches et la
+    barre de titre). Ici Windows charge directement la bonne taille depuis
+    logo.ico : 16 px (titre) et 32 px (barre des tâches, Alt+Tab), x zoom écran.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        u32 = ctypes.windll.user32
+        u32.LoadImageW.restype = ctypes.c_void_p
+        u32.LoadImageW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        u32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                     ctypes.c_size_t, ctypes.c_void_p]
+        u32.GetParent.restype = ctypes.c_void_p
+        u32.GetParent.argtypes = [ctypes.c_void_p]
+        hwnd = u32.GetParent(fenetre.winfo_id()) or fenetre.winfo_id()
+        try:
+            dpi = u32.GetDpiForWindow(ctypes.c_void_p(hwnd)) or 96
+        except Exception:
+            dpi = 96
+        ico = chemin_ressource("assets/logo.ico")
+        IMAGE_ICON, LR_LOADFROMFILE, WM_SETICON = 1, 0x10, 0x0080
+        icones = []
+        for quelle, base in ((0, 16), (1, 32)):          # 0 = petite, 1 = grande
+            t = round(base * dpi / 96)
+            h = u32.LoadImageW(None, ico, IMAGE_ICON, t, t, LR_LOADFROMFILE)
+            if h:
+                u32.SendMessageW(ctypes.c_void_p(hwnd), WM_SETICON, quelle, ctypes.c_void_p(h))
+                icones.append(h)
+        fenetre._icones_win = icones      # garde les icônes en vie
+    except Exception:
+        pass
+
+
 def _abonnement_txt(st: dict) -> str:
     return {"vie": "Abonnement à vie",
             "mois": "Abonnement mensuel",
@@ -133,6 +171,8 @@ class App(ctk.CTk):
             self.iconbitmap(chemin_ressource("assets/logo.ico"))
         except Exception:
             pass
+        # Remplace l'icône floue fabriquée par Tk par une icône nette (Windows).
+        self.after(250, lambda: icones_nettes(self))
         # Fermeture de la fenêtre -> on demande l'arrêt des traitements en cours.
         self.protocol("WM_DELETE_WINDOW", self._fermer_app)
 
