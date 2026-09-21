@@ -11,7 +11,7 @@ hiddenimports = [
     'agent.horloge', 'agent.licence', 'agent.version', 'agent.emplacement',
     'agent.config', 'agent.parametres', 'agent.drive', 'agent.calendrier',
     'agent.ranger', 'agent.unicite', 'agent.conversion',
-    'agent.polices', 'gdown',
+    'agent.polices', 'agent.raccourci', 'gdown',
 ]
 
 for paquet in ('customtkinter', 'cryptography', 'imageio_ffmpeg', 'gdown',

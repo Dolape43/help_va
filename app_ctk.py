@@ -24,7 +24,7 @@ from tkinter import font as tkfont
 from agent import parametres, licence, version
 from agent import ranger as rangement
 from agent import unicite, calendrier, conversion
-from agent import drive
+from agent import drive, raccourci
 
 # Re-contrôle de l'abonnement quand l'app reste ouverte (réglable pour tests).
 # Toutes les 1 h : vérifie en ligne l'état de la licence (résiliation/expiration).
@@ -499,6 +499,110 @@ class App(ctk.CTk):
         self._planifier_verif_periodique()
         # Rappel discret si on tourne en mode hors-ligne toléré.
         self._montrer_bandeau_horsligne((self.statut or {}).get("hors_ligne", False))
+        # Raccourci sur le Bureau (version installée uniquement).
+        if not getattr(self, "_raccourci_verifie", False):
+            self._raccourci_verifie = True
+            self.after(1500, self._verifier_raccourci)
+
+    # ---- raccourci sur le Bureau ----
+    def _verifier_raccourci(self):
+        """1er lancement : crée le raccourci sur le Bureau (Windows / Mac).
+        Lancements suivants : le met à jour si l'app a été déplacée."""
+        app = raccourci.chemin_application()
+        if not app:
+            return          # mode développement : rien à faire
+        action = raccourci.a_faire(app, bool(self.params.get("raccourci_bureau")),
+                                   self.params.get("raccourci_cible", ""))
+        if action == "temporaire":
+            self._toast("Conseil : placez HelpVA dans un dossier fixe avant de l'utiliser\n"
+                        + ("(glissez-le dans le dossier Applications)."
+                           if sys.platform == "darwin" else
+                           "(extrayez-le du fichier zip, par exemple dans Documents)."))
+            return
+        if action not in ("creer", "maj"):
+            return
+
+        self._lancer_creation_raccourci(app, action)
+
+    def _lancer_creation_raccourci(self, app, action):
+        """Crée le raccourci dans un thread (PowerShell peut prendre 1-2 s)."""
+        if getattr(self, "_raccourci_en_cours", False):
+            return
+        self._raccourci_en_cours = True
+
+        def job():
+            try:
+                _lien, deja = raccourci.creer(app, verifier_existant=(action == "creer"))
+                self.file_log.put(("raccourci", action, app, "", deja))
+            except Exception as e:
+                self.file_log.put(("raccourci", action, app, str(e), False))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _fin_raccourci(self, action, app, erreur, deja=False):
+        self._raccourci_en_cours = False
+        self.params["raccourci_bureau"] = True        # ne redemande jamais
+        if not erreur and not deja:
+            self.params["raccourci_cible"] = app
+        try:
+            parametres.sauver(self.params)
+        except OSError:
+            pass
+        if action == "manuel":
+            if erreur:
+                messagebox.showwarning("Raccourci", f"Impossible de créer le raccourci :\n{erreur}")
+            else:
+                self._toast("✅ Raccourci HelpVA créé sur votre Bureau.")
+            return
+        if action != "creer" or deja:
+            return                 # mise à jour silencieuse / raccourci déjà présent
+        if erreur:
+            self._toast("Astuce : créez un raccourci pour ouvrir HelpVA plus vite\n"
+                        + ("(glissez HelpVA dans le Dock)." if sys.platform == "darwin" else
+                           "(clic droit sur HelpVA.exe → Envoyer vers → Bureau)."))
+        else:
+            self._toast("✅ Un raccourci HelpVA a été ajouté sur votre Bureau.")
+
+    def _creer_raccourci_manuel(self):
+        """Bouton des Paramètres : (re)crée le raccourci à la demande."""
+        app = raccourci.chemin_application()
+        if not app:
+            messagebox.showinfo("Raccourci", "Disponible dans la version installée de HelpVA "
+                                             "(fichier .exe ou application Mac).")
+            return
+        situation = raccourci.situation(app)
+        if situation == "sur_bureau":
+            messagebox.showinfo("Raccourci", "HelpVA est déjà sur votre Bureau.")
+            return
+        if situation == "temporaire":
+            messagebox.showinfo(
+                "Raccourci", "HelpVA est lancé depuis un emplacement provisoire.\n\n"
+                + ("Glissez d'abord HelpVA dans le dossier Applications, puis relancez-le."
+                   if sys.platform == "darwin" else
+                   "Extrayez d'abord HelpVA du fichier zip (par exemple dans Documents), "
+                   "puis relancez-le."))
+            return
+        self._lancer_creation_raccourci(app, "manuel")
+
+    def _toast(self, texte, duree=8000):
+        """Petit message NON bloquant en bas à droite, qui disparaît tout seul."""
+        try:
+            ancien = getattr(self, "_toast_w", None)
+            if ancien is not None and ancien.winfo_exists():
+                ancien.destroy()
+            t = ctk.CTkFrame(self, fg_color=CARD, corner_radius=12,
+                             border_width=1, border_color=BORDER)
+            self._toast_w = t
+            ctk.CTkLabel(t, text=texte, font=(POLICE, 13), text_color=TEXT,
+                         justify="left").pack(side="left", padx=(16, 6), pady=12)
+            ctk.CTkButton(t, text="✕", width=28, height=28, corner_radius=8,
+                          fg_color="transparent", hover_color=ACCENT_SOFT,
+                          text_color=MUTED, command=t.destroy).pack(side="right", padx=(0, 8))
+            # Au-dessus de l'éventuel bandeau « Hors-ligne ».
+            t.place(relx=0.985, rely=0.97, y=-46, anchor="se")
+            t.lift()
+            self.after(duree, lambda: t.winfo_exists() and t.destroy())
+        except Exception:
+            pass
 
     def _montrer_bandeau_horsligne(self, afficher):
         """Petit bandeau flottant, NON bloquant, en bas à droite quand l'app
@@ -732,13 +836,18 @@ class App(ctk.CTk):
         try:
             while True:
                 item = self.file_log.get_nowait()
-                if isinstance(item, tuple):
-                    self._controle(item)
-                else:
-                    self._inserer_log(item)
+                try:
+                    if isinstance(item, tuple):
+                        self._controle(item)
+                    else:
+                        self._inserer_log(item)
+                except Exception as e:
+                    # Une erreur sur UN message ne doit pas bloquer les suivants.
+                    self._inserer_log(f"\n[ERREUR] {e}\n")
         except queue.Empty:
             pass
-        self.after(120, self._pomper_log)
+        finally:
+            self.after(120, self._pomper_log)
 
     def _inserer_log(self, texte):
         if self.log is not None:
@@ -762,6 +871,8 @@ class App(ctk.CTk):
                     lbl.configure(text=item[1])
             except Exception:
                 pass
+        elif tag == "raccourci":
+            self._fin_raccourci(*item[1:])
         elif tag == "verif_licence":
             self._traiter_verif(item[1])
         elif tag == "drive_apercu":
@@ -1987,7 +2098,7 @@ class App(ctk.CTk):
     #  Page : Paramètres
     # ==================================================================
     def _page_parametres(self):
-        self._entete_page("Paramètres", "Dossier de sortie et licence.")
+        self._entete_page("Paramètres", "Dossier de sortie, raccourci et licence.")
 
         # --- Dossier de sortie ---
         ds = self._carte()
@@ -2005,6 +2116,14 @@ class App(ctk.CTk):
         self._btn(ligne_ds, "Ouvrir", self._ouvrir_dossier_sortie).pack(side="left", padx=(8, 0))
         if perso:
             self._btn(ligne_ds, "Réinitialiser (Bureau)", self._reinit_dossier_sortie).pack(side="left", padx=(8, 0))
+
+        # --- Raccourci sur le Bureau ---
+        rc = self._carte()
+        ctk.CTkLabel(rc, text="Raccourci sur le Bureau", font=(POLICE, 14, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w")
+        ctk.CTkLabel(rc, text="Ouvrez HelpVA en un double-clic depuis votre Bureau.",
+                     font=(POLICE, 13), text_color=MUTED).pack(anchor="w", pady=(6, 10))
+        self._btn(rc, "Créer le raccourci", self._creer_raccourci_manuel).pack(anchor="w")
 
         # --- Licence & abonnement ---
         lic = self._carte()
