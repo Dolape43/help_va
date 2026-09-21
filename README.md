@@ -13,7 +13,7 @@ Interface : Python + CustomTkinter, police Poppins embarquée, thème clair/somb
 | **Convertir les images** | Convertit en `.jpg` ou `.png` (y compris les photos iPhone HEIC). | [`agent/unicite.py`](agent/unicite.py) |
 | **Convertir en MP4** | Transforme `.mov`, `.avi`, … en `.mp4` prêt pour Instagram. | [`agent/conversion.py`](agent/conversion.py) |
 | **Changer les métadonnées** | Rend chaque photo/vidéo **unique** (métadonnées, taille, pixels) pour éviter la détection de doublon d'Instagram, sans changement visible. | [`agent/unicite.py`](agent/unicite.py) |
-| **Ranger les médias** | Organise images et vidéos par semaine/jour/créneau selon le calendrier. | [`agent/ranger.py`](agent/ranger.py) · [`agent/calendrier.py`](agent/calendrier.py) |
+| **Ranger les médias** | Range réels, stories, stories CTA et carrousels (un dossier source par type) par semaine/jour/créneau selon le calendrier. | [`agent/ranger.py`](agent/ranger.py) · [`agent/calendrier.py`](agent/calendrier.py) |
 
 ## Prérequis
 

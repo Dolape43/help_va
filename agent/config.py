@@ -4,15 +4,8 @@ Tu modifies ce fichier, pas le reste du code.
 """
 
 # --- Rangement des médias selon le calendrier ---
-# Dossiers sources où TU déposes tes médias bruts :
-DOSSIER_SOURCE_VIDEOS = "sources/videos"    # -> utilisées pour les Reels
-DOSSIER_SOURCE_IMAGES = "sources/images"    # -> Carousels (plusieurs) + Stories (1)
-# Dossier de sortie où l'agent range tout selon le calendrier :
-DOSSIER_PLANNING = "planning"
-# Nombre d'images par carousel :
+# Nombre d'images par carrousel :
 IMAGES_PAR_CAROUSEL = 3
-# "copier" (garde les originaux) ou "deplacer" (retire des sources) :
-MODE_RANGEMENT = "copier"
 
 # --- Uniquisation (anti-détection de doublon) ---
 # Miroir horizontal : très efficace mais VISIBLE (image inversée).

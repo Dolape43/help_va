@@ -59,6 +59,7 @@ ACCENT_SOFTER = ("#F4F2FE", "#1E1D2E")
 TEXT = ("#22243A", "#ECEDF6")
 MUTED = ("#8A90A2", "#9EA1B8")
 GREEN = ("#16A34A", "#4FD08A")
+ORANGE = ("#D97706", "#F5A524")
 BORDER = ("#E7E8F2", "#2A2C3C")
 from agent import polices as _polices
 POLICE = "Poppins" if _polices.charger_poppins() else "Segoe UI"
@@ -110,10 +111,12 @@ class App(ctk.CTk):
         self.occupe = False
         self._loading = None
         self._annule_tache = False     # drapeau : annulation d'une tâche en cours
-        self.dossier_ranger_src = None
+        self.sources_ranger = {}       # {type de post: dossier source}
+        self._onglet_ranger = None
+        self._ranger_etape2 = None
+        self.ranger_aleatoire = True
         self.dossier_uniq_src = None
         self.fichiers_uniq_src = None
-        self.dossier_carrousel_src = None
         self.dossier_convert_src = None
         self.fichiers_convert_src = None
         self.dossier_imgconv_src = None
@@ -755,30 +758,24 @@ class App(ctk.CTk):
         elif tag == "fini_ranger":
             self._cacher_loading()
             _, sortie, res = item
-            txt = f"Reels + Stories rangés !\n\nDossier :\n{sortie}"
-            mv, mi = res.get("manque_videos", 0), res.get("manque_images", 0)
-            if mv or mi:
-                txt += "\n\n⚠️ Médias insuffisants :"
-                if mv:
-                    txt += f"\n• Il manque {mv} vidéo(s) pour les reels"
-                if mi:
-                    txt += f"\n• Il manque {mi} image(s) pour les stories"
-            if res.get("surplus"):
-                txt += f"\n\n📦 {res['surplus']} média(s) en surplus."
-            txt += "\n\n👉 Ensuite : « Ranger les carrousels » (section 2)."
-            (messagebox.showwarning if (mv or mi) else messagebox.showinfo)("Ranger", txt)
-
-        elif tag == "fini_carrousels":
-            self._cacher_loading()
-            _, sortie, res = item
-            faits = res.get("carrousels", 0)
-            manques = res.get("manques", [])
-            txt = f"Carrousels rangés dans l'ordre !\n\n{faits} carrousel(s) remplis."
-            if manques:
-                txt += (f"\n\n⚠️ {len(manques)} carrousel(s) incomplet(s) "
-                        f"(pas assez de photos : {res.get('photos', 0)} fournies pour "
-                        f"{res.get('requises', 0)} attendues).")
-            (messagebox.showwarning if manques else messagebox.showinfo)("Carrousels", txt)
+            if res.get("arrete"):
+                messagebox.showwarning("Ranger", f"Rangement arrêté.\n\n{res.get('creneaux', 0)} "
+                                                 f"créneau(x) déjà rangé(s) dans :\n{sortie}")
+                return
+            lignes, alerte = [], False
+            for t in res.get("types", []):
+                unite = "vidéo(s)" if rangement.est_video(t) else "image(s)"
+                requis = res["besoins"][t] * rangement.medias_par_creneau(t)
+                ligne = f"• {rangement.LIBELLES[t]} : {res['places'][t]}/{requis} {unite}"
+                if res["manques"].get(t):
+                    ligne += f"  ⚠️ il en manque {res['manques'][t]}"
+                    alerte = True
+                lignes.append(ligne)
+            txt = "Médias rangés !\n\n" + "\n".join(lignes) + f"\n\nDossier :\n{sortie}"
+            en_trop = sum(res.get("surplus", {}).values())
+            if en_trop:
+                txt += f"\n\n📦 {en_trop} média(s) en trop → dossier « surplus »."
+            (messagebox.showwarning if alerte else messagebox.showinfo)("Ranger", txt)
 
     def _tache(self, fn, message="Traitement en cours…", annulable=False):
         if self.occupe:
@@ -1012,40 +1009,43 @@ class App(ctk.CTk):
                              fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER,
                              hover_color="#E1DDFA", font=(POLICE, 14))
 
+    # ==================================================================
+    #  Page : Ranger les médias (3 étapes : calendrier → dossiers → rangement)
+    # ==================================================================
+    def _types_ranger_coches(self):
+        """Types de posts que l'utilisateur veut ranger (réglage mémorisé)."""
+        choix = self.params.get("ranger_types")
+        if not isinstance(choix, dict):
+            choix = {}
+        return {t: bool(choix.get(t, True)) for t in rangement.TYPES}
+
+    def _types_ranger_actifs(self):
+        """Types cochés ET présents dans le calendrier."""
+        n = rangement.compter()
+        coches = self._types_ranger_coches()
+        return [t for t in rangement.TYPES if coches[t] and n[t] > 0]
+
     def _maj_besoins_ranger(self):
-        """Rafraîchit le texte « besoins » de la page Ranger (après édition du
-        calendrier), pour qu'il reste cohérent avec le calendrier enregistré."""
-        lbl = getattr(self, "lbl_ranger_besoins", None)
-        if lbl is None:
-            return
+        """Après modification du calendrier : reconstruit la page Ranger si elle
+        est affichée (types disponibles + besoins à jour)."""
+        z = getattr(self, "_ranger_etape2", None)
         try:
-            if not lbl.winfo_exists():
-                return
-            r, c, s, img = self._besoins()
-            lbl.configure(text=f"Besoin : {r} vidéo(s) (reels) · {s} image(s) (stories)")
+            if z is not None and z.winfo_exists():
+                self._ouvrir_fonction("ranger")
         except Exception:
             pass
 
-    def _besoins(self):
-        cal = calendrier.charger_calendrier()
-        r = c = s = 0
-        for jours in cal.values():
-            for creneaux in jours.values():
-                for x in creneaux:
-                    t = x.get("type")
-                    r += t == "reel"
-                    c += t == "carousel"
-                    s += t == "story"
-        return r, c, s, c * rangement.IMAGES_PAR_CAROUSEL + s
+    @staticmethod
+    def _nom_type(t):
+        """« réels », « stories », « stories CTA », « carrousels »."""
+        lib = rangement.LIBELLES[t]
+        return lib[0].lower() + lib[1:]
 
-    # ==================================================================
-    #  Page : Ranger les médias
-    # ==================================================================
     def _page_ranger(self):
         self._entete_page("Ranger les médias",
-                          "Classe automatiquement vos photos/vidéos selon le calendrier.",
-                          action=("Modifier le calendrier", self.ouvrir_editeur_calendrier))
-        r, c, s, _img = self._besoins()
+                          "Classe vos photos et vidéos selon votre calendrier de posts.")
+        n = rangement.compter()
+        nb_semaines = len(calendrier.charger_calendrier())
 
         # ---------- Encart info : à quoi sert le module ----------
         info = self._carte(pad=18)
@@ -1058,166 +1058,238 @@ class App(ctk.CTk):
                      text_color=TEXT).pack(anchor="w")
         ctk.CTkLabel(
             info_txt, justify="left", font=(POLICE, 13), text_color=MUTED,
-            text="HelpVA range vos médias par semaine / jour / créneau selon le calendrier.\n"
-                 "Modifiez le calendrier via le bouton en haut à droite.\n"
+            text="HelpVA crée un dossier par semaine / jour / créneau et y copie vos médias.\n"
+                 "Chaque type de post a son propre dossier source.\n"
                  "Vos originaux ne sont pas touchés.").pack(anchor="w", pady=(2, 0))
 
-        # ---------- Étape 1 : Reels + Stories ----------
+        # ---------- Étape 1 : calendrier + types de posts ----------
         c1 = self._carte()
-        self._entete_etape(c1, 1, "Reels + Stories",
-                           "Vos Reels et Stories, rangés selon le calendrier.")
-        ctk.CTkLabel(
-            c1, justify="left", font=(POLICE, 13), text_color=MUTED,
-            text="Préparez un dossier avec 2 sous-dossiers :\n"
-                 "     videos\\   →  vos Reels\n"
-                 "     images\\   →  vos Stories").pack(anchor="w", pady=(16, 0))
-        self.lbl_ranger_besoins = ctk.CTkLabel(
-            c1, font=(POLICE, 14, "bold"), text_color=ACCENT_HOVER,
-            text=f"Besoin : {r} vidéo(s) (reels) · {s} image(s) (stories)")
-        self.lbl_ranger_besoins.pack(anchor="w", pady=(12, 6))
-        self.chk_aleatoire_ranger = ctk.CTkCheckBox(
-            c1, text="Répartir au hasard (au lieu de l'ordre 1, 2, 3…)",
-            font=(POLICE, 14), fg_color=ACCENT_HOVER)
-        self.chk_aleatoire_ranger.select()   # coché par défaut
-        self.chk_aleatoire_ranger.pack(anchor="w", pady=(0, 14))
-        row1 = ctk.CTkFrame(c1, fg_color="transparent")
-        row1.pack(fill="x", pady=(0, 14))
-        self._btn(row1, "Importer un dossier…",
-                  self._choisir_dossier_ranger).pack(side="left")
-        zone1 = ctk.CTkFrame(c1, fg_color=ACCENT_SOFTER, corner_radius=12,
-                             border_width=1, border_color=BORDER)
-        zone1.pack(fill="x")
-        zrow1 = ctk.CTkFrame(zone1, fg_color="transparent")
-        zrow1.pack(fill="x", padx=16, pady=14)
-        self._badge(zrow1, "folder", taille=40).pack(side="left", padx=(0, 12))
-        src1 = ctk.CTkFrame(zrow1, fg_color="transparent")
-        src1.pack(side="left", fill="x", expand=True)
-        ctk.CTkLabel(src1, text="DOSSIER À RANGER", font=(POLICE, 11, "bold"),
-                     text_color=MUTED).pack(anchor="w")
-        self.lbl_ranger = ctk.CTkLabel(
-            src1, justify="left", font=(POLICE, 14), text_color=TEXT,
-            text=(f"Dossier : {self.dossier_ranger_src}" if self.dossier_ranger_src
-                  else "Aucun dossier sélectionné"))
-        self.lbl_ranger.pack(anchor="w", pady=(2, 0))
+        self._entete_etape(c1, 1, "Régler le calendrier",
+                           "Choisissez les types de posts à ranger.")
+        ligne = ctk.CTkFrame(c1, fg_color="transparent")
+        ligne.pack(fill="x", pady=(16, 0))
+        ctk.CTkLabel(ligne, font=(POLICE, 14, "bold"), text_color=TEXT,
+                     text=f"Calendrier : {nb_semaines} semaine(s) · "
+                          f"{sum(n.values())} créneau(x)").pack(side="left")
+        self._btn(ligne, "Modifier le calendrier",
+                  self.ouvrir_editeur_calendrier).pack(side="right")
 
-        # ---------- Action étape 1 : bouton pleine largeur ----------
-        action1 = ctk.CTkFrame(self.contenu, fg_color="transparent")
-        action1.pack(fill="x", padx=36, pady=(14, 2))
-        self._btn(action1, "Ranger reels + stories  →",
-                  self._lancer_ranger, primaire=True).pack(fill="x")
+        types_row = ctk.CTkFrame(c1, fg_color="transparent")
+        types_row.pack(fill="x", pady=(14, 0))
+        coches = self._types_ranger_coches()
+        absents = []
+        for t in rangement.TYPES:
+            cb = ctk.CTkCheckBox(types_row, text=f"{rangement.LIBELLES[t]} ({n[t]})",
+                                 font=(POLICE, 14), fg_color=ACCENT_HOVER,
+                                 hover_color="#4A3FCC")
+            cb.configure(command=lambda t=t, c=cb: self._basculer_type_ranger(t, c.get()))
+            if n[t] == 0:
+                cb.configure(state="disabled")
+                absents.append(f"« {rangement.LIBELLES[t]} »")
+            elif coches[t]:
+                cb.select()
+            cb.pack(side="left", padx=(0, 22))
+        if absents:
+            ctk.CTkLabel(c1, justify="left", font=(POLICE, 12), text_color=MUTED,
+                         text=f"Aucun créneau {', '.join(absents)} dans le calendrier : "
+                              "ajoutez-en via « Modifier le calendrier » pour l'activer."
+                         ).pack(anchor="w", pady=(10, 0))
 
-        # ---------- Étape 2 : Carrousels ----------
+        # ---------- Étape 2 : un dossier par type (onglets) ----------
         c2 = self._carte()
-        self._entete_etape(c2, 2, "Carrousels",
-                           "Photos numérotées, rangées dans l'ordre par groupes.")
-        ctk.CTkLabel(
-            c2, justify="left", font=(POLICE, 13), text_color=MUTED,
-            text="Dossier séparé de photos nommées 1, 2, 3… rangées DANS L'ORDRE par\n"
-                 f"groupes de {rangement.IMAGES_PAR_CAROUSEL} "
-                 "(1-2-3 → 1er carrousel, etc.).\n"
-                 "Faites d'abord « Ranger reels + stories ».").pack(anchor="w", pady=(16, 0))
-        ctk.CTkLabel(
-            c2, font=(POLICE, 14, "bold"), text_color=ACCENT_HOVER,
-            text=f"Besoin : {c} carrousel(s) = {c * rangement.IMAGES_PAR_CAROUSEL} photos").pack(
-            anchor="w", pady=(12, 14))
-        row2 = ctk.CTkFrame(c2, fg_color="transparent")
-        row2.pack(fill="x", pady=(0, 14))
-        self._btn(row2, "Importer le dossier carrousel…",
-                  self._choisir_dossier_carrousel).pack(side="left")
-        zone2 = ctk.CTkFrame(c2, fg_color=ACCENT_SOFTER, corner_radius=12,
-                             border_width=1, border_color=BORDER)
-        zone2.pack(fill="x")
-        zrow2 = ctk.CTkFrame(zone2, fg_color="transparent")
-        zrow2.pack(fill="x", padx=16, pady=14)
-        self._badge(zrow2, "folder", taille=40).pack(side="left", padx=(0, 12))
-        src2 = ctk.CTkFrame(zrow2, fg_color="transparent")
-        src2.pack(side="left", fill="x", expand=True)
-        ctk.CTkLabel(src2, text="DOSSIER CARROUSEL", font=(POLICE, 11, "bold"),
-                     text_color=MUTED).pack(anchor="w")
-        self.lbl_carrousel = ctk.CTkLabel(
-            src2, justify="left", font=(POLICE, 14), text_color=TEXT,
-            text=(f"Dossier : {self.dossier_carrousel_src}" if self.dossier_carrousel_src
-                  else "Aucun dossier carrousel sélectionné"))
-        self.lbl_carrousel.pack(anchor="w", pady=(2, 0))
+        self._entete_etape(c2, 2, "Choisir les dossiers", "Un dossier par type de post.")
+        self._ranger_etape2 = ctk.CTkFrame(c2, fg_color="transparent")
+        self._ranger_etape2.pack(fill="x")
+        self._construire_etape2_ranger()
 
-        # ---------- Action étape 2 : bouton pleine largeur ----------
-        action2 = ctk.CTkFrame(self.contenu, fg_color="transparent")
-        action2.pack(fill="x", padx=36, pady=(14, 2))
-        self._btn(action2, "Ranger les carrousels  →",
-                  self._lancer_carrousels, primaire=True).pack(fill="x")
+        # ---------- Étape 3 : lancer ----------
+        c3 = self._carte()
+        self._entete_etape(c3, 3, "Lancer le rangement",
+                           "Les médias sont copiés dans votre dossier de sortie.")
+        self.chk_aleatoire_ranger = ctk.CTkCheckBox(
+            c3, text="Répartir au hasard (les carrousels gardent toujours l'ordre 1, 2, 3…)",
+            font=(POLICE, 14), fg_color=ACCENT_HOVER, hover_color="#4A3FCC",
+            command=lambda: setattr(self, "ranger_aleatoire",
+                                    bool(self.chk_aleatoire_ranger.get())))
+        if self.ranger_aleatoire:
+            self.chk_aleatoire_ranger.select()
+        self.chk_aleatoire_ranger.pack(anchor="w", pady=(16, 0))
+
+        action = ctk.CTkFrame(self.contenu, fg_color="transparent")
+        action.pack(fill="x", padx=36, pady=(14, 2))
+        self._btn(action, "Ranger les médias  →", self._lancer_ranger,
+                  primaire=True).pack(fill="x")
 
         self._zone_journal()
 
-    def _choisir_dossier_ranger(self):
-        dossier = filedialog.askdirectory(title="Choisir le dossier à ranger")
-        if not dossier:
-            return
-        dv, di = os.path.join(dossier, "videos"), os.path.join(dossier, "images")
-        if not (os.path.isdir(dv) and os.path.isdir(di)):
-            messagebox.showerror("Format du dossier",
-                                 "Le dossier doit contenir 2 sous-dossiers :\n\n   videos\\\n   images\\")
-            return
-        self.dossier_ranger_src = dossier
-        self.lbl_ranger.configure(text=f"Dossier : {dossier}")
+    def _basculer_type_ranger(self, t, coche):
+        coches = self._types_ranger_coches()
+        coches[t] = bool(coche)
+        self.params["ranger_types"] = coches
+        parametres.sauver(self.params)
+        self._construire_etape2_ranger()
 
-    def _choisir_dossier_carrousel(self):
-        dossier = filedialog.askdirectory(title="Choisir le dossier des photos de carrousels (1, 2, 3…)")
-        if not dossier:
+    def _construire_etape2_ranger(self):
+        z = self._ranger_etape2
+        for w in z.winfo_children():
+            w.destroy()
+        actifs = self._types_ranger_actifs()
+        if not actifs:
+            ctk.CTkLabel(z, text="Cochez au moins un type de post à l'étape 1.",
+                         font=(POLICE, 13), text_color=MUTED).pack(anchor="w", pady=(16, 0))
             return
-        self.dossier_carrousel_src = dossier
-        self.lbl_carrousel.configure(text=f"Dossier : {dossier}")
+        if self._onglet_ranger not in actifs:
+            self._onglet_ranger = actifs[0]
+        # Onglets aux couleurs de l'app ; ✓ quand le dossier du type est choisi.
+        barre = ctk.CTkFrame(z, fg_color="transparent")
+        barre.pack(anchor="w", pady=(16, 16))
+        for t in actifs:
+            actif = t == self._onglet_ranger
+            ctk.CTkButton(
+                barre, text=rangement.LIBELLES[t] + ("  ✓" if self.sources_ranger.get(t) else ""),
+                height=38, corner_radius=10, font=(POLICE, 14, "bold"),
+                fg_color=ACCENT_HOVER if actif else ACCENT_SOFT,
+                hover_color="#4A3FCC" if actif else "#E1DDFA",
+                text_color="#FFFFFF" if actif else ACCENT_HOVER,
+                command=lambda t=t: self._choisir_onglet_ranger(t)).pack(side="left", padx=(0, 8))
+        self._ranger_onglet = ctk.CTkFrame(z, fg_color="transparent")
+        self._ranger_onglet.pack(fill="x")
+        self._contenu_onglet_ranger(self._onglet_ranger)
 
-    def _lancer_carrousels(self):
-        dossier = self.dossier_carrousel_src
-        if not dossier:
-            messagebox.showwarning("Carrousels", "Importe d'abord le dossier carrousel.")
+    def _choisir_onglet_ranger(self, t):
+        self._onglet_ranger = t
+        self._construire_etape2_ranger()
+
+    def _contenu_onglet_ranger(self, t):
+        z = self._ranger_onglet
+        video = rangement.est_video(t)
+        unite = "vidéo(s)" if video else "image(s)"
+        nb = rangement.compter()[t]
+        requis = nb * rangement.medias_par_creneau(t)
+        if t == "carousel":
+            regle = ("Photos nommées 1, 2, 3… — rangées dans l'ordre par groupes de "
+                     f"{rangement.IMAGES_PAR_CAROUSEL} (1-2-3 → 1er carrousel, etc.).")
+        elif video:
+            regle = "Uniquement des vidéos (.mp4, .mov…) — les images sont ignorées."
+        else:
+            regle = "Uniquement des images (.jpg, .png…) — les vidéos sont ignorées."
+        ctk.CTkLabel(z, text=regle, font=(POLICE, 13), text_color=MUTED,
+                     justify="left").pack(anchor="w")
+        besoin = f"Besoin : {requis} {unite}"
+        if t == "carousel":
+            besoin += f" ({nb} carrousel(s))"
+        ctk.CTkLabel(z, text=besoin, font=(POLICE, 14, "bold"),
+                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(8, 12))
+        self._btn(z, f"Importer le dossier des {self._nom_type(t)}…",
+                  lambda: self._choisir_dossier_type_ranger(t)).pack(anchor="w", pady=(0, 14))
+
+        zone = ctk.CTkFrame(z, fg_color=ACCENT_SOFTER, corner_radius=12,
+                            border_width=1, border_color=BORDER)
+        zone.pack(fill="x")
+        zrow = ctk.CTkFrame(zone, fg_color="transparent")
+        zrow.pack(fill="x", padx=16, pady=14)
+        self._badge(zrow, "folder", taille=40).pack(side="left", padx=(0, 12))
+        src = ctk.CTkFrame(zrow, fg_color="transparent")
+        src.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(src, text=f"DOSSIER DES {rangement.LIBELLES[t].upper()}",
+                     font=(POLICE, 11, "bold"), text_color=MUTED).pack(anchor="w")
+        d = self.sources_ranger.get(t)
+        ctk.CTkLabel(src, text=d or "Aucun dossier sélectionné", justify="left",
+                     font=(POLICE, 14), text_color=TEXT).pack(anchor="w", pady=(2, 0))
+        if d:
+            a = rangement.analyser_dossier(d, t)
+            k = len(a["fichiers"])
+            if k >= requis:
+                etat, coul = f"✅ {k} {unite} trouvée(s)", GREEN
+            else:
+                etat, coul = f"⚠️ {k} {unite} trouvée(s) — il en manque {requis - k}", ORANGE
+            if a["ignores"]:
+                etat += f" · {a['ignores']} fichier(s) ignoré(s)"
+            ctk.CTkLabel(src, text=etat, font=(POLICE, 13, "bold"),
+                         text_color=coul).pack(anchor="w", pady=(4, 0))
+
+    def _choisir_dossier_type_ranger(self, t):
+        d = filedialog.askdirectory(title=f"Choisir le dossier des {self._nom_type(t)}")
+        if not d:
             return
-        sortie = os.path.join(self.dossier_sortie(), "ranger")
-        if not os.path.isdir(sortie):
-            if not messagebox.askyesno(
-                    "Carrousels",
-                    "Le dossier « ranger » n'existe pas encore.\n"
-                    "Fais d'abord « Ranger reels + stories » pour créer le planning.\n\n"
-                    "Continuer quand même ?"):
-                return
-
-        def job():
-            res = rangement.ranger_carrousels(dossier, sortie, simuler=False)
-            self.file_log.put(("fini_carrousels", sortie, res))
-        self._tache(job, "Rangement des carrousels…")
+        self.sources_ranger[t] = d
+        self._onglet_ranger = t
+        self._construire_etape2_ranger()
 
     def _lancer_ranger(self):
-        dossier = self.dossier_ranger_src
-        if not dossier:
-            messagebox.showwarning("Ranger", "Importe d'abord un dossier.")
+        actifs = self._types_ranger_actifs()
+        if not actifs:
+            messagebox.showwarning("Ranger", "Cochez au moins un type de post (étape 1).")
             return
-        dv, di = os.path.join(dossier, "videos"), os.path.join(dossier, "images")
-        infos = rangement.verifier_dossiers(dv, di)
-        if infos["img_dans_videos"] or infos["vid_dans_images"]:
-            msg = "Des fichiers semblent mal placés (ils seront ignorés) :"
-            if infos["img_dans_videos"]:
-                msg += f"\n• {len(infos['img_dans_videos'])} image(s) dans « videos »"
-            if infos["vid_dans_images"]:
-                msg += f"\n• {len(infos['vid_dans_images'])} vidéo(s) dans « images »"
-            if not messagebox.askyesno("Fichiers mal placés", msg + "\n\nContinuer quand même ?"):
-                return
+        manquants = [t for t in actifs
+                     if not (self.sources_ranger.get(t) and os.path.isdir(self.sources_ranger[t]))]
+        if manquants:
+            self._onglet_ranger = manquants[0]
+            self._construire_etape2_ranger()
+            messagebox.showwarning("Ranger", "Choisissez un dossier pour :\n\n" + "\n".join(
+                f"• {rangement.LIBELLES[t]}" for t in manquants))
+            return
+
         sortie = os.path.join(self.dossier_sortie(), "ranger")
+        a_out = os.path.normcase(os.path.abspath(sortie))
+        vus = {}
+        doublons = []
+        for t in actifs:
+            a_src = os.path.normcase(os.path.abspath(self.sources_ranger[t]))
+            if a_src == a_out or a_src.startswith(a_out + os.sep):
+                messagebox.showerror("Dossier invalide",
+                                     f"Le dossier des {self._nom_type(t)} est dans le dossier de "
+                                     "sortie, qui va être remplacé. Choisissez un autre dossier.")
+                return
+            # Même dossier pour deux types d'IMAGES -> mêmes images rangées 2 fois.
+            if not rangement.est_video(t):
+                if a_src in vus:
+                    doublons.append(f"{rangement.LIBELLES[vus[a_src]]} et {rangement.LIBELLES[t]}")
+                else:
+                    vus[a_src] = t
+        if doublons and not messagebox.askyesno(
+                "Même dossier",
+                "Le même dossier est utilisé pour : " + ", ".join(doublons) + ".\n"
+                "Les mêmes images seront rangées deux fois.\n\nContinuer ?"):
+            return
+
+        n = rangement.compter()
+        lignes, incomplet = [], False
+        for t in actifs:
+            k = len(rangement.analyser_dossier(self.sources_ranger[t], t)["fichiers"])
+            requis = n[t] * rangement.medias_par_creneau(t)
+            unite = "vidéo(s)" if rangement.est_video(t) else "image(s)"
+            txt = f"• {rangement.LIBELLES[t]} : {k} {unite} pour {requis} requise(s)"
+            if k < requis:
+                txt += f"  ⚠️ il en manque {requis - k}"
+                incomplet = True
+            lignes.append(txt)
         existe = os.path.exists(sortie)
-        msg = (f"{infos['nb_videos']} vidéo(s) et {infos['nb_images']} image(s) vont être rangées.\n\n"
-               f"Destination :\n{sortie}\n")
+        msg = "À ranger :\n" + "\n".join(lignes) + f"\n\nDestination :\n{sortie}\n"
+        if incomplet:
+            msg += "\n⚠️ Certains créneaux resteront incomplets.\n"
         if existe:
             msg += "\n⚠️ Ce dossier existe déjà et sera REMPLACÉ.\n"
         if not messagebox.askyesno("Confirmer le rangement", msg + "\nContinuer ?"):
             return
 
+        sources = dict(self.sources_ranger)
         aleatoire = bool(self.chk_aleatoire_ranger.get())
 
         def job():
             if existe:
                 shutil.rmtree(sortie, ignore_errors=True)
-            res = rangement.ranger(dv, di, sortie, simuler=False, aleatoire=aleatoire)
+            try:
+                res = rangement.ranger(
+                    sources, sortie, actifs, aleatoire=aleatoire,
+                    progress=lambda txt: self.file_log.put(("uniq_progres", txt)),
+                    doit_arreter=lambda: self._annule_tache)
+            except Exception as e:
+                print(f"\n[ERREUR] {e}")
+                self._notifier("Ranger", str(e), erreur=True)
+                return
             self.file_log.put(("fini_ranger", sortie, res))
-        self._tache(job, "Rangement en cours…")
+        self._tache(job, "Rangement en cours…", annulable=True)
 
     # ==================================================================
     #  Page : Changer les métadonnées
@@ -2021,7 +2093,7 @@ class App(ctk.CTk):
             for jours in cal.values():
                 for creneaux in jours.values():
                     for cr in creneaux:
-                        if cr.get("type") in ("carousel", "story"):
+                        if cr.get("type") != "reel":
                             return "mixte"
             return "reels"
 
@@ -2052,7 +2124,7 @@ class App(ctk.CTk):
                 if not messagebox.askyesno(
                         "Vidéos uniquement",
                         "Mettre TOUT le calendrier en reels (vidéos) ?\n"
-                        "Les carrousels et stories deviendront des reels."):
+                        "Les stories, stories CTA et carrousels deviendront des reels."):
                     return
                 for jours in cal.values():
                     for creneaux in jours.values():
@@ -2091,15 +2163,11 @@ class App(ctk.CTk):
         top.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
 
         def maj_besoins():
-            r = c = s = 0
-            for jours in cal.values():
-                for creneaux in jours.values():
-                    for x in creneaux:
-                        t = x.get("type")
-                        r += t == "reel"; c += t == "carousel"; s += t == "story"
-            img = c * rangement.IMAGES_PAR_CAROUSEL + s
-            besoins_lbl.configure(text=f"Besoins : {r} vidéo(s)   ·   {img} image(s)   "
-                                       f"({c} carrousels + {s} stories)")
+            n = rangement.compter(cal)
+            img = sum(n[t] * rangement.medias_par_creneau(t) for t in n if t != "reel")
+            besoins_lbl.configure(text=f"Besoins : {n['reel']} vidéo(s)   ·   {img} image(s)   "
+                                       f"({n['story']} stories + {n['story_cta']} CTA + "
+                                       f"{n['carousel']} carrousels)")
 
         def renumeroter():
             vals = list(cal.values())
@@ -2164,11 +2232,14 @@ class App(ctk.CTk):
             e.insert(0, cr["heure"])
             e.pack(side="left")
             e.bind("<KeyRelease>", lambda ev, c=cr, en=e: c.__setitem__("heure", en.get()))
-            var = tk.StringVar(value=cr["type"])
-            cb = ttk.Combobox(row, values=["reel", "carousel", "story"], textvariable=var,
+            libs = rangement.LIBELLE_CRENEAU
+            var = tk.StringVar(value=libs.get(cr["type"], cr["type"]))
+            cb = ttk.Combobox(row, values=list(libs.values()), textvariable=var,
                               state="readonly", width=12, font=(POLICE, 12))
             cb.pack(side="left", padx=10)
-            cb.bind("<<ComboboxSelected>>", lambda ev, c=cr, v=var: _set_type(c, v.get()))
+            vers_type = {v: k for k, v in libs.items()}
+            cb.bind("<<ComboboxSelected>>",
+                    lambda ev, c=cr, v=var: _set_type(c, vers_type.get(v.get(), v.get())))
             tk.Button(row, text="×", command=lambda c=cr, r=row: supprimer_creneau(c, r),
                       bg="#FDECEA", fg="#E5484D", activebackground="#F8D7D5",
                       activeforeground="#E5484D", relief="flat", bd=0, cursor="hand2",

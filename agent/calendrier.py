@@ -2,7 +2,8 @@
 Calendrier de publication.
 
 Chaque semaine -> chaque jour -> liste de créneaux.
-Un créneau = {"heure": "12h15", "type": "carousel" | "reel" | "story"}.
+Un créneau = {"heure": "12h15",
+              "type": "reel" | "story" | "story_cta" | "carousel"}.
 
 Pour modifier le planning, tu édites simplement ce fichier.
 Les heures sont au format "HHhMM".

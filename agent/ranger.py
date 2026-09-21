@@ -1,76 +1,87 @@
 """
 Range les médias dans une arborescence de dossiers selon le calendrier.
 
-Toi tu déposes :
-  sources/videos/  -> tes vidéos (serviront aux Reels)
-  sources/images/  -> tes images (l'agent y pioche pour Carousels + Stories)
+Chaque TYPE de post a son propre dossier source :
+  - Réels        -> uniquement des vidéos (1 par créneau)
+  - Stories      -> uniquement des images (1 par créneau)
+  - Stories CTA  -> uniquement des images (1 par créneau)
+  - Carrousels   -> images nommées 1, 2, 3… prises DANS L'ORDRE par groupes
+                    de IMAGES_PAR_CAROUSEL
 
-L'agent crée :
-  planning/semaine-XX/jour-Y/<ordre>_<heure>_<type>/  + les médias + legende.txt
+Résultat :
+  <sortie>/semaine-XX/jour-Y/<ordre>_<heure>_<type>/  + les médias
+  (+ legende.txt pour les réels et carrousels, + legendes.txt par jour)
 
-Règles :
-  - Reel     -> 1 vidéo
-  - Carousel -> IMAGES_PAR_CAROUSEL images
-  - Story    -> 1 image
-On consomme les médias dans l'ordre (tri par nom de fichier).
+L'utilisateur choisit quels types ranger : les créneaux des types décochés
+ne sont pas créés. Les originaux ne sont jamais modifiés (copie).
 """
 
 import os
 import random
+import re
 import shutil
 
 from .calendrier import charger_calendrier
-from .config import (
-    DOSSIER_SOURCE_VIDEOS,
-    DOSSIER_SOURCE_IMAGES,
-    DOSSIER_PLANNING,
-    IMAGES_PAR_CAROUSEL,
-    MODE_RANGEMENT,
-)
+from .config import IMAGES_PAR_CAROUSEL
 
 EXT_IMAGES = {".jpg", ".jpeg", ".png", ".webp"}
 EXT_VIDEOS = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
 
+# Types de posts, dans l'ordre d'affichage.
+TYPES = ("reel", "story", "story_cta", "carousel")
+LIBELLES = {"reel": "Réels", "story": "Stories", "story_cta": "Stories CTA",
+            "carousel": "Carrousels"}
+# Libellé d'UN créneau (éditeur de calendrier).
+LIBELLE_CRENEAU = {"reel": "Réel", "story": "Story", "story_cta": "Story CTA",
+                   "carousel": "Carrousel"}
+# Nom du type dans le dossier du créneau (ex. 3_21h00_story-cta).
+NOM_DOSSIER = {"reel": "reel", "story": "story", "story_cta": "story-cta",
+               "carousel": "carousel"}
 
-def _lister(dossier: str, extensions: set) -> list:
-    """Liste triée des fichiers d'un dossier ayant une de ces extensions."""
-    if not os.path.isdir(dossier):
-        return []
-    fichiers = [
-        os.path.join(dossier, f)
-        for f in sorted(os.listdir(dossier))
-        if os.path.splitext(f)[1].lower() in extensions
-    ]
-    return fichiers
+
+def est_video(typ: str) -> bool:
+    return typ == "reel"
 
 
-def _besoins(calendrier: dict) -> dict:
-    """Compte combien de reels / carousels / stories le calendrier demande."""
-    n = {"reel": 0, "carousel": 0, "story": 0}
-    for semaine in calendrier.values():
-        for jour in semaine.values():
-            for creneau in jour:
-                n[creneau["type"]] += 1
+def medias_par_creneau(typ: str) -> int:
+    return IMAGES_PAR_CAROUSEL if typ == "carousel" else 1
+
+
+def compter(calendrier: dict = None) -> dict:
+    """Nombre de créneaux de chaque type dans le calendrier."""
+    cal = charger_calendrier() if calendrier is None else calendrier
+    n = {t: 0 for t in TYPES}
+    for jours in cal.values():
+        for creneaux in jours.values():
+            for cr in creneaux:
+                if cr.get("type") in n:
+                    n[cr["type"]] += 1
     return n
 
 
-def verifier_dossiers(dossier_videos: str, dossier_images: str) -> dict:
-    """Vérifie que chaque dossier contient le bon type de fichiers.
+def _cle_numerique(chemin: str):
+    """Tri NUMÉRIQUE : 1, 2, …, 9, 10, 11 (et non 1, 10, 11, 2…)."""
+    nom = os.path.splitext(os.path.basename(chemin))[0]
+    m = re.match(r"\s*(\d+)", nom)
+    return (0, int(m.group(1)), nom.lower()) if m else (1, 0, nom.lower())
 
-    Retourne les fichiers mal placés (images dans videos/, vidéos dans images/)
-    et les comptes de fichiers valides.
-    """
-    def contenu(d):
-        return os.listdir(d) if os.path.isdir(d) else []
 
-    v, i = contenu(dossier_videos), contenu(dossier_images)
-    ext = lambda f: os.path.splitext(f)[1].lower()
-    return {
-        "img_dans_videos": [f for f in v if ext(f) in EXT_IMAGES],
-        "vid_dans_images": [f for f in i if ext(f) in EXT_VIDEOS],
-        "nb_videos": len([f for f in v if ext(f) in EXT_VIDEOS]),
-        "nb_images": len([f for f in i if ext(f) in EXT_IMAGES]),
-    }
+def analyser_dossier(dossier: str, typ: str) -> dict:
+    """Fichiers utilisables pour ce type + nombre de fichiers ignorés
+    (ex. une image posée dans le dossier des réels)."""
+    ext_ok = EXT_VIDEOS if est_video(typ) else EXT_IMAGES
+    valides, ignores = [], 0
+    if dossier and os.path.isdir(dossier):
+        for f in os.listdir(dossier):
+            p = os.path.join(dossier, f)
+            if not os.path.isfile(p) or f.startswith("."):
+                continue
+            if os.path.splitext(f)[1].lower() in ext_ok:
+                valides.append(p)
+            else:
+                ignores += 1
+    valides.sort(key=_cle_numerique)
+    return {"fichiers": valides, "ignores": ignores}
 
 
 def _txt_du_jour(jour_dir: str):
@@ -86,216 +97,109 @@ def _txt_du_jour(jour_dir: str):
         pass
 
 
-def _placer(fichier_source: str, dossier_dest: str, simuler: bool):
-    """Copie (ou déplace) un fichier vers un dossier destination."""
-    if simuler:
-        return
+def _copier(source: str, dossier_dest: str):
     os.makedirs(dossier_dest, exist_ok=True)
-    dest = os.path.join(dossier_dest, os.path.basename(fichier_source))
-    if MODE_RANGEMENT == "deplacer":
-        shutil.move(fichier_source, dest)
-    else:
-        shutil.copy2(fichier_source, dest)
+    shutil.copy2(source, os.path.join(dossier_dest, os.path.basename(source)))
 
 
-def ranger(dossier_videos: str = None, dossier_images: str = None,
-           dossier_sortie: str = None, simuler: bool = False,
-           aleatoire: bool = True) -> dict:
-    """Range les médias selon le calendrier. Retourne un résumé.
+def ranger(sources: dict, dossier_sortie: str, types_actifs=None,
+           aleatoire: bool = True, progress=None, doit_arreter=None) -> dict:
+    """Range les médias selon le calendrier, type par type.
 
-    dossier_videos / dossier_images : où lire les médias (défaut = config).
-    dossier_sortie : où écrire le planning (défaut = config).
-    simuler=True : n'écrit rien, montre seulement ce qui serait fait.
-    aleatoire=True (défaut) : mélange les médias au hasard avant de les répartir
-        (au lieu de suivre l'ordre 1, 2, 3…). Le carrousel garde des images
-        cohérentes entre elles seulement si tu ne mélanges pas — ici c'est du
-        hasard total, demandé par l'utilisateur.
+    sources      : {type: dossier} — un dossier source par type de post.
+    types_actifs : types à ranger (les autres créneaux ne sont pas créés).
+    aleatoire    : mélange les réels / stories / stories CTA ; les carrousels
+                   gardent TOUJOURS l'ordre 1, 2, 3… (photos qui se suivent).
+    progress(txt): appelé pendant le rangement (texte d'avancement).
     """
-    dossier_videos = dossier_videos or DOSSIER_SOURCE_VIDEOS
-    dossier_images = dossier_images or DOSSIER_SOURCE_IMAGES
-    dossier_sortie = dossier_sortie or DOSSIER_PLANNING
-
-    videos = _lister(dossier_videos, EXT_VIDEOS)
-    images = _lister(dossier_images, EXT_IMAGES)
-
-    if aleatoire:
-        random.shuffle(videos)
-        random.shuffle(images)
-
+    choisis = TYPES if types_actifs is None else types_actifs
+    actifs = [t for t in TYPES if t in choisis]
     calendrier = charger_calendrier()
-    besoins = _besoins(calendrier)
-    # Les carrousels sont rangés SÉPARÉMENT -> ici les images ne servent qu'aux
-    # stories.
-    images_requises = besoins["story"]
+    besoins = compter(calendrier)
+
+    medias, ignores = {}, {}
+    for t in actifs:
+        a = analyser_dossier(sources.get(t), t)
+        fichiers = a["fichiers"]
+        if aleatoire and t != "carousel":
+            random.shuffle(fichiers)
+        medias[t], ignores[t] = fichiers, a["ignores"]
 
     print("=== Rangement des médias ===", flush=True)
     print(f"Sortie : {os.path.abspath(dossier_sortie)}", flush=True)
-    print(f"Mode : {'SIMULATION (rien écrit)' if simuler else MODE_RANGEMENT}", flush=True)
-    print(f"Vidéos disponibles : {len(videos)}  | requises (reels) : {besoins['reel']}", flush=True)
-    print(f"Images disponibles : {len(images)}  | requises (stories) : {images_requises}", flush=True)
-    print(f"(Carrousels : {besoins['carousel']} — rangés séparément)", flush=True)
+    for t in actifs:
+        unite = "vidéo(s)" if est_video(t) else "image(s)"
+        requis = besoins[t] * medias_par_creneau(t)
+        print(f"{LIBELLES[t]} : {len(medias[t])} {unite} fournie(s) | requises : {requis}",
+              flush=True)
     print("-" * 50, flush=True)
 
-    # Itérateurs consommables
-    i_video = iter(videos)
-    i_image = iter(images)
-    manques = []
+    total = sum(besoins[t] for t in actifs)
+    iterateurs = {t: iter(medias[t]) for t in actifs}
+    places = {t: 0 for t in actifs}
+    incomplets = {t: 0 for t in actifs}
+    fait = 0
+    arrete = False
 
     for nom_semaine, jours in calendrier.items():
         for nom_jour, creneaux in jours.items():
-            for ordre, creneau in enumerate(creneaux, start=1):
-                heure = creneau["heure"]
-                typ = creneau["type"]
-                slot = f"{ordre}_{heure}_{typ}"
+            du_jour = [cr for cr in creneaux if cr.get("type") in actifs]
+            for ordre, cr in enumerate(du_jour, start=1):
+                if doit_arreter and doit_arreter():
+                    arrete = True
+                    break
+                t = cr["type"]
+                slot = f"{ordre}_{cr.get('heure', '')}_{NOM_DOSSIER[t]}"
                 dossier_slot = os.path.join(dossier_sortie, nom_semaine, nom_jour, slot)
-
-                if not simuler:
-                    os.makedirs(dossier_slot, exist_ok=True)
-                    # legende.txt pour reel/carousel ; rien pour les stories.
-                    if typ in ("reel", "carousel"):
-                        open(os.path.join(dossier_slot, "legende.txt"), "a", encoding="utf-8").close()
-                    # .txt VIDE au niveau du JOUR : l'utilisateur y écrit ce qu'il
-                    # veut (légendes, notes…). Créé une seule fois par jour.
-                    _txt_du_jour(os.path.dirname(dossier_slot))
-
-                if typ == "reel":
-                    fichier = next(i_video, None)
-                    if fichier is None:
-                        manques.append(f"{nom_semaine}/{nom_jour}/{slot} : vidéo manquante")
-                    else:
-                        _placer(fichier, dossier_slot, simuler)
-
-                elif typ == "carousel":
-                    # Carrousels gérés SÉPARÉMENT (ranger_carrousels) : ici on
-                    # crée juste l'emplacement vide, on ne consomme pas d'images.
-                    pass
-
-                elif typ == "story":
-                    fichier = next(i_image, None)
-                    if fichier is None:
-                        manques.append(f"{nom_semaine}/{nom_jour}/{slot} : image manquante")
-                    else:
-                        _placer(fichier, dossier_slot, simuler)
-
-    # Surplus : médias non consommés -> dossier "surplus"
-    surplus = list(i_video) + list(i_image)
-    if surplus and not simuler:
-        dossier_surplus = os.path.join(dossier_sortie, "surplus")
-        os.makedirs(dossier_surplus, exist_ok=True)
-        for f in surplus:
-            _placer(f, dossier_surplus, simuler=False)
-
-    # Manques (combien de médias en trop peu)
-    manque_videos = max(0, besoins["reel"] - len(videos))
-    manque_images = max(0, images_requises - len(images))
-
-    print(f"Créneaux : {besoins['reel']} reels, {besoins['carousel']} carousels, "
-          f"{besoins['story']} stories", flush=True)
-    if manques:
-        print(f"\n⚠️  {len(manques)} créneau(x) incomplet(s) (pas assez de médias) :", flush=True)
-        for m in manques[:15]:
-            print("   -", m, flush=True)
-        if len(manques) > 15:
-            print(f"   ... et {len(manques) - 15} autres", flush=True)
-    else:
-        print("\n✅ Tous les créneaux ont reçu leurs médias.", flush=True)
-    if surplus:
-        print(f"\n📦 {len(surplus)} média(s) en surplus -> dossier 'surplus'.", flush=True)
-
-    return {"besoins": besoins, "videos": len(videos), "images": len(images),
-            "images_requises": images_requises, "manques": manques,
-            "surplus": len(surplus), "manque_videos": manque_videos,
-            "manque_images": manque_images}
-
-
-# ======================================================================
-#  Rangement SÉPARÉ des carrousels (dossier dédié, ordre respecté)
-# ======================================================================
-
-def _cle_numerique(chemin: str):
-    """Clé de tri NUMÉRIQUE : 1, 2, …, 9, 10, 11 (et non 1, 10, 11, 2…).
-
-    L'utilisateur nomme ses photos 1, 2, 3… ; on doit respecter cet ordre
-    exact pour que les carrousels soient cohérents (3 photos qui se suivent).
-    """
-    import re
-    nom = os.path.splitext(os.path.basename(chemin))[0]
-    m = re.match(r"\s*(\d+)", nom)
-    return (0, int(m.group(1))) if m else (1, nom.lower())
-
-
-def ranger_carrousels(dossier_carrousel: str, dossier_sortie: str = None,
-                      simuler: bool = False) -> dict:
-    """Remplit UNIQUEMENT les créneaux 'carousel' du calendrier, DANS L'ORDRE.
-
-    Les photos du dossier (nommées 1, 2, 3…) sont prises par groupes de
-    IMAGES_PAR_CAROUSEL consécutifs : 1-2-3 -> 1er carrousel, 4-5-6 -> 2e, etc.
-    Copie (ne déplace pas) pour pouvoir relancer. Retourne un résumé.
-    """
-    dossier_sortie = dossier_sortie or DOSSIER_PLANNING
-    if not os.path.isdir(dossier_carrousel):
-        raise RuntimeError(f"Dossier carrousel introuvable : {dossier_carrousel}")
-
-    images = _lister(dossier_carrousel, EXT_IMAGES)
-    images.sort(key=_cle_numerique)      # ORDRE numérique (1,2,3,…,10,11)
-
-    calendrier = charger_calendrier()
-    besoins = _besoins(calendrier)
-    n_carrousels = besoins["carousel"]
-
-    print("=== Rangement des carrousels (ordre respecté) ===", flush=True)
-    print(f"Photos disponibles : {len(images)}  | requises : "
-          f"{n_carrousels}×{IMAGES_PAR_CAROUSEL} = {n_carrousels * IMAGES_PAR_CAROUSEL}", flush=True)
-    print("-" * 50, flush=True)
-
-    i_image = iter(images)
-    manques = []
-    faits = 0
-
-    for nom_semaine, jours in calendrier.items():
-        for nom_jour, creneaux in jours.items():
-            for ordre, creneau in enumerate(creneaux, start=1):
-                if creneau["type"] != "carousel":
-                    continue
-                heure = creneau["heure"]
-                slot = f"{ordre}_{heure}_carousel"
-                dossier_slot = os.path.join(dossier_sortie, nom_semaine, nom_jour, slot)
-
-                if not simuler:
-                    os.makedirs(dossier_slot, exist_ok=True)
-                    # nettoie les images déjà présentes (relance propre)
-                    for f in os.listdir(dossier_slot):
-                        if os.path.splitext(f)[1].lower() in EXT_IMAGES:
-                            try:
-                                os.remove(os.path.join(dossier_slot, f))
-                            except Exception:
-                                pass
-                    lg = os.path.join(dossier_slot, "legende.txt")
-                    if not os.path.exists(lg):
-                        open(lg, "a", encoding="utf-8").close()
-                    _txt_du_jour(os.path.dirname(dossier_slot))   # .txt vide du jour
+                os.makedirs(dossier_slot, exist_ok=True)
+                if t in ("reel", "carousel"):
+                    open(os.path.join(dossier_slot, "legende.txt"), "a",
+                         encoding="utf-8").close()
+                _txt_du_jour(os.path.dirname(dossier_slot))
 
                 pris = 0
-                for _ in range(IMAGES_PAR_CAROUSEL):
-                    fichier = next(i_image, None)
-                    if fichier is None:
+                for _ in range(medias_par_creneau(t)):
+                    f = next(iterateurs[t], None)
+                    if f is None:
                         break
-                    if not simuler:
-                        os.makedirs(dossier_slot, exist_ok=True)
-                        shutil.copy2(fichier, os.path.join(dossier_slot,
-                                                           os.path.basename(fichier)))
+                    _copier(f, dossier_slot)
                     pris += 1
-                faits += 1
-                if pris < IMAGES_PAR_CAROUSEL:
-                    manques.append(f"{nom_semaine}/{nom_jour}/{slot} : "
-                                   f"{pris}/{IMAGES_PAR_CAROUSEL} photos")
+                places[t] += pris
+                if pris < medias_par_creneau(t):
+                    incomplets[t] += 1
 
-    if manques:
-        print(f"\n⚠️  {len(manques)} carrousel(s) incomplet(s) (pas assez de photos) :", flush=True)
-        for m in manques[:15]:
-            print("   -", m, flush=True)
+                fait += 1
+                if progress:
+                    progress(f"Rangement : {fait}/{total} créneau(x)")
+            if arrete:
+                break
+        if arrete:
+            break
+
+    # Surplus : médias non utilisés -> surplus/<type>
+    surplus = {}
+    if not arrete:
+        for t in actifs:
+            reste = list(iterateurs[t])
+            if reste:
+                d = os.path.join(dossier_sortie, "surplus", LIBELLES[t])
+                for f in reste:
+                    _copier(f, d)
+            surplus[t] = len(reste)
+
+    manques = {t: max(0, besoins[t] * medias_par_creneau(t) - len(medias[t]))
+               for t in actifs}
+    if arrete:
+        print("\n⛔ Rangement arrêté.", flush=True)
+    elif any(incomplets.values()):
+        print("\n⚠️  Créneaux incomplets (pas assez de médias) :", flush=True)
+        for t in actifs:
+            if incomplets[t]:
+                print(f"   - {LIBELLES[t]} : {incomplets[t]} créneau(x)", flush=True)
     else:
-        print(f"\n✅ {faits} carrousel(s) remplis dans l'ordre.", flush=True)
+        print("\n✅ Tous les créneaux ont reçu leurs médias.", flush=True)
 
-    return {"carrousels": faits, "photos": len(images),
-            "requises": n_carrousels * IMAGES_PAR_CAROUSEL, "manques": manques}
+    return {"types": actifs, "besoins": {t: besoins[t] for t in actifs},
+            "fournis": {t: len(medias[t]) for t in actifs}, "places": places,
+            "manques": manques, "incomplets": incomplets, "surplus": surplus,
+            "ignores": ignores, "creneaux": fait, "arrete": arrete}
