@@ -58,7 +58,7 @@ Document de démonstration : `HelpVA - Preuve unicite images.pdf`.
 Range les médias dans un dossier par **semaine / jour / créneau**, selon le
 calendrier de posts. La page se fait en **3 étapes** :
 
-1. **Régler le calendrier** : jusqu'à 4 semaines, créneaux horaires éditables,
+1. **Régler le calendrier** : autant de semaines que voulu, créneaux horaires éditables,
    puis choix des types de posts à ranger.
 2. **Choisir les dossiers** : un onglet et **un dossier source par type** :
 

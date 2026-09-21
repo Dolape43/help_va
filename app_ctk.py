@@ -19,6 +19,7 @@ except Exception:
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 
 from agent import parametres, licence, version
 from agent import ranger as rangement
@@ -2064,7 +2065,7 @@ class App(ctk.CTk):
 
         top = tk.Toplevel(self)
         top.title("Calendrier")
-        top.geometry("700x760")
+        top.geometry("760x780")
         top.configure(bg=cBG)
         top.transient(self)
         self._modale_devant(top)
@@ -2075,15 +2076,15 @@ class App(ctk.CTk):
                         "primaire": (cACCENT, "#FFFFFF"),
                         "danger": ("#FDECEA", "#E5484D")}
             bg, fg = couleurs.get(genre, couleurs["doux"])
-            kw.setdefault("font", (POLICE, 12))
+            kw.setdefault("font", (POLICE, 10))
             return tk.Button(parent, text=texte, command=cmd, bg=bg, fg=fg,
                              activebackground=bg, activeforeground=fg, relief="flat",
-                             bd=0, cursor="hand2", padx=12, pady=6, **kw)
+                             bd=0, cursor="hand2", padx=9, pady=3, **kw)
 
         # --- en-tête ---
         tk.Label(top, text="Ajuster le calendrier", bg=cBG, fg=cTEXT,
                  font=(POLICE, 20, "bold")).pack(anchor="w", padx=22, pady=(16, 0))
-        tk.Label(top, text="Maximum 4 semaines (1 mois). Duplique ou supprime des semaines.",
+        tk.Label(top, text="Autant de semaines que vous voulez : dupliquez ou supprimez-les.",
                  bg=cBG, fg=cMUTED, font=(POLICE, 12)).pack(anchor="w", padx=22, pady=(2, 8))
         besoins_lbl = tk.Label(top, text="", bg=cBG, fg=cHOVER, font=(POLICE, 13, "bold"))
         besoins_lbl.pack(anchor="w", padx=22, pady=(0, 8))
@@ -2101,7 +2102,7 @@ class App(ctk.CTk):
         mode_frame = tk.Frame(top, bg=cBG)
         mode_frame.pack(anchor="w", padx=22, pady=(0, 10))
         tk.Label(mode_frame, text="Contenu :", bg=cBG, fg=cTEXT,
-                 font=(POLICE, 12, "bold")).pack(side="left", padx=(0, 8))
+                 font=(POLICE, 11, "bold")).pack(side="left", padx=(0, 8))
 
         def construire_mode():
             for w in mode_frame.winfo_children()[1:]:   # garde le label "Contenu :"
@@ -2115,7 +2116,7 @@ class App(ctk.CTk):
                           activebackground=(cACCENT if actif else cSOFT),
                           activeforeground=("#FFFFFF" if actif else cHOVER),
                           relief="flat", bd=0, cursor="hand2",
-                          font=(POLICE, 11, "bold"), padx=12, pady=5).pack(side="left", padx=(0, 6))
+                          font=(POLICE, 10, "bold"), padx=9, pady=3).pack(side="left", padx=(0, 6))
 
         def appliquer_mode(nouveau):
             if nouveau == mode["val"]:
@@ -2144,6 +2145,10 @@ class App(ctk.CTk):
             construire_barre()
             afficher_semaine(courant["nom"])
 
+        # --- bas : Réinitialiser / Enregistrer (réservé en premier -> toujours visible) ---
+        bas = tk.Frame(top, bg=cBG)
+        bas.pack(side="bottom", fill="x", padx=22, pady=12)
+
         # --- barre des semaines ---
         barre = tk.Frame(top, bg=cBG)
         barre.pack(fill="x", padx=18, pady=(0, 6))
@@ -2169,6 +2174,10 @@ class App(ctk.CTk):
                                        f"({n['story']} stories + {n['story_cta']} CTA + "
                                        f"{n['carousel']} carrousels)")
 
+        def libelle_semaine(nom):
+            num = nom.replace("semaine-", "")
+            return f"Semaine {int(num) if num.isdigit() else num}"
+
         def renumeroter():
             vals = list(cal.values())
             cal.clear()
@@ -2181,9 +2190,6 @@ class App(ctk.CTk):
             afficher_semaine(nom)
 
         def dupliquer(nom):
-            if len(cal) >= 4:
-                messagebox.showwarning("Semaines", "Maximum 4 semaines (1 mois).")
-                return
             vals = list(cal.values())
             idx = list(cal.keys()).index(nom)
             vals.insert(idx + 1, copy.deepcopy(cal[nom]))
@@ -2197,7 +2203,7 @@ class App(ctk.CTk):
                 messagebox.showwarning("Semaines", "Il faut au moins 1 semaine.")
                 return
             if not messagebox.askyesno("Supprimer",
-                                       f"Supprimer {nom.replace('semaine-', 'la semaine ')} ?"):
+                                       f"Supprimer la {libelle_semaine(nom).lower()} ?"):
                 return
             idx = list(cal.keys()).index(nom)
             del cal[nom]
@@ -2205,20 +2211,76 @@ class App(ctk.CTk):
             noms = list(cal.keys())
             selectionner(noms[min(idx, len(noms) - 1)])
 
+        police_onglet = tkfont.Font(family=POLICE, size=10, weight="bold")
+        largeur_barre = {"val": 0}
+
         def construire_barre():
             for w in barre.winfo_children():
                 w.destroy()
+            dispo = barre.winfo_width()
+            if dispo <= 1:                       # fenêtre pas encore affichée
+                dispo = top.winfo_width() - 36 if top.winfo_width() > 1 else 720
+            largeur_barre["val"] = dispo
+
+            # Nombre de lignes d'onglets nécessaires à cette largeur.
+            lignes_req, occ = 1, 0
+            for nom in cal:
+                l_btn = police_onglet.measure(libelle_semaine(nom)) + 2 * 9 + 12
+                if occ and occ + l_btn > dispo:
+                    lignes_req, occ = lignes_req + 1, 0
+                occ += l_btn
+            if lignes_req > 2:
+                construire_selecteur()
+                return
+
+            ligne, occupe = None, dispo + 1
             for nom in cal:
                 actif = nom == courant["nom"]
-                b = tk.Button(barre, text=nom.replace("semaine-", "Semaine "),
-                              command=lambda n=nom: selectionner(n),
-                              bg=(cACCENT if actif else cSOFT),
-                              fg=("#FFFFFF" if actif else cHOVER),
-                              activebackground=(cACCENT if actif else cSOFT),
-                              activeforeground=("#FFFFFF" if actif else cHOVER),
-                              relief="flat", bd=0, cursor="hand2",
-                              font=(POLICE, 12, "bold"), padx=14, pady=6)
-                b.pack(side="left", padx=(0, 8))
+                texte = libelle_semaine(nom)
+                l_btn = police_onglet.measure(texte) + 2 * 9 + 12   # + marges
+                if ligne is None or occupe + l_btn > dispo:
+                    ligne = tk.Frame(barre, bg=cBG)
+                    ligne.pack(anchor="w", pady=(0, 5))
+                    occupe = 0
+                tk.Button(ligne, text=texte,
+                          command=lambda n=nom: selectionner(n),
+                          bg=(cACCENT if actif else cSOFT),
+                          fg=("#FFFFFF" if actif else cHOVER),
+                          activebackground=(cACCENT if actif else cSOFT),
+                          activeforeground=("#FFFFFF" if actif else cHOVER),
+                          relief="flat", bd=0, cursor="hand2",
+                          font=police_onglet, padx=9, pady=3).pack(side="left", padx=(0, 6))
+                occupe += l_btn
+
+        def construire_selecteur():
+            """Beaucoup de semaines : ◀ [Semaine N ▾] ▶ sur une seule ligne."""
+            noms = list(cal)
+            idx = noms.index(courant["nom"]) if courant["nom"] in noms else 0
+            libs = [libelle_semaine(n) for n in noms]
+            ligne = tk.Frame(barre, bg=cBG)
+            ligne.pack(anchor="w", pady=(0, 5))
+            prec = bouton(ligne, "◀", lambda: selectionner(noms[idx - 1]),
+                          font=(POLICE, 10, "bold"))
+            prec.pack(side="left")
+            var = tk.StringVar(value=libs[idx])
+            cb = ttk.Combobox(ligne, values=libs, textvariable=var, state="readonly",
+                              width=14, height=15, font=(POLICE, 10))
+            cb.pack(side="left", padx=6)
+            cb.bind("<<ComboboxSelected>>", lambda ev: selectionner(noms[libs.index(var.get())]))
+            suiv = bouton(ligne, "▶", lambda: selectionner(noms[idx + 1]),
+                          font=(POLICE, 10, "bold"))
+            suiv.pack(side="left")
+            if idx == 0:
+                prec.configure(state="disabled")
+            if idx == len(noms) - 1:
+                suiv.configure(state="disabled")
+            tk.Label(ligne, text=f"{len(noms)} semaines", bg=cBG, fg=cMUTED,
+                     font=(POLICE, 10)).pack(side="left", padx=(10, 0))
+
+        def _barre_redimensionnee(ev):
+            if abs(ev.width - largeur_barre["val"]) > 4:
+                construire_barre()
+        barre.bind("<Configure>", _barre_redimensionnee)
 
         def _set_type(cr, val):
             cr["type"] = val
@@ -2228,14 +2290,14 @@ class App(ctk.CTk):
             """Une ligne créneau : heure + type + supprimer. Widgets tk = rapide."""
             row = tk.Frame(cont, bg=cCARD)
             row.pack(fill="x", pady=3, padx=(20, 8))
-            e = tk.Entry(row, width=8, font=(POLICE, 13), relief="solid", bd=1)
+            e = tk.Entry(row, width=7, font=(POLICE, 11), relief="solid", bd=1)
             e.insert(0, cr["heure"])
             e.pack(side="left")
             e.bind("<KeyRelease>", lambda ev, c=cr, en=e: c.__setitem__("heure", en.get()))
             libs = rangement.LIBELLE_CRENEAU
             var = tk.StringVar(value=libs.get(cr["type"], cr["type"]))
             cb = ttk.Combobox(row, values=list(libs.values()), textvariable=var,
-                              state="readonly", width=12, font=(POLICE, 12))
+                              state="readonly", width=11, font=(POLICE, 10))
             cb.pack(side="left", padx=10)
             vers_type = {v: k for k, v in libs.items()}
             cb.bind("<<ComboboxSelected>>",
@@ -2243,7 +2305,7 @@ class App(ctk.CTk):
             tk.Button(row, text="×", command=lambda c=cr, r=row: supprimer_creneau(c, r),
                       bg="#FDECEA", fg="#E5484D", activebackground="#F8D7D5",
                       activeforeground="#E5484D", relief="flat", bd=0, cursor="hand2",
-                      font=(POLICE, 14, "bold"), width=3).pack(side="left")
+                      font=(POLICE, 10, "bold"), width=2, pady=0).pack(side="left")
 
         def ajouter_creneau(j, cont):
             cr = {"heure": "12h00", "type": "reel"}
@@ -2294,6 +2356,21 @@ class App(ctk.CTk):
             construire_barre()
             afficher_semaine(courant["nom"])
 
+        import json as _json
+        instantane = {"val": _json.dumps(cal, sort_keys=True)}
+
+        def fermer():
+            if _json.dumps(cal, sort_keys=True) != instantane["val"]:
+                rep_ = messagebox.askyesnocancel(
+                    "Calendrier", "Enregistrer les modifications du calendrier ?", parent=top)
+                if rep_ is None:
+                    return
+                if rep_:
+                    enreg()
+                    return
+            top.destroy()
+        top.protocol("WM_DELETE_WINDOW", fermer)
+
         def enreg():
             calendrier.sauver_calendrier(cal)
             messagebox.showinfo("Calendrier", f"Enregistré ({len(cal)} semaine(s)).\n"
@@ -2301,12 +2378,9 @@ class App(ctk.CTk):
             top.destroy()
             self._maj_besoins_ranger()   # la page Ranger reste à jour
 
-        # --- bas : Réinitialiser / Enregistrer ---
-        bas = tk.Frame(top, bg=cBG)
-        bas.pack(fill="x", padx=22, pady=12)
         bouton(bas, "Réinitialiser", reinit).pack(side="left")
         bouton(bas, "Enregistrer", enreg, genre="primaire",
-               font=(POLICE, 13, "bold")).pack(side="right")
+               font=(POLICE, 11, "bold")).pack(side="right")
 
         construire_mode()
         construire_barre()
