@@ -72,7 +72,6 @@ Sans ça, l'app marche quand même (clic droit → Ouvrir au 1er lancement).
   Apple, et les données vont dans `~/Library/Application Support/HelpVA`.
 - Une licence est **liée à la machine** : l'empreinte d'un Mac ≠ celle d'un PC.
   Chaque client active avec **son** code (l'empreinte est gérée automatiquement).
-- Icône : si `assets/logo.png` ne suffit pas, générer `assets/logo.icns` et
-  changer `icon=` dans `HelpVA_mac.spec`.
+- Icône : `assets/logo.icns` (déjà fourni, utilisé par `HelpVA_mac.spec`).
 - `config.py` est bien inclus (URL + clé anon Supabase) → l'activation par code
   fonctionne dans le `.app`.

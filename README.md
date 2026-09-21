@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" alt="HelpVA" width="120"></p>
+
 # HelpVA
 
 **HelpVA** est une application de bureau (Windows / macOS) pour les
@@ -147,7 +149,7 @@ agent/
 ├── config.py           Réglages (carrousels, Supabase…)
 ├── drive.py            Ancien module Google Drive (masqué dans l'interface)
 └── version.py
-assets/                 Logo, icônes, polices, images du tutoriel
+assets/                 Logo (png / ico / icns), icônes, polices, tutoriel
 web/admin.html          Tableau de bord vendeur
 supabase/functions/     Fonction serveur des licences
 HelpVA.spec             Build Windows (PyInstaller)

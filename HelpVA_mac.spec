@@ -56,14 +56,14 @@ exe = EXE(
     target_arch=None,          # None = arch du Mac qui build (mettre 'universal2' si voulu)
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/logo.png',    # PyInstaller convertit en .icns (sinon fournir assets/logo.icns)
+    icon='assets/logo.icns',
 )
 
 # Emballe l'exécutable dans un vrai bundle macOS .app
 app = BUNDLE(
     exe,
     name='HelpVA.app',
-    icon='assets/logo.png',
+    icon='assets/logo.icns',
     bundle_identifier='com.helpva.app',
     info_plist={
         'CFBundleName': 'HelpVA',
