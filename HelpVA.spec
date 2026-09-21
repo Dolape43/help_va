@@ -4,14 +4,13 @@ from PyInstaller.utils.hooks import collect_all
 # Données embarquées dans l'exe (accessibles via sys._MEIPASS).
 datas = [
     ('assets', 'assets'),        # logo.png / logo.ico
-    ('legendes', 'legendes'),    # banques de légendes + hashtags
 ]
 binaries = []
 # Modules importés "à la demande" -> on les force.
 hiddenimports = [
     'agent.horloge', 'agent.licence', 'agent.version', 'agent.emplacement',
     'agent.config', 'agent.parametres', 'agent.drive', 'agent.calendrier',
-    'agent.ranger', 'agent.unicite', 'agent.legendes', 'agent.conversion',
+    'agent.ranger', 'agent.unicite', 'agent.conversion',
     'agent.polices', 'gdown',
 ]
 

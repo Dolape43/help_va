@@ -24,7 +24,7 @@ __pycache__/
 .venv/
 venv/
 
-# Contenus locaux (médias à poster)
+# Médias locaux de test
 contenus/
 sources/
 planning/

@@ -312,21 +312,17 @@ ESSAI_JOURS = 3   # durée par défaut d'une licence d'essai
 
 
 def construire_payload(empreinte: str, type_licence: str, aujourd_hui: date,
-                       jours: int = None, nom: str = None,
-                       premium: bool = False) -> dict:
+                       jours: int = None, nom: str = None) -> dict:
     """Prépare les données d'une licence (utilisé par le générateur).
 
     type_licence : "vie" | "mois" | "an" | "essai". Le comptage démarre
     AUJOURD'HUI (jour de génération). "essai" = licence courte (3 jours
     par défaut, ou `jours` si fourni).
     nom : nom du détenteur, GRAVÉ dans la licence signée (affiché chez le client).
-    premium : True -> débloque l'automatisation des publications.
     """
     payload = {"emp": empreinte.strip().upper(), "type": type_licence}
     if nom and nom.strip():
         payload["nom"] = nom.strip()
-    if premium:
-        payload["premium"] = True
     if type_licence == "mois":
         payload["exp"] = _ajouter_mois(aujourd_hui, 1).isoformat()
     elif type_licence == "an":
@@ -397,10 +393,9 @@ def verifier() -> dict:
         return {"ok": False, "raison": "invalide", "type": None,
                 "expire_le": None, "jours_restants": None}
     nom = payload.get("nom")
-    premium = bool(payload.get("premium"))
     if payload.get("emp") != empreinte_machine():
         return {"ok": False, "raison": "mauvais_pc", "type": payload.get("type"),
-                "expire_le": None, "jours_restants": None, "nom": nom, "premium": premium}
+                "expire_le": None, "jours_restants": None, "nom": nom}
     bloc, hors_ligne = _blocage_serveur(licence, payload.get("emp"))
     if bloc:
         bloc["type"] = payload.get("type")
@@ -413,7 +408,7 @@ def verifier() -> dict:
     if type_l == "vie" or not exp:
         return {"ok": True, "raison": "actif", "type": "vie",
                 "expire_le": None, "jours_restants": None, "nom": nom,
-                "premium": premium, "hors_ligne": hors_ligne}
+                "hors_ligne": hors_ligne}
 
     # Mois / an : il FAUT la vraie date (internet).
     # "exp" peut être une DATE (produit) ou un DATETIME ISO (tests à la minute).
@@ -437,7 +432,7 @@ def verifier() -> dict:
         # retour de la connexion.
         return {"ok": True, "raison": "actif", "type": type_l,
                 "expire_le": (exp_dt.date() if precis else exp_date),
-                "jours_restants": None, "nom": nom, "premium": premium,
+                "jours_restants": None, "nom": nom,
                 "hors_ligne": True}
 
     # Expiration EXACTE : aucune tolérance après la date de fin.
@@ -452,7 +447,7 @@ def verifier() -> dict:
 
     return {"ok": actif, "raison": "actif" if actif else "expire",
             "type": type_l, "expire_le": expire_le, "jours_restants": jours,
-            "nom": nom, "premium": premium, "hors_ligne": False}
+            "nom": nom, "hors_ligne": False}
 
 
 def enregistrer_licence(licence: str) -> dict:

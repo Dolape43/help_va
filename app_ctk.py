@@ -2,13 +2,12 @@
 HelpVA — interface CustomTkinter (légère, fluide, design moderne).
 
 Le "cerveau" reste dans agent/* ; ce fichier ne fait que l'interface.
-Sidebar (Accueil / Modèles / Publications / Paramètres) + cartes.
+Sidebar (Accueil / Paramètres) + cartes.
 """
 
 import os
 import sys
 import queue
-import random
 import shutil
 import threading
 
@@ -17,8 +16,6 @@ try:
 except Exception:
     pass
 
-from datetime import datetime, date, timedelta
-
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -26,7 +23,7 @@ from tkinter import filedialog, messagebox, ttk
 from agent import parametres, licence, version
 from agent import ranger as rangement
 from agent import unicite, calendrier, conversion
-from agent import horloge, drive
+from agent import drive
 
 # Re-contrôle de l'abonnement quand l'app reste ouverte (réglable pour tests).
 # Toutes les 1 h : vérifie en ligne l'état de la licence (résiliation/expiration).
@@ -39,21 +36,13 @@ MAX_ECHECS_VERIF = 3
 
 
 class FluxVersLog:
-    """Redirige les print() vers le journal (via une file d'attente).
-
-    Si le print vient du thread d'automatisation, on le TAGge « auto_log »
-    pour qu'il aille dans le journal de l'automatisation (et pas dans les
-    autres menus)."""
-    def __init__(self, file, est_auto=None):
+    """Redirige les print() vers le journal (via une file d'attente)."""
+    def __init__(self, file):
         self.file = file
-        self.est_auto = est_auto
 
     def write(self, texte):
         if texte:
-            if self.est_auto and self.est_auto():
-                self.file.put(("auto_log", texte))
-            else:
-                self.file.put(texte)
+            self.file.put(texte)
 
     def flush(self):
         pass
@@ -73,15 +62,6 @@ GREEN = ("#16A34A", "#4FD08A")
 BORDER = ("#E7E8F2", "#2A2C3C")
 from agent import polices as _polices
 POLICE = "Poppins" if _polices.charger_poppins() else "Segoe UI"
-
-MOIS_FR = ("Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet",
-           "Août", "Septembre", "Octobre", "Novembre", "Décembre")
-
-
-def _date_fr(d) -> str:
-    """Date en français long, ex : « 13 Mars 2024 »."""
-    return f"{d.day} {MOIS_FR[d.month - 1]} {d.year}"
-
 
 def chemin_ressource(rel: str) -> str:
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -127,9 +107,6 @@ class App(ctk.CTk):
         # Infra jobs : journal + threads + popups.
         self.file_log = queue.Queue()
         self.log = None
-        self.journal_est_auto = False  # la zone visible est-elle le journal d'automatisation ?
-        self.journal_buffer = ""       # historique du journal AUTO (persiste entre pages)
-        self._journal_jour = None      # dernier jour écrit (pour les séparateurs)
         self.occupe = False
         self._loading = None
         self._annule_tache = False     # drapeau : annulation d'une tâche en cours
@@ -141,12 +118,10 @@ class App(ctk.CTk):
         self.fichiers_convert_src = None
         self.dossier_imgconv_src = None
         self.fichiers_imgconv_src = None
-        self.dossier_planif_src = None
-        self.fichiers = []
         self._timer_verif = None
         self._echecs_verif = 0
         self._bandeau_hl = None   # bandeau discret « hors-ligne »
-        sys.stdout = FluxVersLog(self.file_log, est_auto=self._ecrit_par_auto)
+        sys.stdout = FluxVersLog(self.file_log)
         sys.stderr = FluxVersLog(self.file_log)
         self.after(120, self._pomper_log)
 
@@ -347,8 +322,8 @@ class App(ctk.CTk):
 
     def _apres_licence(self):
         # On ne montre l'écran « Bienvenue » qu'AU TOUT PREMIER lancement.
-        # Ensuite (déjà démarré une fois, ou automatisation active) -> Accueil direct.
-        if self.params.get("auto_actif") or self.params.get("deja_demarre"):
+        # Ensuite (déjà démarré une fois) -> Accueil direct.
+        if self.params.get("deja_demarre"):
             self._construire_app()
         else:
             self._ecran_bienvenue()
@@ -396,7 +371,7 @@ class App(ctk.CTk):
                       fg_color=ACCENT_HOVER, hover_color="#4A3FCC", height=42,
                       corner_radius=12, font=(POLICE, 14, "bold")).pack()
         # Au démarrage du PC, internet met parfois quelques secondes -> on
-        # réessayez tout seul, pour que l'automatisation reparte sans clic.
+        # réessaie tout seul, sans que l'utilisateur ait à cliquer.
         self.after(20000, self._router_licence)
 
     def _ecran_activation(self):
@@ -582,7 +557,6 @@ class App(ctk.CTk):
     def _aller(self, cle):
         self.page = cle
         self.log = None
-        self.journal_est_auto = False
         self._maj_nav()
         self._vider(self.contenu)
         pages = {"accueil": self._page_accueil,
@@ -700,7 +674,6 @@ class App(ctk.CTk):
     def _ouvrir_fonction(self, cle):
         self.page = ""
         self.log = None
-        self.journal_est_auto = False
         self._maj_nav()
         self._vider(self.contenu)
         pages = {"images_convert": self._page_convertir_images, "ranger": self._page_ranger,
@@ -708,41 +681,17 @@ class App(ctk.CTk):
                  "convertir": self._page_convertir}
         pages.get(cle, self._page_accueil)()
 
-    # ----------------------------------------------------------- placeholder
-    def _page_placeholder(self, titre, emoji, texte):
-        self._entete(titre)
-        carte = ctk.CTkFrame(self.contenu, fg_color=CARD, corner_radius=16,
-                             border_width=1, border_color=BORDER)
-        carte.pack(fill="x", padx=36, pady=10)
-        inner = ctk.CTkFrame(carte, fg_color="transparent")
-        inner.pack(pady=50)
-        self._badge(inner, emoji, 60).pack(pady=(0, 14))
-        ctk.CTkLabel(inner, text=texte, font=(POLICE, 14), text_color=MUTED,
-                     justify="center").pack()
-        ctk.CTkButton(inner, text="← Retour à l'accueil", command=lambda: self._aller("accueil"),
-                      fg_color=ACCENT_SOFT, text_color=ACCENT_HOVER, hover_color="#E1DDFA",
-                      corner_radius=10, height=40).pack(pady=(20, 0))
-
-
     # ==================================================================
     #  Infra : journal, threads, popups, chargement
     # ==================================================================
-    def _ecrit_par_auto(self):
-        """Vrai si le print() courant vient du thread d'automatisation."""
-        t = getattr(self, "planif_thread", None)
-        return t is not None and threading.get_ident() == t.ident
-
     def _pomper_log(self):
         try:
             while True:
                 item = self.file_log.get_nowait()
                 if isinstance(item, tuple):
-                    if item and item[0] == "auto_log":
-                        self._journal_auto(item[1])
-                    else:
-                        self._controle(item)
+                    self._controle(item)
                 else:
-                    self._journal_transitoire(item)
+                    self._inserer_log(item)
         except queue.Empty:
             pass
         self.after(120, self._pomper_log)
@@ -756,32 +705,6 @@ class App(ctk.CTk):
                 self.log.configure(state="disabled")
             except Exception:
                 pass
-
-    def _journal_auto(self, texte):
-        """Journal de l'AUTOMATISATION : historique persistant + séparateurs de
-        jour. Affiché seulement sur la page Automatiser."""
-        jour = datetime.now().date()
-        if jour != self._journal_jour:
-            self._journal_jour = jour
-            entete = f"────────────  {_date_fr(jour)}  ────────────\n\n"
-            if self.journal_buffer:
-                entete = "\n\n" + entete
-            self.journal_buffer += entete
-            if self.journal_est_auto:
-                self._inserer_log(entete)
-        self.journal_buffer += texte
-        if len(self.journal_buffer) > 200_000:
-            self.journal_buffer = self.journal_buffer[-200_000:]
-        if self.journal_est_auto:
-            self._inserer_log(texte)
-
-    def _journal_transitoire(self, texte):
-        """Log des autres actions (Ranger, Drive…) : juste l'action en cours,
-        rien de persistant. Sur la page Automatiser, tout va au journal auto."""
-        if self.journal_est_auto:
-            self._journal_auto(texte)
-        else:
-            self._inserer_log(texte)
 
     def _controle(self, item):
         tag = item[0]
@@ -977,7 +900,7 @@ class App(ctk.CTk):
     def _annuler_tache(self):
         """Demande l'arrêt complet de la tâche en cours."""
         self._annule_tache = True
-        print("[publier] ⛔ Annulation demandée — arrêt de l'opération…")
+        print("⛔ Annulation demandée — arrêt de l'opération…")
         try:
             if getattr(self, "_lbl_loading", None) and self._lbl_loading.winfo_exists():
                 self._lbl_loading.configure(text="Annulation en cours…")
@@ -1053,10 +976,8 @@ class App(ctk.CTk):
             ctk.CTkLabel(bloc, text=sous, font=(POLICE, 12),
                          text_color=MUTED).pack(anchor="w")
 
-    def _zone_journal(self, persistant=False):
-        """persistant=True (page Automatiser) : journal avec historique conservé.
-        Sinon : log transitoire de l'action en cours seulement."""
-        self.journal_est_auto = persistant
+    def _zone_journal(self):
+        """Journal de l'action en cours (rien n'est conservé entre les pages)."""
         c = ctk.CTkFrame(self.contenu, fg_color=CARD, corner_radius=16,
                          border_width=1, border_color=BORDER)
         c.pack(fill="both", expand=True, padx=36, pady=(8, 22))
@@ -1071,10 +992,6 @@ class App(ctk.CTk):
                                   fg_color=("#FBFBFE", "#0F1019"), text_color=TEXT,
                                   corner_radius=10)
         self.log.pack(fill="both", expand=True, padx=14, pady=(6, 14))
-        # Sur la page Automatiser : on ré-affiche tout l'historique.
-        if persistant and self.journal_buffer:
-            self.log.insert("end", self.journal_buffer)
-            self.log.see("end")
         self.log.configure(state="disabled")
 
     def _effacer_journal(self):
@@ -1085,10 +1002,6 @@ class App(ctk.CTk):
                 self.log.configure(state="disabled")
             except Exception:
                 pass
-        # Sur le journal d'automatisation, on vide aussi l'historique gardé.
-        if self.journal_est_auto:
-            self.journal_buffer = ""
-            self._journal_jour = None
 
     def _btn(self, parent, texte, cmd, primaire=False):
         if primaire:
@@ -2018,8 +1931,6 @@ class App(ctk.CTk):
                 "NOUVEAU code pour réactiver.\n\nContinuer ?"):
             return
         licence.supprimer_licence()
-        self.params["auto_actif"] = False
-        parametres.sauver(self.params)
         self.statut = {"ok": False, "raison": "pas_active"}
         self._router_licence()   # -> écran d'activation
 

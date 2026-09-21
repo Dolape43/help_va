@@ -1,10 +1,8 @@
 # HelpVA
 
 **HelpVA** est une application de bureau (Windows / macOS) qui aide les
-assistants virtuels à **préparer** le contenu d'un modèle avant publication :
-récupérer les médias, les convertir, les rendre uniques et les ranger selon un
-calendrier. La publication elle-même reste **manuelle** — HelpVA ne poste pas à
-votre place.
+assistants virtuels à **préparer** le contenu d'un modèle : convertir les
+médias, les rendre uniques et les ranger selon un calendrier.
 
 Interface : Python + CustomTkinter, police Poppins embarquée, thème clair/sombre.
 
@@ -12,7 +10,7 @@ Interface : Python + CustomTkinter, police Poppins embarquée, thème clair/somb
 
 | Module | Rôle | Code |
 |---|---|---|
-| **Télécharger depuis Drive** | Récupère les médias d'un modèle depuis un lien Google Drive. | [`agent/drive.py`](agent/drive.py) |
+| **Convertir les images** | Convertit en `.jpg` ou `.png` (y compris les photos iPhone HEIC). | [`agent/unicite.py`](agent/unicite.py) |
 | **Convertir en MP4** | Transforme `.mov`, `.avi`, … en `.mp4` prêt pour Instagram. | [`agent/conversion.py`](agent/conversion.py) |
 | **Changer les métadonnées** | Rend chaque photo/vidéo **unique** (métadonnées, taille, pixels) pour éviter la détection de doublon d'Instagram, sans changement visible. | [`agent/unicite.py`](agent/unicite.py) |
 | **Ranger les médias** | Organise images et vidéos par semaine/jour/créneau selon le calendrier. | [`agent/ranger.py`](agent/ranger.py) · [`agent/calendrier.py`](agent/calendrier.py) |
@@ -50,4 +48,4 @@ back-office **Supabase** :
 
 Ne sont **jamais** publiés (voir [`.gitignore`](.gitignore)) : la clé privée
 Ed25519 du vendeur (`outils/`, `admin-prive/`), les licences clients, les
-médias locaux (`contenus/`, `sources/`) et les journaux.
+médias locaux de test et les journaux.

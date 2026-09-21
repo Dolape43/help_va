@@ -5,13 +5,12 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [
     ('assets', 'assets'),
-    ('legendes', 'legendes'),
 ]
 binaries = []
 hiddenimports = [
     'agent.horloge', 'agent.licence', 'agent.version', 'agent.emplacement',
     'agent.config', 'agent.parametres', 'agent.drive', 'agent.calendrier',
-    'agent.ranger', 'agent.unicite', 'agent.legendes', 'agent.conversion',
+    'agent.ranger', 'agent.unicite', 'agent.conversion',
     'agent.polices', 'gdown',
 ]
 

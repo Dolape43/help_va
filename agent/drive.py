@@ -188,7 +188,7 @@ def telecharger_et_convertir_heic(file_id: str, dest_jpg: str):
     """Télécharge un HEIC/HEIF puis le convertit en JPG (utilisable partout).
 
     Instagram et PIL ne gèrent pas le HEIC : on le convertit à la volée
-    pour que le reste de l'app (métadonnées, publication) fonctionne.
+    pour que le reste de l'app (métadonnées, rangement) fonctionne.
     """
     tmp = dest_jpg + ".heic.tmp"
     telecharger_fichier(file_id, tmp)

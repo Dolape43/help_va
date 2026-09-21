@@ -1,21 +1,24 @@
 """
-Paramètres de l'utilisateur, stockés dans `parametres.json` À CÔTÉ de l'exe.
+Paramètres de l'utilisateur, stockés dans `parametres.json`
+(%APPDATA%\\HelpVA sous Windows).
 
-C'est ici que chaque ami met SA propre clé API AdsPower et choisit son
-profil — rien n'est codé en dur, donc l'exe est distribuable tel quel.
+Contient uniquement les préférences de l'interface (thème, dossier de sortie…).
 """
 
 import json
 import os
-import sys
 
 FICHIER = "parametres.json"
 
 _DEFAUT = {
-    "api_key": "",     # clé API AdsPower de l'utilisateur
-    "profil": "",      # user_id du profil AdsPower sélectionné
-    "modele": "",      # nom du modèle en cours (dossier de rangement)
+    "theme": "light",        # "light" | "dark"
+    "dossier_sortie": "",    # vide = dossier par défaut (Bureau\HelpVA)
 }
+
+# Clés héritées des anciennes versions (automatisation, AdsPower, modèles) :
+# supprimées au chargement pour ne plus rien garder de ces données.
+_OBSOLETES = ("api_key", "profil", "modele", "genre", "modeles", "auto_actif",
+              "auto_comptes", "auto_rattrapage", "methode_pub")
 
 
 def _chemin() -> str:
@@ -31,13 +34,22 @@ def charger() -> dict:
     if os.path.exists(chemin):
         try:
             with open(chemin, encoding="utf-8") as f:
-                return {**_DEFAUT, **json.load(f)}
+                lus = json.load(f)
+            params = {**_DEFAUT, **lus}
+            if any(k in params for k in _OBSOLETES):
+                for k in _OBSOLETES:
+                    params.pop(k, None)
+                try:
+                    sauver(params)
+                except OSError:
+                    pass
+            return params
         except Exception:
             pass
     return dict(_DEFAUT)
 
 
 def sauver(params: dict) -> None:
-    """Enregistre les paramètres dans parametres.json (à côté de l'exe)."""
+    """Enregistre les paramètres dans parametres.json."""
     with open(_chemin(), "w", encoding="utf-8") as f:
         json.dump(params, f, indent=2, ensure_ascii=False)

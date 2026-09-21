@@ -3,9 +3,6 @@ Configuration centrale de l'agent.
 Tu modifies ce fichier, pas le reste du code.
 """
 
-# --- Où sont rangés les contenus préparés ---
-DOSSIER_CONTENUS = "contenus"
-
 # --- Rangement des médias selon le calendrier ---
 # Dossiers sources où TU déposes tes médias bruts :
 DOSSIER_SOURCE_VIDEOS = "sources/videos"    # -> utilisées pour les Reels
