@@ -108,6 +108,15 @@ def icones_nettes(fenetre):
         pass
 
 
+def ouvrir_dans_explorateur(chemin: str) -> None:
+    """Ouvre un dossier dans l'explorateur du système (Windows, macOS, Linux)."""
+    if sys.platform == "win32":
+        os.startfile(chemin)
+    else:
+        import subprocess
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", chemin])
+
+
 def _abonnement_txt(st: dict) -> str:
     return {"vie": "Abonnement à vie",
             "mois": "Abonnement mensuel",
@@ -197,7 +206,7 @@ class App(ctk.CTk):
 
     def _ouvrir_dossier_sortie(self):
         try:
-            os.startfile(self.dossier_sortie())   # ouvre l'explorateur (Windows)
+            ouvrir_dans_explorateur(self.dossier_sortie())
         except Exception as e:
             self._notifier("Dossier de sortie", str(e), erreur=True)
 
