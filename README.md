@@ -12,6 +12,7 @@ Vendue aux agences de VA sous forme de licence (activation par code).
 - Interface : Python + CustomTkinter, police Poppins embarquée
 - Thème clair / sombre (bouton en bas de la barre latérale)
 - Version : voir [`agent/version.py`](agent/version.py)
+- Site vitrine (Next.js) : dépôt [Dolape43/helpva-web](https://github.com/Dolape43/helpva-web)
 
 ---
 
