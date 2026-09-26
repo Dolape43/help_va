@@ -29,3 +29,7 @@ contenus/
 sources/
 planning/
 scratch_uniq/
+
+# Build Linux
+.venv-linux/
+tools/appimagetool-x86_64.AppImage

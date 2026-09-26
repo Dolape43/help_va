@@ -177,7 +177,14 @@ class App(ctk.CTk):
         self.after(120, self._pomper_log)
 
         try:
-            self.iconbitmap(chemin_ressource("assets/logo.ico"))
+            if sys.platform == "win32":
+                self.iconbitmap(chemin_ressource("assets/logo.ico"))
+            else:
+                # Linux / macOS : pas de .ico, on pose le PNG du logo.
+                from PIL import Image, ImageTk
+                logo = Image.open(chemin_ressource("assets/logo.png")).resize((256, 256))
+                self._icone_fenetre = ImageTk.PhotoImage(logo)
+                self.iconphoto(True, self._icone_fenetre)
         except Exception:
             pass
         # Remplace l'icône floue fabriquée par Tk par une icône nette (Windows).

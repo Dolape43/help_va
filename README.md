@@ -2,7 +2,7 @@
 
 # HelpVA
 
-**HelpVA** est une application de bureau (Windows / macOS) pour les
+**HelpVA** est une application de bureau (Windows / macOS / Linux) pour les
 assistants virtuels (VA) qui gèrent le contenu Instagram de modèles. Elle
 **prépare** les médias : les convertir au bon format, les rendre uniques et
 les ranger selon un calendrier de posts.
@@ -154,6 +154,7 @@ web/admin.html          Tableau de bord vendeur
 supabase/functions/     Fonction serveur des licences
 HelpVA.spec             Build Windows (PyInstaller)
 HelpVA_mac.spec         Build macOS
+HelpVA_linux.spec       Build Linux (voir tools/build_linux.sh)
 BUILD_MAC.md            Guide de build sur Mac
 ```
 
@@ -172,6 +173,7 @@ python app_ctk.py
 
 - **Windows** : `pyinstaller --noconfirm --clean HelpVA.spec` → `dist/HelpVA.exe`
 - **macOS** (à faire sur un Mac) : voir [`BUILD_MAC.md`](BUILD_MAC.md)
+- **Linux** (sous Linux ou WSL) : `bash tools/build_linux.sh` → `dist/HelpVA-x86_64.AppImage`, voir [`BUILD_LINUX.md`](BUILD_LINUX.md)
 
 ## Sécurité
 

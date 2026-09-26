@@ -4,7 +4,7 @@ PC de l'utilisateur (enregistrement au niveau du process courant).
 
 Windows : AddFontResourceExW (GDI) avec le drapeau FR_PRIVATE.
 macOS   : CTFontManagerRegisterFontsForURL (portée process).
-Linux   : non géré (repli sur la police système).
+Linux   : copie dans ~/.local/share/fonts/helpva (fontconfig) + fc-cache.
 
 On appelle charger_poppins() AVANT de créer les widgets. Si ça échoue,
 l'app retombe simplement sur sa police par défaut (aucun plantage).
@@ -22,6 +22,26 @@ def _dossier_polices() -> str:
     else:
         base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, "assets", "fonts")
+
+
+def _charger_linux(ttfs) -> int:
+    """Linux (Tk utilise fontconfig) : Poppins est copiée une fois dans le dossier
+    de polices de l'utilisateur, puis le cache fontconfig est rafraîchi."""
+    import shutil
+    import subprocess
+    dossier = os.path.join(os.environ.get("XDG_DATA_HOME") or
+                           os.path.join(os.path.expanduser("~"), ".local", "share"),
+                           "fonts", "helpva")
+    os.makedirs(dossier, exist_ok=True)
+    copiees = 0
+    for t in ttfs:
+        dest = os.path.join(dossier, os.path.basename(t))
+        if not os.path.exists(dest) or os.path.getsize(dest) != os.path.getsize(t):
+            shutil.copy2(t, dest)
+            copiees += 1
+    if copiees and shutil.which("fc-cache"):
+        subprocess.run(["fc-cache", "-f", dossier], capture_output=True, timeout=30)
+    return len(ttfs)
 
 
 def charger_poppins() -> bool:
@@ -53,6 +73,8 @@ def charger_poppins() -> bool:
                 url = cf.CFURLCreateFromFileSystemRepresentation(None, b, len(b), False)
                 if url and ct.CTFontManagerRegisterFontsForURL(url, 1, None):  # 1 = process
                     ok += 1
+        else:
+            ok = _charger_linux(ttfs)
     except Exception:
         return False
     return ok > 0
