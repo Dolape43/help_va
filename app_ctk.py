@@ -499,6 +499,71 @@ class App(ctk.CTk):
         self._planifier_verif_periodique()
         # Rappel discret si on tourne en mode hors-ligne toléré.
         self._montrer_bandeau_horsligne((self.statut or {}).get("hors_ligne", False))
+        # Rappel de fin d'abonnement (la veille et le jour même).
+        self._montrer_rappel_fin(self.statut)
+
+    # ---- rappel de fin d'abonnement ----
+    def _texte_rappel_fin(self, st):
+        """Texte du rappel si l'abonnement (ou l'essai) se termine demain ou
+        aujourd'hui. Le blocage n'arrive que le LENDEMAIN de la date de fin."""
+        st = st or {}
+        j = st.get("jours_restants")
+        if not st.get("ok") or j is None or not 0 <= j <= 1:
+            return None
+        if st.get("type") not in ("mois", "an", "essai"):
+            return None
+        quand = "demain" if j == 1 else "aujourd'hui"
+        if st.get("type") == "essai":
+            return f"Votre essai gratuit se termine {quand}.\nChoisissez une offre pour continuer."
+        return f"Votre abonnement se termine {quand}.\nRenouvelez-le pour continuer sans interruption."
+
+    def _montrer_rappel_fin(self, st):
+        """Petit bandeau NON bloquant en bas à droite (fermable)."""
+        ancien = getattr(self, "_rappel_fin", None)
+        if ancien is not None:
+            try:
+                if ancien.winfo_exists():
+                    ancien.destroy()
+            except Exception:
+                pass
+        self._rappel_fin = None
+        texte = self._texte_rappel_fin(st)
+        if not texte:
+            return
+        # Fermé par l'utilisateur : on ne le remontre qu'au changement de jour.
+        cle = (str(st.get("expire_le")), st.get("jours_restants"))
+        if getattr(self, "_rappel_ferme", None) == cle:
+            return
+        essai = st.get("type") == "essai"
+        b = ctk.CTkFrame(self, fg_color=CARD, corner_radius=14, border_width=1, border_color=ORANGE)
+        ctk.CTkLabel(b, text=texte, font=(POLICE, 13), text_color=TEXT,
+                     justify="left").pack(side="left", padx=(16, 10), pady=12)
+        ctk.CTkButton(b, text="Choisir une offre" if essai else "Renouveler",
+                      command=lambda: self._contacter_licence(essai), height=34,
+                      corner_radius=10, fg_color=ACCENT_HOVER, hover_color="#4A3FCC",
+                      font=(POLICE, 13, "bold")).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(b, text="✕", width=30, height=30, corner_radius=8,
+                      fg_color="transparent", hover_color=ACCENT_SOFT, text_color=MUTED,
+                      command=lambda: self._fermer_rappel_fin(cle)).pack(side="left", padx=(0, 8))
+        b.place(relx=0.985, rely=0.97, anchor="se")
+        b.lift()
+        self._rappel_fin = b
+
+    def _fermer_rappel_fin(self, cle):
+        self._rappel_ferme = cle
+        b = getattr(self, "_rappel_fin", None)
+        if b is not None and b.winfo_exists():
+            b.destroy()
+        self._rappel_fin = None
+
+    def _contacter_licence(self, essai=False):
+        """Ouvre Telegram avec un message déjà écrit."""
+        import webbrowser
+        from urllib.parse import quote
+        from agent import config
+        msg = ("Bonjour 👋\nMon essai HelpVA se termine, je souhaite obtenir une licence."
+               if essai else "Bonjour 👋\nJe souhaite renouveler ma licence HelpVA.")
+        webbrowser.open(f"{config.TELEGRAM_LICENCE}?text={quote(msg)}")
 
     def _montrer_bandeau_horsligne(self, afficher):
         """Petit bandeau flottant, NON bloquant, en bas à droite quand l'app
@@ -2068,6 +2133,7 @@ class App(ctk.CTk):
         if st["ok"]:
             self.statut = st
             self._echecs_verif = 0
+            self._montrer_rappel_fin(st)
             if st.get("hors_ligne"):
                 # Toléré (hors-ligne) : on NE bloque PAS. Bandeau discret +
                 # re-contrôle rapproché pour effacer le bandeau au retour du réseau.
@@ -2080,6 +2146,7 @@ class App(ctk.CTk):
         # Non OK : résiliée / suspendue / expirée / hors-ligne au-delà de la tolérance.
         self.statut = st
         self._montrer_bandeau_horsligne(False)
+        self._montrer_rappel_fin(None)
         self._vider()
         if st["raison"] == "pas_internet":
             self._ecran_internet()
