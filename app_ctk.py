@@ -117,6 +117,67 @@ def ouvrir_dans_explorateur(chemin: str) -> None:
         subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", chemin])
 
 
+# ── Fenêtres de choix (dossier / fichiers) ─────────────────────────────────
+# Sur certains PC, la fenêtre « Ouvrir » de Windows refuse de s'ouvrir
+# (TclError « Erreur non spécifiée » = code Windows E_FAIL : antivirus,
+# extension de l'Explorateur cassée…). Tk n'a pas de plan B dans ce cas :
+# on bascule alors sur la fenêtre de choix intégrée à Tk, et on s'en souvient
+# pour les clics suivants.
+_DIALOGUE_WINDOWS_OK = True
+
+
+def _dialogue_windows_en_panne(erreur) -> None:
+    global _DIALOGUE_WINDOWS_OK
+    _DIALOGUE_WINDOWS_OK = False
+    print(f"[i] La fenêtre de sélection de Windows ne répond pas sur ce PC ({erreur}). "
+          "HelpVA utilise sa propre fenêtre de sélection.", file=sys.stderr)
+
+
+def _proc_tk(fenetre, nom: str) -> str:
+    """Charge à la demande une fenêtre de choix écrite en Tcl (fournie avec Tk)."""
+    if not fenetre.tk.call("info", "commands", nom):
+        fenetre.tk.call("auto_load", nom)
+    return nom
+
+
+def choisir_dossier(fenetre, titre: str) -> str:
+    """Comme filedialog.askdirectory : le chemin choisi, ou '' si Annuler."""
+    if _DIALOGUE_WINDOWS_OK:
+        try:
+            return filedialog.askdirectory(parent=fenetre, title=titre)
+        except tk.TclError as e:
+            _dialogue_windows_en_panne(e)
+    try:
+        d = fenetre.tk.call(_proc_tk(fenetre, "::tk::dialog::file::chooseDir::"),
+                            "-parent", str(fenetre), "-title", titre, "-mustexist", 1,
+                            "-initialdir", os.path.expanduser("~"))
+        return str(d)
+    except tk.TclError as e:
+        messagebox.showerror("Sélection impossible",
+                             f"Impossible d'ouvrir la fenêtre de sélection.\n\n{e}", parent=fenetre)
+        return ""
+
+
+def choisir_fichiers(fenetre, titre: str, types) -> tuple:
+    """Comme filedialog.askopenfilenames : les fichiers choisis, ou () si Annuler."""
+    if _DIALOGUE_WINDOWS_OK:
+        try:
+            return filedialog.askopenfilenames(parent=fenetre, title=titre, filetypes=types)
+        except tk.TclError as e:
+            _dialogue_windows_en_panne(e)
+    try:
+        res = fenetre.tk.call(_proc_tk(fenetre, "::tk::dialog::file::"), "open",
+                              "-parent", str(fenetre), "-title", titre, "-multiple", 1,
+                              "-filetypes", tuple(tuple(t) for t in types),
+                              "-initialdir", os.path.expanduser("~"))
+        # Tk renvoie des objets Tcl : on les convertit en vrais textes Python.
+        return tuple(str(f) for f in fenetre.tk.splitlist(res))
+    except tk.TclError as e:
+        messagebox.showerror("Sélection impossible",
+                             f"Impossible d'ouvrir la fenêtre de sélection.\n\n{e}", parent=fenetre)
+        return ()
+
+
 def _abonnement_txt(st: dict) -> str:
     return {"vie": "Abonnement à vie",
             "mois": "Abonnement mensuel",
@@ -218,7 +279,7 @@ class App(ctk.CTk):
             self._notifier("Dossier de sortie", str(e), erreur=True)
 
     def _changer_dossier_sortie(self):
-        choix = filedialog.askdirectory(title="Choisir le dossier de sortie")
+        choix = choisir_dossier(self, "Choisir le dossier de sortie")
         if not choix:
             return
         self.params["dossier_sortie"] = choix
@@ -1331,7 +1392,7 @@ class App(ctk.CTk):
                          text_color=coul).pack(anchor="w", pady=(4, 0))
 
     def _choisir_dossier_type_ranger(self, t):
-        d = filedialog.askdirectory(title=f"Choisir le dossier des {self._nom_type(t)}")
+        d = choisir_dossier(self, f"Choisir le dossier des {self._nom_type(t)}")
         if not d:
             return
         self.sources_ranger[t] = d
@@ -1491,7 +1552,7 @@ class App(ctk.CTk):
         return "Aucune source sélectionnée"
 
     def _choisir_dossier_uniq(self):
-        dossier = filedialog.askdirectory(title="Choisir le dossier (images ou vidéos)")
+        dossier = choisir_dossier(self, "Choisir le dossier (images ou vidéos)")
         if not dossier:
             return
         self.dossier_uniq_src = dossier
@@ -1499,9 +1560,9 @@ class App(ctk.CTk):
         self.lbl_uniq.configure(text=self._txt_source_uniq())
 
     def _choisir_images_uniq(self):
-        fichiers = filedialog.askopenfilenames(
-            title="Choisir des images / vidéos",
-            filetypes=[("Médias", "*.jpg *.jpeg *.png *.webp *.mp4 *.mov *.m4v *.avi *.mkv"),
+        fichiers = choisir_fichiers(
+            self, "Choisir des images / vidéos",
+            [("Médias", "*.jpg *.jpeg *.png *.webp *.mp4 *.mov *.m4v *.avi *.mkv"),
                        ("Tous", "*.*")])
         if not fichiers:
             return
@@ -1654,7 +1715,7 @@ class App(ctk.CTk):
         return "Aucune source sélectionnée"
 
     def _choisir_dossier_convert(self):
-        dossier = filedialog.askdirectory(title="Choisir le dossier de vidéos")
+        dossier = choisir_dossier(self, "Choisir le dossier de vidéos")
         if not dossier:
             return
         self.dossier_convert_src = dossier
@@ -1662,9 +1723,9 @@ class App(ctk.CTk):
         self.lbl_convert.configure(text=self._txt_source_convert())
 
     def _choisir_videos_convert(self):
-        fichiers = filedialog.askopenfilenames(
-            title="Choisir des vidéos",
-            filetypes=[("Vidéos", "*.mov *.mp4 *.m4v *.avi *.mkv *.webm *.mpg *.mpeg *.wmv *.flv"),
+        fichiers = choisir_fichiers(
+            self, "Choisir des vidéos",
+            [("Vidéos", "*.mov *.mp4 *.m4v *.avi *.mkv *.webm *.mpg *.mpeg *.wmv *.flv"),
                        ("Tous", "*.*")])
         if not fichiers:
             return
@@ -1766,7 +1827,7 @@ class App(ctk.CTk):
         return "Aucune source sélectionnée"
 
     def _choisir_dossier_imgconv(self):
-        dossier = filedialog.askdirectory(title="Choisir le dossier d'images")
+        dossier = choisir_dossier(self, "Choisir le dossier d'images")
         if not dossier:
             return
         self.dossier_imgconv_src = dossier
@@ -1774,9 +1835,9 @@ class App(ctk.CTk):
         self.lbl_imgconv.configure(text=self._txt_source_imgconv())
 
     def _choisir_images_imgconv(self):
-        fichiers = filedialog.askopenfilenames(
-            title="Choisir des images",
-            filetypes=[("Images", "*.jpg *.jpeg *.png *.webp *.heic *.heif *.bmp *.tif *.tiff"),
+        fichiers = choisir_fichiers(
+            self, "Choisir des images",
+            [("Images", "*.jpg *.jpeg *.png *.webp *.heic *.heif *.bmp *.tif *.tiff"),
                        ("Tous", "*.*")])
         if not fichiers:
             return
