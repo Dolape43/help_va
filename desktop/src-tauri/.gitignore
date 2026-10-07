@@ -1,0 +1,3 @@
+# Générés par cargo / tauri
+/target/
+/gen/schemas

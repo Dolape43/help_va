@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>HelpVA - Plan de migration Tauri</title>
+<!--
+  Source du PDF « HelpVA - Plan de migration Tauri.pdf » (Bureau).
+  Impression : Edge headless, voir la commande en fin de fichier.
+  Polices Geist : dossier temporaire de la session, avec la maquette Tauri en secours.
+-->
+<style>
+@font-face { font-family: "Geist"; font-weight: 100 900;
+  src: url("file:///C:/Users/Christ%20Dolape/AppData/Local/Temp/claude/C--Users-Christ-Dolape-Desktop-ok/186e1b92-99cc-47cc-b737-5fece2f90659/scratchpad/video/assets/fonts/Geist-latin.woff2") format("woff2"),
+       url("file:///C:/Users/Christ%20Dolape/Desktop/Utilitaires/helpva-tauri-maquette/src/assets/fonts/Geist-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Geist"; font-weight: 100 900;
+  src: url("file:///C:/Users/Christ%20Dolape/AppData/Local/Temp/claude/C--Users-Christ-Dolape-Desktop-ok/186e1b92-99cc-47cc-b737-5fece2f90659/scratchpad/video/assets/fonts/Geist-latin-ext.woff2") format("woff2"),
+       url("file:///C:/Users/Christ%20Dolape/Desktop/Utilitaires/helpva-tauri-maquette/src/assets/fonts/Geist-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Geist Mono"; font-weight: 100 900;
+  src: url("file:///C:/Users/Christ%20Dolape/AppData/Local/Temp/claude/C--Users-Christ-Dolape-Desktop-ok/186e1b92-99cc-47cc-b737-5fece2f90659/scratchpad/video/assets/fonts/GeistMono-latin.woff2") format("woff2"),
+       url("file:///C:/Users/Christ%20Dolape/Desktop/Utilitaires/helpva-tauri-maquette/src/assets/fonts/GeistMono-latin.woff2") format("woff2"); }
+
+:root {
+  --blue: #4c6fff; --blue-soft: #8ea2ff; --blue-deep: #1d3fe6;
+  --blue-50: #f3f5ff; --blue-100: #e5eaff;
+  --ink: #18181b; --text: #3f3f46; --muted: #52525b; --faint: #a1a1aa;
+  --line: #e4e4e7; --soft: #f4f4f5; --dark: #09090b;
+  --green: #15803d; --green-50: #f0fdf4; --green-100: #bbf7d0;
+  --orange-50: #fffbeb; --orange-100: #fde68a;
+  --red: #b91c1c; --red-50: #fef2f2; --red-100: #fecaca;
+}
+
+@page {
+  size: A4;
+  margin: 19mm 17mm 17mm 17mm;
+  @top-left { content: "HelpVA · Plan de migration vers Tauri"; font-family: "Geist", "Segoe UI", sans-serif;
+    font-size: 8pt; font-weight: 500; color: #71717a; vertical-align: bottom; padding-bottom: 5mm; }
+  @top-right { content: "Version 1 · 7 octobre 2026"; font-family: "Geist", "Segoe UI", sans-serif;
+    font-size: 8pt; color: #a1a1aa; vertical-align: bottom; padding-bottom: 5mm; }
+  @bottom-left { content: "Document interne · AXÔSU"; font-family: "Geist", "Segoe UI", sans-serif;
+    font-size: 8pt; color: #a1a1aa; vertical-align: top; padding-top: 5mm; }
+  @bottom-right { content: counter(page) " / " counter(pages); font-family: "Geist", "Segoe UI", sans-serif;
+    font-size: 8pt; font-weight: 600; color: #71717a; vertical-align: top; padding-top: 5mm; }
+}
+@page cover {
+  margin: 0;
+  @top-left { content: none; } @top-right { content: none; }
+  @bottom-left { content: none; } @bottom-right { content: none; }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font-family: "Geist", "Segoe UI", system-ui, sans-serif; color: var(--text);
+  font-size: 9.1pt; line-height: 1.48; background: #fff; }
+b, strong { color: var(--ink); font-weight: 600; }
+p { margin: 0 0 6px; }
+a { color: inherit; text-decoration: none; }
+code { font-family: "Geist Mono", Consolas, monospace; font-size: .86em; color: var(--ink);
+  background: var(--soft); border: 1px solid var(--line); border-radius: 3px; padding: 0 2px; white-space: nowrap; }
+.muted { color: var(--muted); }
+ul { margin: 0; padding-left: 0; list-style: none; }
+ul.dots li { position: relative; padding-left: 12px; margin: 0 0 1.2mm; }
+ul.dots li::before { content: ""; position: absolute; left: 1px; top: .62em; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--blue); }
+
+/* Pas de saut de page forcé par section : le texte suit, et chaque bloc refuse d'être
+   coupé (break-inside: avoid). Seuls .brk commencent une page ; .keep garde un titre
+   collé au bloc qui le suit. */
+.brk { break-before: page; }
+.keep { break-inside: avoid; }
+
+/* ------------------------------------------------------------ couverture */
+.cover { page: cover; position: relative; width: 210mm; height: 297mm; overflow: hidden;
+  background: var(--dark); color: #fff; padding: 22mm 20mm 0; break-after: page; }
+.cover .glow { position: absolute; inset: 0;
+  background: radial-gradient(ellipse 70% 45% at 75% 80%, rgba(76,111,255,.42), transparent 70%),
+              radial-gradient(ellipse 50% 35% at 10% 5%, rgba(142,162,255,.16), transparent 70%); }
+.cover > * { position: relative; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 15pt; font-weight: 700; letter-spacing: -.01em; }
+.brand img { width: 34px; height: 34px; }
+.cover .cover-meta { position: absolute; right: 20mm; top: 22.5mm; display: flex; align-items: center; gap: 10px;
+  font-size: 8.5pt; color: #d4d4d8; background: rgba(9,9,11,.78); padding: 6px 12px; border-radius: 99px;
+  border: 1px solid rgba(255,255,255,.1); }
+.cover-meta .sep { width: 3px; height: 3px; border-radius: 50%; background: #71717a; }
+.cover-text { margin-top: 27mm; max-width: 160mm; }
+.kicker { display: inline-block; font-size: 8.5pt; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--blue-soft); border: 1px solid rgba(142,162,255,.35); border-radius: 99px; padding: 4px 12px; }
+.cover h1 { font-size: 36pt; line-height: 1.05; letter-spacing: -.035em; font-weight: 700; margin: 9mm 0 6mm; color: #fff; }
+.cover h1 span { color: var(--blue-soft); }
+.cover-text p { font-size: 11.5pt; line-height: 1.55; color: #a1a1aa; max-width: 140mm; }
+.cover-chips { display: flex; gap: 8px; margin-top: 7mm; flex-wrap: wrap; }
+.cover-chips span { font-size: 8.5pt; color: #d4d4d8; border: 1px solid rgba(255,255,255,.14); border-radius: 8px;
+  padding: 5px 10px; background: rgba(255,255,255,.04); }
+.cover-chips b { color: #fff; }
+/* Dans le flux, pas en absolu : en absolu, Edge ne l'imprime pas quand d'autres pages suivent. */
+.cover .cover-shot { margin: 16mm -24mm 0 0; }
+.cover-shot img { width: 100%; display: block; border-radius: 10px; border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 30px 80px rgba(0,0,0,.65), 0 0 0 6px rgba(255,255,255,.04); }
+
+/* ------------------------------------------------------------ titres */
+header.sec { margin: 0 0 4mm; }
+.eyebrow { font-family: "Geist Mono", monospace; font-size: 9pt; font-weight: 600; color: var(--blue);
+  letter-spacing: .04em; margin-bottom: 1.2mm; }
+.eyebrow::before { content: ""; display: inline-block; width: 14px; height: 2px; background: var(--blue);
+  vertical-align: middle; margin-right: 7px; position: relative; top: -1px; }
+h2 { font-size: 20pt; line-height: 1.12; letter-spacing: -.03em; color: var(--ink); font-weight: 700; margin: 0 0 2.2mm; }
+.lead { font-size: 10.1pt; line-height: 1.52; color: var(--muted); margin: 0; }
+h3 { font-size: 10.8pt; color: var(--ink); font-weight: 650; letter-spacing: -.01em; margin: 4.5mm 0 2.2mm; }
+h4 { font-size: 9.2pt; color: var(--ink); font-weight: 650; margin: 0 0 1.2mm; }
+.gap { margin-top: 8mm; }
+
+/* ------------------------------------------------------------ sommaire */
+.toc-wrap { background: var(--soft); border-radius: 12px; padding: 4mm 6mm 2.8mm; margin-bottom: 7mm; }
+.toc-title { margin: 0 0 2.2mm; font-size: 8.5pt; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+ol.toc { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 10mm; }
+ol.toc li { padding: .8mm 0; break-inside: avoid; font-size: 9.4pt; }
+ol.toc li a { display: flex; align-items: baseline; gap: 8px; }
+.toc .tn { font-family: "Geist Mono", monospace; font-size: 8.5pt; color: var(--blue); font-weight: 600; }
+.toc .tt { color: var(--ink); font-weight: 500; }
+.toc .dots { flex: 1; border-bottom: 1px dotted #c4c4cc; transform: translateY(-3px); }
+.toc .tp { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------ blocs */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4.5mm; }
+.fact { border-top: 2px solid var(--blue); padding-top: 2.4mm; }
+.fact h4 { margin-bottom: .8mm; }
+.fact p { margin: 0; font-size: 8.7pt; color: var(--muted); line-height: 1.45; }
+
+.box { display: flex; gap: 10px; border-radius: 9px; padding: 3mm 3.8mm; margin: 0 0 4mm; break-inside: avoid; font-size: 8.7pt; line-height: 1.45; }
+.box p { margin: 1mm 0 0; }
+.box > div { flex: 1; }
+.box .ico { flex: none; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 700;
+  text-align: center; line-height: 18px; margin-top: 1px; }
+.box.tip { background: var(--blue-50); border: 1px solid var(--blue-100); }
+.box.tip .ico { background: var(--blue); color: #fff; font-family: Georgia, serif; font-style: italic; }
+.box.tip strong { color: var(--blue-deep); }
+.box.note { background: var(--soft); border: 1px solid var(--line); }
+.box.note .ico { background: #3f3f46; color: #fff; }
+.box.warn { background: var(--orange-50); border: 1px solid var(--orange-100); }
+.box.warn .ico { background: #d97706; color: #fff; }
+.box.warn strong { color: #92400e; }
+
+.cmp { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 10px;
+  overflow: hidden; margin: 4mm 0 3.6mm; break-inside: avoid; }
+.cmp > div { padding: 3mm 4mm 2mm; }
+.cmp > div + div { border-left: 1px solid var(--line); }
+.cmp .hd { font-size: 7.8pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 1.8mm; }
+.cmp .chg { background: var(--blue-50); }
+.cmp .chg .hd { color: var(--blue-deep); }
+.cmp .keep2 .hd { color: var(--green); }
+.cmp li { font-size: 8.6pt; line-height: 1.42; }
+.cmp .keep2 li::before { background: var(--green); }
+
+/* ------------------------------------------------------------ schéma */
+figure.diagram { margin: 1mm auto 0; max-width: 166mm; break-inside: avoid; }
+figure.diagram svg { width: 100%; height: auto; display: block; }
+
+ol.steps { list-style: none; margin: 0 0 4mm; padding: 0; }
+ol.steps li { display: flex; gap: 9px; align-items: flex-start; margin: 0 0 1.6mm; break-inside: avoid; font-size: 8.9pt; line-height: 1.45; }
+ol.steps .num { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--blue); color: #fff;
+  font-size: 9px; font-weight: 700; line-height: 18px; text-align: center; margin-top: .5px; }
+ol.steps li > div { flex: 1; }
+
+/* ------------------------------------------------------------ arborescence + code */
+.tree { font-family: Consolas, "Cascadia Mono", monospace; font-size: 7.8pt; line-height: 1.5; white-space: pre;
+  background: var(--dark); color: #a1a1aa; border-radius: 10px; padding: 3.4mm 4.6mm; margin: 0 0 2.4mm; break-inside: avoid; }
+.tree b { color: #fff; font-weight: 700; }
+.tree .nw2 { color: #8ea2ff; font-weight: 700; }
+.tree .old { color: #fbbf24; }
+.code { font-family: "Geist Mono", Consolas, monospace; font-size: 7pt; line-height: 1.6; white-space: pre-wrap;
+  overflow-wrap: anywhere; background: var(--dark); color: #d4d4d8; border-radius: 10px; padding: 3.2mm 4.2mm;
+  margin: 0 0 2mm; break-inside: avoid; }
+.code .l { display: block; padding-left: 4mm; text-indent: -4mm; }
+.code .to { color: #8ea2ff; font-weight: 700; }
+.code .fr { color: #4ade80; font-weight: 700; }
+.code .k { color: #fbbf24; }
+.code .c { color: #71717a; }
+.tnote { font-size: 7.9pt; color: var(--muted); margin: 0 0 3.6mm; line-height: 1.45; }
+
+/* ------------------------------------------------------------ tableaux */
+table.t { width: 100%; border-collapse: collapse; font-size: 8.1pt; margin: 0 0 3.6mm; line-height: 1.42; }
+.t th { text-align: left; font-size: 7.4pt; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  font-weight: 600; padding: 0 2.4mm 1.4mm 0; border-bottom: 1.5px solid var(--ink); vertical-align: bottom; }
+.t td { padding: 1.2mm 2.4mm 1.2mm 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.t tr { break-inside: avoid; }
+.t td.k1 { font-weight: 600; color: var(--ink); }
+.t td.ph { font-family: "Geist Mono", monospace; font-size: 7.4pt; font-weight: 600; color: var(--blue-deep); white-space: nowrap; padding-right: 0; }
+.t code { white-space: normal; }
+
+/* ------------------------------------------------------------ frise des phases */
+.frise { display: grid; grid-template-columns: repeat(8, 1fr); gap: 1.6mm; margin: 0 0 4.5mm; break-inside: avoid; }
+.chip { border: 1px solid var(--line); border-radius: 8px; padding: 2mm 2.1mm 1.8mm; background: #fff; min-height: 15.5mm; }
+.chip .pn { font-family: "Geist Mono", monospace; font-size: 8pt; font-weight: 700; color: var(--blue); }
+.chip .pt { display: block; font-size: 7.7pt; font-weight: 600; color: var(--ink); line-height: 1.25; margin-top: .5mm; }
+.chip.live { background: var(--blue); border-color: var(--blue); }
+.chip.live .pn, .chip.live .pt { color: #fff; }
+.bar { border-radius: 6px; font-size: 7.4pt; font-weight: 600; padding: 1.1mm 2.4mm; line-height: 1.3; }
+.bar.edge { grid-column: 1 / span 5; background: var(--blue-50); color: var(--blue-deep); border: 1px solid var(--blue-100); }
+.bar.rust { grid-column: 6 / span 2; background: var(--ink); color: #fff; }
+.bar.mac { grid-column: 8 / span 1; background: var(--soft); color: var(--muted); border: 1px solid var(--line); }
+.bar.ctk { grid-column: 1 / span 7; background: #fff; color: #92400e; border: 1px dashed #f59e0b; }
+.bar.ctk b { color: #92400e; }
+
+/* ------------------------------------------------------------ cartes de phase */
+.phase { border: 1px solid var(--line); border-radius: 12px; margin: 0 0 3.8mm; break-inside: avoid; overflow: hidden; }
+.ph-head { display: flex; align-items: flex-start; gap: 3.2mm; padding: 2.6mm 4mm 2.3mm; background: var(--soft);
+  border-bottom: 1px solid var(--line); }
+.ph-num { flex: none; font-family: "Geist Mono", monospace; font-size: 9.6pt; font-weight: 700; color: #fff; background: var(--ink);
+  border-radius: 7px; padding: 1.3mm 2.1mm; line-height: 1; margin-top: .3mm; }
+.ph-head > div:not(.ph-meta) { flex: 1; }
+.ph-head h3 { margin: 0; font-size: 10.4pt; }
+.ph-goal { margin: .4mm 0 0; font-size: 8.5pt; color: var(--muted); line-height: 1.4; }
+.ph-meta { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: .8mm; }
+.tag { font-size: 7.2pt; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 99px; padding: .9mm 2.5mm; }
+.tag.live { background: var(--blue); color: #fff; }
+.tag.todo { background: #fff; color: var(--muted); border: 1px solid var(--line); }
+.charge { font-size: 7.4pt; color: var(--muted); white-space: nowrap; }
+.phase.live { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-100); }
+.phase.live .ph-head { background: var(--blue-50); border-bottom-color: var(--blue-100); }
+.phase.live .ph-num { background: var(--blue); }
+.ph-body { display: grid; grid-template-columns: 1fr 1fr; }
+.ph-body > div { padding: 2.4mm 4mm 1.6mm; font-size: 8.2pt; line-height: 1.42; }
+.ph-body > div + div { border-left: 1px solid var(--line); }
+.ph-body h4 { font-size: 7.3pt; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; margin-bottom: 1.5mm; }
+.ph-body ul.dots li { margin-bottom: .9mm; }
+ul.checks li { position: relative; padding-left: 15px; margin: 0 0 .9mm; }
+ul.checks li::before { content: ""; position: absolute; left: 0; top: .3em; width: 8px; height: 8px; border: 1.5px solid var(--green);
+  border-radius: 2px; }
+ul.checks li::after { content: ""; position: absolute; left: 2.5px; top: .42em; width: 3px; height: 5px;
+  border-right: 1.5px solid var(--green); border-bottom: 1.5px solid var(--green); transform: rotate(45deg); }
+.ph-foot { padding: 1.8mm 4mm; border-top: 1px solid var(--line); font-size: 8pt; color: var(--muted); }
+.ph-foot b { color: var(--ink); }
+
+/* ------------------------------------------------------------ installation */
+.have { display: flex; flex-wrap: wrap; gap: 1.8mm; margin: 0 0 3.6mm; }
+.have span { font-size: 8.1pt; border-radius: 99px; padding: .9mm 3mm; border: 1px solid var(--green-100); background: var(--green-50);
+  color: #166534; font-weight: 500; }
+.have span.miss { border-color: var(--red-100); background: var(--red-50); color: var(--red); }
+
+/* ------------------------------------------------------------ checklist */
+table.chk { width: 100%; border-collapse: collapse; font-size: 7.9pt; margin: 0; }
+.chk td { padding: .5mm 2mm .5mm 0; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.38; }
+.chk tr { break-inside: avoid; }
+.chk td.cb { width: 5mm; padding-right: 1mm; }
+.chk td.cb span { display: inline-block; width: 8.5px; height: 8.5px; border: 1.3px solid #a1a1aa; border-radius: 2px; margin-top: 2px; }
+.chk td.ph { width: 12mm; text-align: right; padding-right: 0; font-family: "Geist Mono", monospace; font-size: 7.2pt;
+  font-weight: 600; color: var(--blue-deep); white-space: nowrap; }
+.chk tr.grp td { padding-top: 2.2mm; border-bottom: 1.5px solid var(--ink); font-size: 7.3pt; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--ink); }
+
+/* ------------------------------------------------------------ chantiers + décisions */
+.cards2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3.6mm; margin: 0 0 3.6mm; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 3mm 3.8mm; break-inside: avoid; font-size: 8.5pt; line-height: 1.45; }
+.card .where { display: inline-block; font-size: 7.1pt; font-weight: 700; letter-spacing: .04em; color: var(--blue-deep);
+  background: var(--blue-50); border: 1px solid var(--blue-100); border-radius: 99px; padding: .4mm 2.3mm; margin: 0 0 1.4mm; }
+.card p { margin: 0 0 1mm; color: var(--muted); }
+.card p:last-child { margin-bottom: 0; }
+.defauts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6mm; }
+.defauts li { font-size: 8.4pt; }
+.panel { background: var(--blue-50); border: 1px solid var(--blue-100); border-radius: 12px; padding: 3.2mm 4.4mm 2.4mm; break-inside: avoid; margin: 0 0 3.6mm; }
+.panel h3 { margin: 0 0 1.4mm; color: var(--blue-deep); }
+.dec { width: 100%; border-collapse: collapse; font-size: 8.3pt; line-height: 1.42; }
+.dec td { padding: 1.2mm 2mm 1.2mm 0; border-bottom: 1px solid var(--blue-100); vertical-align: top; }
+.dec tr:last-child td { border-bottom: none; }
+.dec td.id { font-family: "Geist Mono", monospace; font-weight: 700; color: var(--blue-deep); width: 8mm; }
+.dec td.when { white-space: nowrap; color: var(--muted); text-align: right; padding-right: 0; }
+.next { background: var(--dark); color: #d4d4d8; border-radius: 12px; padding: 3.6mm 4.8mm 2.2mm; break-inside: avoid; }
+.next h3 { color: #fff; margin: 0 0 2.2mm; }
+.next ol.steps li { color: #d4d4d8; }
+.next ol.steps b { color: #fff; }
+</style>
+</head>
+<body>
+
+<!-- ================================================================== COUVERTURE -->
+<section class="cover">
+  <div class="glow"></div>
+  <div class="brand"><img src="file:///C:/Users/Christ%20Dolape/Desktop/Utilitaires/Agent%20Insta/assets/logo.png" alt="">HelpVA</div>
+  <div class="cover-meta">Plan v1<span class="sep"></span>7 octobre 2026<span class="sep"></span>Windows d'abord</div>
+  <div class="cover-text">
+    <span class="kicker">Plan de migration</span>
+    <h1>HelpVA passe<br>à <span>Tauri</span>.</h1>
+    <p>Une nouvelle interface en Tauri v2 + React, et le moteur Python qui marche déjà, conservé tel quel.
+      Ce document décrit l'architecture, le protocole entre les deux, les 8 phases avec leurs livrables
+      et critères de fin, ce qu'il faut installer, les risques et la checklist de parité.</p>
+    <div class="cover-chips">
+      <span><b>Interface</b> · React + TypeScript + Tailwind v4</span>
+      <span><b>Moteur</b> · Python (agent/) en sidecar</span>
+      <span><b>Phase 0</b> · en cours</span>
+    </div>
+  </div>
+  <div class="cover-shot"><img src="file:///C:/Users/Christ%20Dolape/Desktop/Utilitaires/helpva-tauri-maquette/captures/06_progression_sombre.png" alt=""></div>
+</section>
+
+<!-- ================================================================== SOMMAIRE + 01 -->
+<div class="toc-wrap">
+  <p class="toc-title">Sommaire</p>
+  <ol class="toc">
+    <li><a href="#s1"><span class="tn">01</span><span class="tt">Objectif et principe</span><span class="dots"></span><span class="tp" data-cible="s1">2</span></a></li>
+    <li><a href="#s2"><span class="tn">02</span><span class="tt">Arborescence du dépôt</span><span class="dots"></span><span class="tp" data-cible="s2">3</span></a></li>
+    <li><a href="#s3"><span class="tn">03</span><span class="tt">Le protocole du moteur</span><span class="dots"></span><span class="tp" data-cible="s3">4</span></a></li>
+    <li><a href="#s4"><span class="tn">04</span><span class="tt">Les phases, livrables et critères</span><span class="dots"></span><span class="tp" data-cible="s4">5</span></a></li>
+    <li><a href="#s5"><span class="tn">05</span><span class="tt">Ce que Christ doit installer</span><span class="dots"></span><span class="tp" data-cible="s5">8</span></a></li>
+    <li><a href="#s6"><span class="tn">06</span><span class="tt">Risques et parades</span><span class="dots"></span><span class="tp" data-cible="s6">8</span></a></li>
+    <li><a href="#s7"><span class="tn">07</span><span class="tt">Checklist de parité</span><span class="dots"></span><span class="tp" data-cible="s7">10</span></a></li>
+    <li><a href="#s8"><span class="tn">08</span><span class="tt">Chantiers en attente et décisions</span><span class="dots"></span><span class="tp" data-cible="s8">11</span></a></li>
+  </ol>
+</div>
+
+<header class="sec" id="s1">
+  <div class="eyebrow">01</div>
+  <h2>Objectif et principe</h2>
+  <p class="lead">Remplacer l'interface CustomTkinter (<code>app_ctk.py</code>) par une interface <b>Tauri v2 + React</b>, celle de la
+    maquette validée, <b>sans réécrire ce qui marche déjà</b>. Le moteur Python (<code>agent/</code>) reste tel quel : il devient
+    un programme sans fenêtre que l'interface pilote par messages JSON.</p>
+</header>
+
+<div class="grid3">
+  <div class="fact"><h4>On change la vitrine, pas la mécanique</h4>
+    <p><code>agent/</code> (ffmpeg, HEIC, métadonnées, calendrier, licence) marche et a été testé en vrai. Le réécrire en Rust ou en
+      TypeScript prendrait des mois et ajouterait des bugs.</p></div>
+  <div class="fact"><h4>L'ancienne app reste en service</h4>
+    <p><code>app_ctk.py</code> continue de marcher et d'être livrée jusqu'à ce que la nouvelle fasse tout ce qu'elle fait. Rien n'est
+      supprimé avant la phase 6.</p></div>
+  <div class="fact"><h4>Un morceau à la fois</h4>
+    <p>Chaque phase livre quelque chose d'utilisable et de vérifiable. Si on s'arrête en route, rien n'est cassé : l'ancienne app
+      tourne toujours.</p></div>
+</div>
+
+<div class="cmp">
+  <div class="chg">
+    <div class="hd">Ce qui change</div>
+    <ul class="dots">
+      <li>L'interface : React + Tailwind v4, police Geist, bleu de marque <b>#4c6fff</b> (celui du site).</li>
+      <li>La progression s'affiche dans la page, plus de fenêtre « Veuillez patienter ».</li>
+      <li>Des notifications intégrées à la place des boîtes <code>messagebox</code>.</li>
+      <li>Les appels réseau (licence) ne gèlent plus jamais la fenêtre.</li>
+    </ul>
+  </div>
+  <div class="keep2">
+    <div class="hd">Ce qui ne change pas</div>
+    <ul class="dots">
+      <li><code>agent/</code> et ses fonctions : même code, mêmes résultats.</li>
+      <li>Les données dans <code>%APPDATA%\HelpVA</code> : licence, paramètres, calendrier.</li>
+      <li>L'empreinte du PC, calculée par le même Python : <b>aucune réactivation</b>.</li>
+      <li>Le serveur Supabase, la clé publique Ed25519, les textes affichés.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="box tip"><span class="ico">i</span><div>
+  <strong>Pourquoi Tauri ?</strong> Il affiche l'interface avec <b>WebView2</b>, le moteur d'Edge déjà présent sur Windows 10/11 :
+  tout le web moderne, sans embarquer un navigateur entier comme Electron. L'exécutable reste léger.
+</div></div>
+
+
+<h3 style="margin-top:0">1.1 Comment ça marche, en 4 temps</h3>
+<ol class="steps">
+  <li><span class="num">1</span><div><b>Démarrage.</b> Le cœur Rust lance le moteur (<code>helpva-engine.exe</code>) sans fenêtre de console et attend son
+    message <code>pret</code>. Le moteur l'envoie tout de suite, avant de charger les bibliothèques lourdes (Pillow, numpy) : l'écran s'affiche vite.</div></li>
+  <li><span class="num">2</span><div><b>Commande.</b> L'interface envoie par exemple <code>mp4_convertir</code>. Rust l'écrit sur l'entrée standard du moteur,
+    en une ligne JSON.</div></li>
+  <li><span class="num">3</span><div><b>Travail.</b> Le moteur appelle la fonction de <code>agent/</code> et renvoie des lignes <code>progress</code> et <code>log</code>, puis un
+    <code>result</code> (ou une <code>error</code>). Rust les transmet à l'interface sous forme d'événements.</div></li>
+  <li><span class="num">4</span><div><b>Fermeture.</b> Rust envoie <code>quitter</code>. Si l'app plante, le moteur voit son entrée se fermer et s'arrête seul ;
+    Windows tue aussi ses ffmpeg grâce à un « Job Object ». Aucun processus ne reste en arrière-plan.</div></li>
+</ol>
+
+<div class="grid2">
+  <div class="box tip" style="margin:0"><span class="ico">i</span><div>
+    <strong>Pourquoi c'est Rust qui lance le moteur ?</strong>
+    <p>Les permissions Tauri (<i>capabilities</i>) filtrent ce que la page web a le droit de faire. Si le JavaScript pouvait lancer des
+      programmes, une seule faille dans l'interface suffirait pour exécuter n'importe quoi. Lancé depuis Rust, le moteur reste hors
+      de portée : l'interface n'a <b>aucune</b> permission « shell », elle peut seulement lui parler.</p>
+  </div></div>
+  <div class="box note" style="margin:0"><span class="ico">!</span><div>
+    <strong>Développer sans Rust : le pont de dev</strong>
+    <p>Rust n'est pas encore installé. En attendant, l'interface tourne dans Edge (<code>npm run dev</code>) et parle au moteur via un
+      petit serveur Python local. Le client TypeScript choisit seul : <code>isTauri()</code> vrai → vrai moteur via Rust, sinon → le pont.
+      Les écrans ne voient aucune différence.</p>
+  </div></div>
+</div>
+
+<div class="keep">
+  <h3>1.2 L'architecture en un schéma</h3>
+  <figure class="diagram">
+    <svg viewBox="0 0 700 284" xmlns="http://www.w3.org/2000/svg" font-family="Geist, Segoe UI, sans-serif">
+      <defs>
+        <marker id="fl" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#4c6fff"/></marker>
+        <marker id="flg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#71717a"/></marker>
+      </defs>
+      <!-- Fenêtre Tauri -->
+      <rect x="2" y="2" width="300" height="164" rx="14" fill="#f3f5ff" stroke="#c9d3ff"/>
+      <text x="18" y="23" font-size="12" font-weight="700" fill="#1d3fe6">Fenêtre HelpVA · Tauri v2</text>
+      <text x="18" y="37" font-size="9.3" fill="#52525b">HelpVA.exe, le programme que le client ouvre</text>
+      <rect x="18" y="47" width="268" height="46" rx="9" fill="#fff" stroke="#e4e4e7"/>
+      <text x="31" y="66" font-size="11.3" font-weight="650" fill="#18181b">Interface React + TypeScript</text>
+      <text x="31" y="82" font-size="9.3" fill="#52525b">Tailwind v4 · affichée par WebView2 (Edge)</text>
+      <line x1="150" y1="96" x2="150" y2="113" stroke="#4c6fff" stroke-width="1.6" marker-start="url(#fl)" marker-end="url(#fl)"/>
+      <text x="160" y="108" font-size="8.8" fill="#1d3fe6">invoke · événements</text>
+      <rect x="18" y="116" width="268" height="40" rx="9" fill="#fff" stroke="#e4e4e7"/>
+      <text x="31" y="133" font-size="11.3" font-weight="650" fill="#18181b">Cœur Rust (src-tauri)</text>
+      <text x="31" y="148" font-size="9.3" fill="#52525b">lance le moteur · relaie · l'arrête proprement</text>
+      <!-- Tube -->
+      <text x="346" y="96" font-size="9.5" font-weight="700" fill="#18181b" text-anchor="middle">1 ligne JSON</text>
+      <text x="346" y="108" font-size="9.5" font-weight="700" fill="#18181b" text-anchor="middle">= 1 message</text>
+      <text x="346" y="124" font-size="8.8" fill="#1d3fe6" text-anchor="middle">stdin : commandes</text>
+      <line x1="290" y1="131" x2="390" y2="131" stroke="#4c6fff" stroke-width="1.8" marker-end="url(#fl)"/>
+      <line x1="390" y1="145" x2="290" y2="145" stroke="#4c6fff" stroke-width="1.8" marker-end="url(#fl)"/>
+      <text x="346" y="160" font-size="8.8" fill="#1d3fe6" text-anchor="middle">stdout : événements</text>
+      <!-- Moteur -->
+      <rect x="394" y="2" width="304" height="164" rx="14" fill="#09090b"/>
+      <text x="410" y="23" font-size="12" font-weight="700" fill="#fff">Moteur Python · helpva-engine</text>
+      <text x="410" y="37" font-size="9.3" fill="#a1a1aa">programme sans fenêtre (sidecar)</text>
+      <rect x="410" y="47" width="272" height="36" rx="9" fill="#18181b" stroke="#3f3f46"/>
+      <text x="423" y="62" font-size="10.8" font-weight="650" fill="#8ea2ff">engine/</text>
+      <text x="423" y="76" font-size="9" fill="#d4d4d8">protocole · tâche unique · annulation · journal</text>
+      <rect x="410" y="89" width="272" height="38" rx="9" fill="#18181b" stroke="#3f3f46"/>
+      <text x="423" y="105" font-size="10.8" font-weight="650" fill="#fff">agent/ <tspan fill="#a1a1aa" font-weight="400" font-size="9">(inchangé)</tspan></text>
+      <text x="423" y="119" font-size="9" fill="#d4d4d8">conversion · unicite · ranger · calendrier · licence</text>
+      <g font-size="8.6" fill="#d4d4d8">
+        <rect x="410" y="135" width="52" height="21" rx="6" fill="#27272a"/><text x="436" y="149" text-anchor="middle">ffmpeg</text>
+        <rect x="468" y="135" width="72" height="21" rx="6" fill="#27272a"/><text x="504" y="149" text-anchor="middle">Pillow · HEIC</text>
+        <rect x="546" y="135" width="58" height="21" rx="6" fill="#27272a"/><text x="575" y="149" text-anchor="middle">Supabase</text>
+        <rect x="610" y="135" width="72" height="21" rx="6" fill="#27272a"/><text x="646" y="149" text-anchor="middle">%APPDATA%</text>
+      </g>
+      <!-- Mode dev -->
+      <text x="2" y="190" font-size="9.5" font-weight="700" fill="#18181b">EN DÉVELOPPEMENT, SANS RUST (phases 0 à 4)</text>
+      <rect x="2" y="198" width="104" height="30" rx="8" fill="#fff" stroke="#e4e4e7"/>
+      <text x="54" y="217" font-size="10" text-anchor="middle" fill="#18181b">Edge</text>
+      <line x1="108" y1="213" x2="136" y2="213" stroke="#71717a" stroke-width="1.4" marker-end="url(#flg)"/>
+      <rect x="140" y="198" width="176" height="30" rx="8" fill="#fff" stroke="#e4e4e7"/>
+      <text x="228" y="210" font-size="9.6" text-anchor="middle" fill="#18181b">Vite · localhost:1420</text>
+      <text x="228" y="222" font-size="8.4" text-anchor="middle" fill="#52525b">la même interface</text>
+      <line x1="318" y1="213" x2="346" y2="213" stroke="#71717a" stroke-width="1.4" marker-end="url(#flg)"/>
+      <rect x="350" y="198" width="198" height="30" rx="8" fill="#f3f5ff" stroke="#c9d3ff"/>
+      <text x="449" y="210" font-size="9.6" text-anchor="middle" font-weight="650" fill="#1d3fe6">Pont de dev · 127.0.0.1</text>
+      <text x="449" y="222" font-size="8.4" text-anchor="middle" fill="#52525b">HTTP pour envoyer · SSE pour recevoir</text>
+      <line x1="550" y1="213" x2="578" y2="213" stroke="#71717a" stroke-width="1.4" marker-end="url(#flg)"/>
+      <rect x="582" y="198" width="116" height="30" rx="8" fill="#09090b"/>
+      <text x="640" y="217" font-size="9.8" text-anchor="middle" fill="#fff">le même moteur</text>
+      <!-- Transition -->
+      <text x="2" y="250" font-size="9.5" font-weight="700" fill="#18181b">PENDANT LA TRANSITION (jusqu'à la phase 6)</text>
+      <rect x="2" y="256" width="186" height="26" rx="8" fill="#fffbeb" stroke="#fde68a"/>
+      <text x="95" y="273" font-size="9.8" text-anchor="middle" fill="#92400e">app_ctk.py (CustomTkinter)</text>
+      <line x1="190" y1="269" x2="218" y2="269" stroke="#71717a" stroke-width="1.4" marker-end="url(#flg)"/>
+      <rect x="222" y="256" width="262" height="26" rx="8" fill="#fff" stroke="#e4e4e7"/>
+      <text x="353" y="273" font-size="9.8" text-anchor="middle" fill="#18181b">appelle agent/ directement, comme aujourd'hui</text>
+      <text x="496" y="273" font-size="9" fill="#52525b">→ supprimée à la bascule (phase 6)</text>
+    </svg>
+  </figure>
+</div>
+
+<!-- ================================================================== 02 -->
+<div class="keep gap">
+  <header class="sec" id="s2">
+    <div class="eyebrow">02</div>
+    <h2>Arborescence du dépôt</h2>
+    <p class="lead">Deux dossiers nouveaux dans le même dépôt Git, à côté de l'existant. On ne déplace rien : l'ancienne app et ses
+      scripts de build continuent de marcher.</p>
+  </header>
+<div class="tree"><b>Agent Insta/</b>
+├── <b>agent/</b>              moteur métier : <b>ne change pas</b> (2 ou 3 retouches compatibles)
+├── <span class="nw2">engine/</span>             <span class="nw2">NOUVEAU</span> · le moteur sans fenêtre (sidecar)
+│   ├── __main__.py       point d'entrée : python -m engine
+│   ├── protocole.py      lignes JSON, verrou d'écriture, journal (print → log)
+│   ├── taches.py         tâche longue unique, annulation (threading.Event)
+│   ├── commandes.py      table « commande → fonction de agent/ »
+│   ├── job_windows.py    Job Object : ffmpeg meurt avec le moteur
+│   ├── pont_dev.py       pont HTTP + SSE pour Edge (développement seulement)
+│   └── tests/            unittest, avec un APPDATA temporaire
+├── <span class="nw2">desktop/</span>            <span class="nw2">NOUVEAU</span> · l'app Tauri + React (partie de la maquette)
+│   ├── src/moteur/       client TypeScript : transport Tauri ou pont
+│   ├── src/screens/      licence, Accueil, modules, Paramètres
+│   └── src-tauri/        Rust : moteur.rs, tauri.conf.json, capabilities/
+├── <span class="old">app_ctk.py</span>          ancienne app : reste utilisable jusqu'à la phase 6
+├── installer/ tools/ assets/ HelpVA*.spec      build actuel, repris en phase 5
+└── docs/               ce plan (source HTML)</div>
+</div>
+<p class="tnote">Noms de fichiers indicatifs : la référence est le code écrit en phase 0. Retouches prévues dans <code>agent/</code>, sans effet sur
+  <code>app_ctk.py</code> : <code>conversion.py</code> lance ffmpeg sans entrée standard (<code>stdin=DEVNULL</code> + <code>-nostdin</code>) ;
+  <code>progression.texte()</code> renvoie une <code>str</code> qui porte aussi les détails structurés ; même correctif <code>stdin</code> dans <code>licence.py</code> (empreinte macOS).</p>
+<div class="box warn"><span class="ico">!</span><div>
+  <strong>Règle de la transition :</strong> <code>agent/</code> reste la seule source de vérité. Toute modification doit continuer de marcher avec
+  <code>app_ctk.py</code> jusqu'à la phase 6. Dans l'ancienne app, on corrige les bugs mais on n'ajoute plus de fonctions : les nouveautés vont
+  dans la nouvelle.
+</div></div>
+
+<!-- ================================================================== 03 -->
+<div class="keep">
+  <header class="sec" id="s3">
+    <div class="eyebrow">03</div>
+    <h2>Le protocole du moteur</h2>
+    <p class="lead">Une ligne = un objet JSON. L'interface envoie des <b>requêtes</b> <code>{id, cmd, args}</code>, le moteur répond par des
+      <b>événements</b> qui reprennent le même <code>id</code>. Règle d'or : <b>le moteur décide et valide, l'interface affiche.</b></p>
+  </header>
+<div class="code"><span class="l c"># → = interface vers moteur (stdin)      ← = moteur vers interface (stdout)</span><span class="l"><span class="fr">←</span> {"id":null,"type":"<span class="k">pret</span>","nom":"HelpVA","version":"1.0.0","protocole":1,"pid":8124,"frozen":true}</span><span class="l"><span class="to">→</span> {"id":"c-12","cmd":"<span class="k">mp4_convertir</span>","args":{"source":{"type":"dossier","chemin":"C:\\…\\Shooting juin"}}}</span><span class="l"><span class="fr">←</span> {"id":"c-12","type":"<span class="k">progress</span>","fraction":0.38,"texte":"Dossier 2/3 — Modèle A\nVidéo 1/4 · clip_07.mov — 43 %","details":{…}}</span><span class="l"><span class="fr">←</span> {"id":"c-12","type":"<span class="k">log</span>","flux":"stdout","niveau":"info","texte":"[convert] (1/4) clip_07.mov…"}</span><span class="l"><span class="to">→</span> {"id":"c-13","cmd":"<span class="k">annuler</span>","args":{"cible":"c-12"}}</span><span class="l"><span class="fr">←</span> {"id":"c-13","type":"<span class="k">result</span>","data":{"etat":"annulation_demandee"}}</span><span class="l"><span class="fr">←</span> {"id":"c-12","type":"<span class="k">result</span>","data":{"traites":4,"echecs":[],"arrete":true,"dossiers":3,"sortie":"…\\media (mp4)"}}</span><span class="l"><span class="fr">←</span> {"id":"c-14","type":"<span class="k">error</span>","code":"OCCUPE","message":"Une action est déjà en cours, patientez…"}</span></div>
+</div>
+<p class="tnote">Accents montrés en clair pour la lisibilité. Sur le fil, le moteur écrit en ASCII pur (<code>é</code> devient <code>\u00e9</code>) : la page de
+  code Windows (cp1252) ne peut alors plus rien casser, et <code>JSON.parse</code> décode tout normalement.</p>
+
+<div class="keep">
+<h3>3.1 Les six règles à retenir</h3>
+<div class="grid2" style="gap:0 6mm">
+  <ol class="steps" style="margin:0">
+    <li><span class="num">1</span><div><b>Un seul événement final par requête</b> : <code>result</code> ou <code>error</code>. Avant lui, autant de <code>progress</code> et
+      de <code>log</code> que nécessaire.</div></li>
+    <li><span class="num">2</span><div><b>Annuler n'est pas une erreur.</b> La tâche se termine par un <code>result</code> avec <code>arrete: true</code> ; les fichiers
+      déjà faits restent.</div></li>
+    <li><span class="num">3</span><div><b>Refus métier ≠ plantage.</b> Un code d'activation refusé donne un <code>result</code> avec <code>ok: false</code>.
+      <code>error</code> veut dire « la commande n'a pas pu s'exécuter ».</div></li>
+  </ol>
+  <ol class="steps" style="margin:0">
+    <li><span class="num">4</span><div><b>Une seule tâche longue à la fois</b>, sinon <code>OCCUPE</code>. Les requêtes rapides (licence, paramètres, calendrier)
+      passent même pendant une conversion, 4 en parallèle.</div></li>
+    <li><span class="num">5</span><div><b>stdout est réservé au protocole.</b> Les <code>print()</code> de <code>agent/</code> sont captés et deviennent des
+      événements <code>log</code> : ils ne peuvent plus casser le JSON.</div></li>
+    <li><span class="num">6</span><div><b>Poignée de main.</b> <code>pret</code> annonce <code>protocole: 1</code>. Si l'interface attend une autre version, elle
+      affiche « Réinstallez HelpVA » au lieu de mal comprendre le moteur.</div></li>
+  </ol>
+</div>
+</div>
+
+<div class="keep">
+<h3>3.2 Les commandes prévues</h3>
+<table class="t">
+  <thead><tr><th style="width:19%">Groupe</th><th style="width:37%">Commandes</th><th>Ce que le moteur appelle dans agent/</th></tr></thead>
+  <tbody>
+    <tr><td class="k1">Contrôle <span class="muted" style="font-weight:400">(immédiat)</span></td><td><code>ping</code> <code>etat</code> <code>annuler</code> <code>quitter</code></td><td>Rien : traitées tout de suite, jamais mises en file d'attente.</td></tr>
+    <tr><td class="k1">Licence</td><td><code>licence_statut</code> <code>licence_activer</code> <code>licence_supprimer</code></td><td><code>verifier()</code> · <code>activer_par_code()</code> puis <code>enregistrer_licence()</code> · <code>supprimer_licence()</code></td></tr>
+    <tr><td class="k1">Réglages</td><td><code>app_infos</code> <code>parametres_lire</code> <code>parametres_modifier</code></td><td><code>version</code>, <code>emplacement</code>, <code>parametres.charger()</code> / <code>sauver()</code> sous verrou (lire → modifier → écrire)</td></tr>
+    <tr><td class="k1">Calendrier</td><td><code>calendrier_lire</code> <code>calendrier_enregistrer</code> <code>calendrier_defaut</code></td><td><code>charger_calendrier()</code> / <code>sauver_calendrier()</code>, besoins via <code>ranger.compter()</code></td></tr>
+    <tr><td class="k1">Préparation <span class="muted" style="font-weight:400">(rapide)</span></td><td><code>preparer</code> <code>ranger_analyser</code></td><td>Calcule la sortie, dit si elle existe ou si la source est dedans · <code>ranger.analyser_dossier()</code></td></tr>
+    <tr><td class="k1">Tâches longues</td><td><code>mp4_convertir</code> <code>images_convertir</code> <code>metadonnees_changer</code> <code>ranger_lancer</code></td><td><code>conversion.convertir_*()</code> · <code>unicite.convertir_images_*()</code> · <code>unicite.uniquiser_*()</code> · <code>ranger.ranger()</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p class="tnote" style="margin-top:-1.6mm">Codes d'erreur : <code>JSON_INVALIDE</code> <code>COMMANDE_INCONNUE</code> <code>ARGUMENTS_INVALIDES</code> <code>TROP_GROS</code> <code>OCCUPE</code>
+  <code>LICENCE_REQUISE</code> <code>SOURCE_INTROUVABLE</code> <code>SOURCE_DANS_SORTIE</code> <code>ERREUR_INTERNE</code>. Une source s'écrit
+  <code>{"type":"dossier","chemin":…}</code> ou <code>{"type":"fichiers","chemins":[…]}</code>.</p>
+
+<div class="grid2">
+  <div class="box tip" style="margin:0"><span class="ico">i</span><div>
+    <strong>« Remplacer ? » en deux temps.</strong> Aujourd'hui, la question est posée avant de lancer le travail. Demain : <code>preparer</code>
+    dit si la sortie existe, l'interface pose la question, puis lance la commande longue avec <code>remplacer: true</code>. C'est le moteur qui
+    supprime l'ancien dossier, après avoir <b>revérifié</b> que la source n'est pas dedans.
+  </div></div>
+  <div class="box note" style="margin:0"><span class="ico">!</span><div>
+    <strong>Bug trouvé, corrigé en phase 0.</strong> ffmpeg est lancé sans préciser son entrée standard : il hérite donc du tube du protocole.
+    Sous Windows, il le lit pour ses raccourcis clavier et peut « voler » une commande (un <code>annuler</code> perdu). Correctif :
+    <code>stdin=subprocess.DEVNULL</code> + <code>-nostdin</code>, sans effet pour l'ancienne app.
+  </div></div>
+</div>
+
+<!-- ================================================================== 04 -->
+<div class="keep gap">
+  <header class="sec" id="s4">
+    <div class="eyebrow">04</div>
+    <h2>Les phases, livrables et critères de fin</h2>
+    <p class="lead">Huit phases, dans l'ordre. Une phase est <b>finie</b> quand tous ses critères de fin sont vérifiés, pas quand le code est
+      écrit. Les charges sont des ordres de grandeur, à recaler à la fin de la phase 0.</p>
+  </header>
+  <div class="frise">
+    <div class="chip live"><span class="pn">P0</span><span class="pt">Socle + MP4 réel</span></div>
+    <div class="chip"><span class="pn">P1</span><span class="pt">Licence, 1er lancement</span></div>
+    <div class="chip"><span class="pn">P2</span><span class="pt">Accueil, Paramètres, thème</span></div>
+    <div class="chip"><span class="pn">P3</span><span class="pt">Images + Métadonnées</span></div>
+    <div class="chip"><span class="pn">P4</span><span class="pt">Ranger + calendrier</span></div>
+    <div class="chip"><span class="pn">P5</span><span class="pt">Empaquetage Windows</span></div>
+    <div class="chip"><span class="pn">P6</span><span class="pt">Recette, bascule</span></div>
+    <div class="chip"><span class="pn">P7</span><span class="pt">macOS, Linux</span></div>
+    <div class="bar edge">Développement dans Edge via le pont de dev · Rust conseillé dès P1 pour tester la vraie fenêtre</div>
+    <div class="bar rust">Rust + Build Tools obligatoires</div>
+    <div class="bar mac">Mac requis</div>
+    <div class="bar ctk"><b>app_ctk.py</b> reste en service et livrable jusqu'à la bascule de la phase 6</div>
+  </div>
+</div>
+
+<div class="phase live">
+  <div class="ph-head"><span class="ph-num">P0</span>
+    <div><h3>Socle : moteur, pont de dev, client TypeScript, module MP4 réel</h3>
+      <p class="ph-goal">Prouver toute la chaîne sur un vrai module : interface React → moteur Python → vraie conversion MP4, sans Rust.</p></div>
+    <div class="ph-meta"><span class="tag live">En cours</span><span class="charge">≈ 3 à 5 jours</span></div></div>
+  <div class="ph-body">
+    <div><h4>Livrables</h4><ul class="dots">
+      <li><code>engine/</code> : protocole JSON-lines, tâche longue unique + annulation, journal, <code>pret</code> / <code>quitter</code> / fin d'entrée, Job Object.</li>
+      <li><code>agent/</code> : ffmpeg sans entrée standard, détails de progression (retouches compatibles).</li>
+      <li>Pont de dev (127.0.0.1 + jeton) et client <code>src/moteur/</code> à deux transports.</li>
+      <li><code>desktop/</code> créé depuis la maquette ; Convertir en MP4 branché sur le vrai moteur ; tests <code>unittest</code>.</li></ul></div>
+    <div><h4>Critères de fin</h4><ul class="checks">
+      <li><code>python -m unittest</code> passe, sans toucher au vrai <code>%APPDATA%\HelpVA</code>.</li>
+      <li>Dans Edge : 3 sous-dossiers convertis, progression et journal identiques à l'ancienne app.</li>
+      <li>Annuler : arrêt en moins d'une seconde, fichier partiel supprimé ; double clic → <code>OCCUPE</code>.</li>
+      <li>Pont fermé : plus aucun python ni ffmpeg ; <code>app_ctk.py</code> convertit toujours.</li></ul></div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="ph-head"><span class="ph-num">P1</span>
+    <div><h3>Licence et premier lancement</h3>
+      <p class="ph-goal">Reproduire la machine à états de la licence à l'identique, sans jamais geler la fenêtre.</p></div>
+    <div class="ph-meta"><span class="tag todo">À faire</span><span class="charge">≈ 3 à 4 jours</span></div></div>
+  <div class="ph-body">
+    <div><h4>Livrables</h4><ul class="dots">
+      <li>Écran « Vérification de la licence… » : hors ligne, l'appel peut durer environ 40 s.</li>
+      <li>8 raisons → Bienvenue, « Connexion internet requise » (essai auto à 20 s) ou Activation (4 variantes, textes exacts).</li>
+      <li>Bandeau hors-ligne + rappel de fin, empilés ; re-contrôle toutes les heures (5 min hors-ligne), qui rafraîchit aussi la barre latérale.</li>
+      <li>Moteur : commandes <code>licence_*</code> et garde <code>LICENCE_REQUISE</code>.</li></ul></div>
+    <div><h4>Critères de fin</h4><ul class="checks">
+      <li>Chaque raison mène au bon écran (licence simulée en test, puis un vrai code de test du tableau de bord).</li>
+      <li>Licence de l'ancienne app reconnue <b>sans réactivation</b> (même empreinte).</li>
+      <li>Fenêtre fluide pendant les appels réseau ; le minuteur de 20 s ne s'empile plus.</li>
+      <li>Un blocage pendant une tâche l'annule proprement d'abord.</li></ul></div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="ph-head"><span class="ph-num">P2</span>
+    <div><h3>Accueil, Paramètres, thème et cadre de l'app</h3>
+      <p class="ph-goal">Tout ce qui entoure les modules : barre latérale, Accueil, Paramètres, fenêtre.</p></div>
+    <div class="ph-meta"><span class="tag todo">À faire</span><span class="charge">≈ 2 à 3 jours</span></div></div>
+  <div class="ph-body">
+    <div><h4>Livrables</h4><ul class="dots">
+      <li>Barre latérale : marque, navigation, carte utilisateur, version, bouton du thème.</li>
+      <li>Accueil : « Hello, {nom} », Dossier de sortie, Conseil, les 4 modules.</li>
+      <li>Paramètres : dossier de sortie (Changer / Ouvrir / Réinitialiser), licence, Résilier.</li>
+      <li>Fenêtre 1160×760 (min. 980×640) ajustée à l'écran ; journal gardé entre les pages.</li></ul></div>
+    <div><h4>Critères de fin</h4><ul class="checks">
+      <li><code>parametres.json</code> partagé : un réglage fait dans une app est relu par l'autre.</li>
+      <li>Rendu vérifié en clair et en sombre, à 980×640, zoom Windows 125 et 150 %.</li>
+      <li>Dates et libellés d'abonnement identiques à l'ancienne app.</li></ul></div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="ph-head"><span class="ph-num">P3</span>
+    <div><h3>Convertir les images + Changer les métadonnées</h3>
+      <p class="ph-goal">Les 3 modules restants sont Images, Métadonnées et Ranger. Ranger, le plus gros, a sa propre phase.</p></div>
+    <div class="ph-meta"><span class="tag todo">À faire</span><span class="charge">≈ 3 à 4 jours</span></div></div>
+  <div class="ph-body">
+    <div><h4>Livrables</h4><ul class="dots">
+      <li>Composant commun : source, « Remplacer ? », progression, résultat avec échecs, « Ouvrir le dossier ».</li>
+      <li>Images : JPG ou PNG, HEIC/HEIF ; sortie <code>images (jpg)</code> / <code>images (png)</code>.</li>
+      <li>Métadonnées : « Renommer (1, 2, 3…) » coché, arborescence gardée ; sortie <code>… (métadonnées changées)</code>.</li></ul></div>
+    <div><h4>Critères de fin</h4><ul class="checks">
+      <li>Même entrée → même nombre de fichiers et même arborescence que l'ancienne app.</li>
+      <li>Après annulation, le processeur redescend ; une sélection de 3 000 fichiers passe.</li>
+      <li>Fichiers illisibles listés (les 5 premiers + « … »).</li></ul></div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="ph-head"><span class="ph-num">P4</span>
+    <div><h3>Ranger les médias + éditeur de calendrier</h3>
+      <p class="ph-goal">Le module le plus riche : 3 étapes, des validations, et l'éditeur de semaines refait dans la page.</p></div>
+    <div class="ph-meta"><span class="tag todo">À faire</span><span class="charge">≈ 4 à 6 jours</span></div></div>
+  <div class="ph-body">
+    <div><h4>Livrables</h4><ul class="dots">
+      <li>Page en 3 étapes : calendrier et types mémorisés, un dossier par type analysé, répartition au hasard.</li>
+      <li>Validations + récapitulatif avant lancement ; résultat avec manques et surplus.</li>
+      <li>Éditeur dans la page : 2 modes, semaines, créneaux, besoins en direct, Enregistrer.</li></ul></div>
+    <div><h4>Critères de fin</h4><ul class="checks">
+      <li><code>calendrier_utilisateur.json</code> échangé sans perte entre les deux apps.</li>
+      <li>Mêmes sources, hasard coupé → même arborescence qu'avec l'ancienne app.</li>
+      <li>Carrousels dans l'ordre 1, 2, 3 ; éditeur fluide avec 20 semaines.</li></ul></div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="ph-head"><span class="ph-num">P5</span>
+    <div><h3>Empaquetage Windows : moteur, installeur, WebView2, signature, migration</h3>
+      <p class="ph-goal">Livrer HelpVA 2.0 comme une mise à jour normale de la 1.0 : le client installe et retrouve tout.</p></div>
+    <div class="ph-meta"><span class="tag todo">À faire</span><span class="charge">≈ 4 à 6 jours</span></div></div>
+  <div class="ph-body">
+    <div><h4>Livrables</h4><ul class="dots">
+      <li>Moteur PyInstaller en mode <b>dossier</b> (sans tkinter), dans les ressources Tauri (<code>moteur/</code>), lancé par Rust.</li>
+      <li>Rust : <code>moteur.rs</code>, mutex <code>HelpVA_Instance</code>, CSP stricte, identifiant définitif, <code>HelpVA.exe</code>.</li>
+      <li>Installeur avec le même <code>AppId</code>, WebView2 installé s'il manque, moteur arrêté avant la copie.</li>
+      <li>Signature de code (selon budget) ; un seul script de build.</li></ul></div>
+    <div><h4>Critères de fin</h4><ul class="checks">
+      <li>Windows propre (Bac à sable Windows) : démarre, convertit, se ferme sans processus restant.</li>
+      <li>Mise à jour 1.0 → 2.0 : une seule ligne HelpVA, licence et réglages conservés.</li>
+      <li>Désinstallation : <code>%APPDATA%\HelpVA</code> conservé.</li></ul></div>
+  </div>
+  <div class="ph-foot"><b>Pourquoi le mode dossier ?</b> En « un seul fichier », PyInstaller décompresse environ 200 Mo dans <code>%TEMP%</code> à
+    chaque lancement, et les y laisse si le moteur est tué. Plus lent, et plus souvent signalé par les antivirus.</div>
+</div>
+
+<div class="keep">
+<table class="t">
+  <thead><tr><th style="width:21%">Installeur 2.0</th><th style="width:41%">Pour</th><th>Contre</th></tr></thead>
+  <tbody>
+    <tr><td class="k1">Inno Setup <span style="color:var(--green);font-weight:700;font-size:7.2pt;letter-spacing:.04em">RECOMMANDÉ</span></td>
+      <td>Même <code>AppId</code> que la 1.0 : la 2.0 la remplace automatiquement. AppMutex, langues FR/EN et images déjà prêts.</td>
+      <td>Incompatible avec la mise à jour automatique intégrée de Tauri (plugin updater).</td></tr>
+    <tr><td class="k1">NSIS (Tauri)</td>
+      <td>Mise à jour automatique possible ; gestion de WebView2 intégrée.</td>
+      <td>Autre clé de registre : il faut désinstaller la 1.0 par un script, avec un risque de double entrée.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="phase">
+  <div class="ph-head"><span class="ph-num">P6</span>
+    <div><h3>Recette complète, parité, bascule</h3>
+      <p class="ph-goal">Vérifier que la nouvelle app fait tout ce que faisait l'ancienne, puis supprimer l'ancienne.</p></div>
+    <div class="ph-meta"><span class="tag todo">À faire</span><span class="charge">≈ 3 à 5 jours + pilote</span></div></div>
+  <div class="ph-body">
+    <div><h4>Livrables</h4><ul class="dots">
+      <li>Checklist de parité (section 7) cochée à 100 %, ou écarts acceptés par écrit.</li>
+      <li>Pilote de 1 à 2 semaines chez 2 ou 3 agences ; HelpVA 2.0.0 publiée.</li>
+      <li>Tag <code>v1-ctk</code>, puis suppression de <code>app_ctk.py</code>, customtkinter et de l'ancien <code>HelpVA.spec</code> ; docs à jour.</li></ul></div>
+    <div><h4>Critères de fin</h4><ul class="checks">
+      <li>Aucun bug bloquant pendant le pilote ; tests verts ; build reproductible.</li>
+      <li>La suppression est un commit séparé, fait par Christ, réversible grâce au tag.</li></ul></div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="ph-head"><span class="ph-num">P7</span>
+    <div><h3>macOS et Linux</h3>
+      <p class="ph-goal">Même app, mêmes écrans. Seuls le build et la signature changent.</p></div>
+    <div class="ph-meta"><span class="tag todo">Plus tard</span><span class="charge">≈ 5 à 8 jours</span></div></div>
+  <div class="ph-body">
+    <div><h4>Livrables</h4><ul class="dots">
+      <li>macOS : build sur un Mac (pas de compilation croisée), moteur dans <code>Contents/Resources</code>, signature + notarisation Apple (99 $/an).</li>
+      <li>Linux : <code>.deb</code> / AppImage (webkit2gtk 4.1) ; les specs mac et linux deviennent des specs du moteur.</li></ul></div>
+    <div><h4>Critères de fin</h4><ul class="checks">
+      <li>Checklist réduite passée sur chaque système ; pas d'alerte Gatekeeper.</li>
+      <li>Clients Mac existants : même empreinte, pas de réactivation.</li></ul></div>
+  </div>
+</div>
+<p class="tnote">Total pour Windows (P0 à P6) : environ <b>6 à 8 semaines</b> de travail, pilote compris. Ordre de grandeur seulement.</p>
+
+<!-- ================================================================== 05 -->
+<div class="keep gap">
+  <header class="sec" id="s5">
+    <div class="eyebrow">05</div>
+    <h2>Ce que Christ doit installer, et quand</h2>
+    <p class="lead">Les phases 0 à 4 se développent dans Edge grâce au pont : rien de plus à installer. Pour la vraie fenêtre Tauri et
+      l'installeur, il faut <b>Rust</b> et le <b>SDK Windows</b>. Mieux vaut les installer tôt, dès la phase 1 : les surprises côté Rust
+      apparaissent alors pendant qu'elles sont encore faciles à corriger.</p>
+  </header>
+  <div class="have">
+    <span>Node 22 + npm</span><span>Python 3.11</span><span>WebView2 154</span><span>Build Tools 2022 (MSVC 14.44)</span>
+    <span>Inno Setup 7</span><span class="miss">SDK Windows : absent</span><span class="miss">Rust : absent</span><span class="miss">winget : absent</span>
+  </div>
+  <table class="t">
+    <thead><tr><th style="width:30%">Quoi</th><th style="width:38%">Pourquoi</th><th style="width:13%">Taille (env.)</th><th>Quand</th></tr></thead>
+    <tbody>
+      <tr><td class="k1">Charge « Développement Desktop en C++ » des Build Tools 2022</td><td>Rust a besoin de l'éditeur de liens MSVC <b>et</b> des bibliothèques Windows (<code>kernel32.lib</code>…) : le SDK manque aujourd'hui.</td><td>3 à 6 Go (C:)</td><td>Phase 1, au plus tard avant P5</td></tr>
+      <tr><td class="k1">Rust (rustup, <code>stable-x86_64-pc-windows-msvc</code>)</td><td>Compiler le cœur Rust de Tauri.</td><td>1 à 1,5 Go</td><td>Juste après</td></tr>
+      <tr><td class="k1">Dossier de compilation (<code>target/</code>)</td><td>Créé par la première compilation.</td><td>3 à 5 Go</td><td>1er <code>npm run tauri dev</code></td></tr>
+    </tbody>
+  </table>
+</div>
+<p class="tnote" style="margin-top:-1.6mm">Plus tard : PyInstaller (déjà utilisé pour la 1.0) et <code>signtool</code> en phase 5 ; un Mac (Xcode Command Line Tools),
+  un compte Apple Developer et une machine Ubuntu en phase 7.</p>
+
+<div class="box warn"><span class="ico">!</span><div>
+  <strong>Le disque C n'a que 13,1 Go libres.</strong> SDK + Rust + compilations représentent 8 à 12 Go. On met donc Rust et les compilations
+  sur <b>D:</b> (82 Go libres). Seul le SDK reste sur C:, car l'installeur Visual Studio l'impose.
+</div></div>
+
+<div class="keep">
+<h3>Les étapes, dans l'ordre</h3>
+<ol class="steps">
+  <li><span class="num">1</span><div>Ouvrir <b>Visual Studio Installer</b> → Build Tools 2022 → <b>Modifier</b> → cocher <b>« Développement Desktop en C++ »</b>
+    (laisser cochés MSVC v143 et le SDK Windows 11) → Modifier. Redémarrer si c'est demandé.</div></li>
+  <li><span class="num">2</span><div>Créer <code>D:\rust</code>, puis 3 variables d'environnement <b>utilisateur</b> (menu Démarrer → « Modifier les variables
+    d'environnement pour votre compte ») : <code>RUSTUP_HOME=D:\rust\rustup</code>, <code>CARGO_HOME=D:\rust\cargo</code>, <code>CARGO_TARGET_DIR=D:\rust\target</code>.
+    <span class="muted">Pourquoi : rustup et cargo installent là où ces variables pointent, au lieu de <code>C:\Users\…\.rustup</code>.</span></div></li>
+  <li><span class="num">3</span><div>Télécharger <code>rustup-init.exe</code> sur <b>rustup.rs</b> (winget n'existe pas sur ce PC) et le lancer → choix <b>1</b> (installation standard).</div></li>
+  <li><span class="num">4</span><div>Fermer et rouvrir le terminal, puis vérifier : <code>rustc --version</code> et <code>cargo --version</code>.</div></li>
+  <li><span class="num">5</span><div>Dans <code>desktop/</code> : <code>npm run tauri info</code> (tout doit être vert), puis <code>npm run tauri dev</code>. La première
+    compilation prend 5 à 10 minutes ; les suivantes, quelques secondes.</div></li>
+</ol>
+</div>
+
+<!-- ================================================================== 06 -->
+<header class="sec gap" id="s6">
+  <div class="eyebrow">06</div>
+  <h2>Risques et parades</h2>
+  <p class="lead">Les problèmes connus à l'avance, ce qu'ils provoqueraient, et ce qui est prévu pour les éviter.</p>
+</header>
+<table class="t">
+  <thead><tr><th style="width:19%">Risque</th><th style="width:28%">Ce qui arriverait</th><th>Parade</th><th style="width:9%">Phase</th></tr></thead>
+  <tbody>
+    <tr><td class="k1">ffmpeg lit l'entrée du moteur</td><td>Une commande « volée » : un <code>annuler</code> perdu, du JSON coupé.</td><td><code>stdin=DEVNULL</code> + <code>-nostdin</code>, et l'entrée standard du moteur redirigée vers le vide.</td><td class="ph">P0</td></tr>
+    <tr><td class="k1">Moteur ou ffmpeg orphelins</td><td>App fermée mais ffmpeg tourne encore ; mise à jour bloquée par des fichiers verrouillés.</td><td>Fin d'entrée = arrêt ; Job Object « tuer avec le parent » ; arrêt sur <code>RunEvent::Exit</code> et avant une mise à jour ; <code>taskkill</code> dans l'installeur.</td><td class="ph">P0 · P5</td></tr>
+    <tr><td class="k1">print() parasites, encodage</td><td>JSON cassé ; <code>UnicodeEncodeError</code> sur « ⛔ » en cp1252.</td><td>stdout réservé (copie privée du descripteur), <code>print</code> → <code>log</code>, ASCII pur, lecture en binaire.</td><td class="ph">P0</td></tr>
+    <tr><td class="k1">Vérification licence ~40 s</td><td>Fenêtre figée, le client croit à un plantage.</td><td>Écran d'attente ; les requêtes rapides tournent en parallèle de tout le reste.</td><td class="ph">P1</td></tr>
+    <tr><td class="k1">Interface contournée</td><td>Quelqu'un modifie le JavaScript pour sauter l'activation.</td><td>Garde <code>LICENCE_REQUISE</code> : le moteur refuse les tâches longues sans licence valide.</td><td class="ph">P1</td></tr>
+    <tr><td class="k1">Pont de dev joignable</td><td>Une page web ouverte dans le navigateur pourrait piloter le moteur.</td><td>127.0.0.1 seulement, jeton aléatoire, contrôle de l'origine ; jamais inclus dans l'app livrée.</td><td class="ph">P0</td></tr>
+    <tr><td class="k1">Chemins envoyés par l'UI</td><td>Suppression du mauvais dossier.</td><td>Le moteur revalide tout (source hors de la sortie, sortie dans le dossier de sortie) avant chaque suppression.</td><td class="ph">P0–P4</td></tr>
+    <tr><td class="k1">Antivirus, SmartScreen</td><td>Exe signalé ; « Windows a protégé votre ordinateur ».</td><td>Mode dossier (pas « un seul fichier »), pas d'UPX, signature de code.</td><td class="ph">P5</td></tr>
+    <tr><td class="k1">WebView2 absent</td><td>Fenêtre blanche, ou app qui ne démarre pas.</td><td>L'installeur lance l'installateur Microsoft de WebView2 si la clé de registre manque.</td><td class="ph">P5</td></tr>
+    <tr><td class="k1">Migration ratée</td><td>Deux lignes HelpVA, licence perdue, réactivation.</td><td>Même <code>AppId</code>, données dans <code>%APPDATA%</code>, même empreinte ; test 1.0 → 2.0 dans le Bac à sable.</td><td class="ph">P5</td></tr>
+    <tr><td class="k1">Deux interfaces à maintenir</td><td>Les deux apps divergent.</td><td><code>agent/</code> = seule source ; <code>app_ctk.py</code> : corrections uniquement.</td><td class="ph">P0–P6</td></tr>
+    <tr><td class="k1">Rust absent, disque plein</td><td>Impossible de compiler la vraie fenêtre.</td><td>Rust sur D: ; tout le reste se développe dans Edge jusqu'à la phase 5.</td><td class="ph">P1</td></tr>
+    <tr><td class="k1">UI et moteur désaccordés</td><td>Messages mal compris.</td><td>Poignée de main <code>protocole: 1</code> ; un seul build emballe les deux.</td><td class="ph">P5</td></tr>
+  </tbody>
+</table>
+
+<p class="tnote" style="margin-top:-1.4mm"><b>Défauts de l'app actuelle corrigés au passage</b> (phases 1 et 2) : appels réseau qui gèlent la fenêtre, minuteur de 20 s qui s'empile, bandeau hors-ligne et rappel de fin superposés, journal perdu hors des modules, blocage de licence qui détruit l'écran pendant une tâche, barre latérale jamais rafraîchie.</p>
+
+<div class="panel" style="margin-top:2mm">
+  <h3>La meilleure parade : la même routine à chaque phase</h3>
+  <ol class="steps" style="margin:0">
+    <li><span class="num">1</span><div><b>Le moteur d'abord.</b> La commande est écrite et testée (<code>unittest</code>, APPDATA temporaire) avant d'avoir un écran.</div></li>
+    <li><span class="num">2</span><div><b>L'écran ensuite</b>, branché via le pont dans Edge ; les textes sont copiés depuis <code>app_ctk.py</code> vers <code>src/fr.ts</code>.</div></li>
+    <li><span class="num">3</span><div><b>Comparaison côte à côte</b> avec l'ancienne app, sur les mêmes fichiers de test (jamais les vrais dossiers des clients).</div></li>
+    <li><span class="num">4</span><div><b>Checklist cochée</b> pour les points de la phase, et <code>app_ctk.py</code> relancée pour vérifier qu'elle marche encore.</div></li>
+    <li><span class="num">5</span><div><b>Christ relit et commite lui-même</b>, un commit par étape : on sait toujours où revenir si quelque chose casse.</div></li>
+  </ol>
+</div>
+
+<!-- ================================================================== 07 -->
+<div class="brk">
+<header class="sec" id="s7">
+  <div class="eyebrow">07</div>
+  <h2>Checklist de parité</h2>
+  <p class="lead" style="font-size:9.3pt">Tirée de l'inventaire complet de <code>app_ctk.py</code>, à cocher en phase 6 ; à droite, la phase qui livre le point.
+    Les textes entre guillemets sont repris <b>mot pour mot</b> (<code>src/fr.ts</code>). Changements voulus : bleu + Geist, progression dans la page,
+    notifications intégrées ; module Drive non porté (il reste caché).</p>
+</header>
+<table class="chk">
+  <tbody>
+    <tr class="grp"><td colspan="3">Démarrage et fenêtre</td></tr>
+    <tr><td class="cb"><span></span></td><td>Titre « HelpVA v{version} » ; 1160×760 (min. 980×640), réduite à la zone de travail, centrée</td><td class="ph">P2</td></tr>
+    <tr><td class="cb"><span></span></td><td>Mutex <code>HelpVA_Instance</code> et <code>Global\HelpVA_Instance</code>, mêmes noms (utilisés par l'installeur)</td><td class="ph">P5</td></tr>
+    <tr><td class="cb"><span></span></td><td>Icône nette dans la barre de titre et la barre des tâches</td><td class="ph">P5</td></tr>
+    <tr><td class="cb"><span></span></td><td>Thème lu au démarrage (<code>theme</code>) ; lune en clair, soleil en sombre ; enregistré dès le clic</td><td class="ph">P2</td></tr>
+    <tr><td class="cb"><span></span></td><td>Fermeture : annule la tâche, puis arrête le moteur et ses ffmpeg</td><td class="ph">P0</td></tr>
+    <tr><td class="cb"><span></span></td><td>Sélecteurs de dossier et de fichiers ; plan B « Sélection impossible » si la boîte Windows échoue</td><td class="ph">P0</td></tr>
+    <tr class="grp"><td colspan="3">Licence</td></tr>
+    <tr><td class="cb"><span></span></td><td>Routage des 8 raisons : actif, pas_internet, pas_active, invalide, mauvais_pc, expire, revoquee, suspendu</td><td class="ph">P1</td></tr>
+    <tr><td class="cb"><span></span></td><td>« Bienvenue sur HelpVA » au premier lancement seulement (<code>deja_demarre</code>), bouton « Commencer »</td><td class="ph">P1</td></tr>
+    <tr><td class="cb"><span></span></td><td>« Connexion internet requise » : bouton « Réessayer » + nouvel essai automatique à 20 s</td><td class="ph">P1</td></tr>
+    <tr><td class="cb"><span></span></td><td>Activation : 4 variantes de titre, « HELP-XXXX-XXXX-XXXX », Entrée = activer, messages d'erreur exacts</td><td class="ph">P1</td></tr>
+    <tr><td class="cb"><span></span></td><td>« Abonnement réactivé ? Réessayer » affiché pour toutes les raisons sauf pas_active</td><td class="ph">P1</td></tr>
+    <tr><td class="cb"><span></span></td><td>Bandeau « Hors-ligne — reconnexion en cours… », non bloquant</td><td class="ph">P1</td></tr>
+    <tr><td class="cb"><span></span></td><td>Rappel de fin (veille, jour même) : bouton Telegram + message prérempli ; fermeture retenue jusqu'au lendemain</td><td class="ph">P1</td></tr>
+    <tr><td class="cb"><span></span></td><td>Re-contrôle : 1 h (mois, an, essai), 5 min si hors-ligne ; blocage si la licence n'est plus valide</td><td class="ph">P1</td></tr>
+    <tr><td class="cb"><span></span></td><td>Variables <code>HELPVA_VERIF_MS</code> et <code>HELPVA_GRACE_H</code> respectées (tests)</td><td class="ph">P1</td></tr>
+    <tr class="grp"><td colspan="3">Cadre, Accueil, Paramètres</td></tr>
+    <tr><td class="cb"><span></span></td><td>Barre latérale : logo, « Accueil », « Paramètres » (aucun actif dans un module), « v{version} »</td><td class="ph">P2</td></tr>
+    <tr><td class="cb"><span></span></td><td>Carte utilisateur : nom (ou « HelpVA ») et type d'abonnement en vert</td><td class="ph">P2</td></tr>
+    <tr><td class="cb"><span></span></td><td>Accueil : « Hello, {nom} », sous-titre, carte Dossier de sortie (nom, Ouvrir, Paramètres), Conseil</td><td class="ph">P2</td></tr>
+    <tr><td class="cb"><span></span></td><td>Les 4 cartes modules, avec leurs titres et sous-titres exacts</td><td class="ph">P2</td></tr>
+    <tr><td class="cb"><span></span></td><td>Paramètres : chemin, « (par défaut : Bureau) », Changer… / Ouvrir / « Réinitialiser (Bureau) »</td><td class="ph">P2</td></tr>
+    <tr><td class="cb"><span></span></td><td>Licence et abonnement : détenteur, « Abonnement à vie — sans expiration » ou dates de début et de fin</td><td class="ph">P2</td></tr>
+    <tr><td class="cb"><span></span></td><td>« Résilier / changer de licence » : confirmation, suppression, retour à l'activation</td><td class="ph">P2</td></tr>
+    <tr class="grp"><td colspan="3">Modules : comportement commun</td></tr>
+    <tr><td class="cb"><span></span></td><td>« ← Accueil », titre, sous-titre, encart « Ce que fait ce module »</td><td class="ph">P0·P3</td></tr>
+    <tr><td class="cb"><span></span></td><td>Source : dossier <b>ou</b> fichiers (l'un remplace l'autre), « SOURCE SÉLECTIONNÉE », mêmes extensions</td><td class="ph">P0·P3</td></tr>
+    <tr><td class="cb"><span></span></td><td>Alerte sans source ; refus si la source est dans la sortie ; « Remplacer ? » (sauf MP4)</td><td class="ph">P0·P3</td></tr>
+    <tr><td class="cb"><span></span></td><td>Progression sur 2 lignes (« Dossier 2/3 — … » / « Vidéo 1/4 · … — 43 % ») avec une vraie barre</td><td class="ph">P0</td></tr>
+    <tr><td class="cb"><span></span></td><td>Annuler → « Annulation en cours… » ; journal avec « Effacer » ; une seule action à la fois</td><td class="ph">P0</td></tr>
+    <tr><td class="cb"><span></span></td><td>Fin : arrêt (N déjà traités), succès (« dans N dossier(s) »), échecs (5 premiers + « … »)</td><td class="ph">P0·P3</td></tr>
+    <tr class="grp"><td colspan="3">Modules : particularités</td></tr>
+    <tr><td class="cb"><span></span></td><td>MP4 : « media (mp4) » complété sans effacer ; .mov .mp4 .m4v .avi .mkv .webm .mpg .mpeg .wmv .flv</td><td class="ph">P0</td></tr>
+    <tr><td class="cb"><span></span></td><td>Images : JPG par défaut ou PNG, HEIC/HEIF ; sortie « images (jpg) » ou « images (png) »</td><td class="ph">P3</td></tr>
+    <tr><td class="cb"><span></span></td><td>Métadonnées : « Renommer les médias (1, 2, 3…) » coché, arborescence gardée, « … (métadonnées changées) »</td><td class="ph">P3</td></tr>
+    <tr><td class="cb"><span></span></td><td>Ranger : « Calendrier : N semaine(s) · M créneau(x) », types mémorisés, type absent grisé + explication</td><td class="ph">P4</td></tr>
+    <tr><td class="cb"><span></span></td><td>Ranger : un onglet par type (coché quand le dossier est choisi), règle, « Besoin : … », analyse, hasard</td><td class="ph">P4</td></tr>
+    <tr><td class="cb"><span></span></td><td>Ranger : validations, récapitulatif avant lancement, résultat avec manques et surplus</td><td class="ph">P4</td></tr>
+    <tr><td class="cb"><span></span></td><td>Calendrier : 2 modes avec confirmation ; semaines en onglets (sélecteur si nombreuses), dupliquer, supprimer</td><td class="ph">P4</td></tr>
+    <tr><td class="cb"><span></span></td><td>Calendrier : créneaux (heure, type, ajout « 12h00 » reel), besoins en direct, Réinitialiser, Enregistrer</td><td class="ph">P4</td></tr>
+    <tr><td class="cb"><span></span></td><td>Calendrier : « Enregistrer les modifications du calendrier ? » à la fermeture (Oui / Non / Annuler)</td><td class="ph">P4</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ================================================================== 08 -->
+<div class="brk">
+<header class="sec" id="s8">
+  <div class="eyebrow">08</div>
+  <h2>Chantiers en attente et décisions</h2>
+  <p class="lead">La migration ne gèle pas le reste. Voici où se placent les chantiers déjà prévus, et pourquoi à cet endroit.</p>
+</header>
+
+<div class="cards2">
+  <div class="card"><span class="where">AVANT TOUT</span><h4>Changements non commités</h4>
+    <p>Installeur, mode dossier, annulation + progression, calendrier ajusté à l'écran : Christ les relit, les commite lui-même et pose un tag
+      <code>v1.0.x</code>. C'est la base de l'ancienne app pendant la migration, et le point de retour si besoin.</p></div>
+  <div class="card"><span class="where">APRÈS P1, AVANT P5</span><h4>Sécurisation de la licence</h4>
+    <p>Dès la phase 1, toute la licence passe par les commandes <code>licence_*</code> du moteur, testées : une amélioration de <code>agent/licence.py</code>
+      profite aux deux apps, et la garde <code>LICENCE_REQUISE</code> empêche déjà de contourner l'activation.</p>
+    <p>Règles inchangées : clé privée jamais sur le PC, pas de clé <code>service_role</code>, ne jamais régénérer la paire de clés.</p></div>
+  <div class="card"><span class="where">P3 – P4</span><h4>Offre d'essai : 30 médias, sans Ranger</h4>
+    <p>Décidée le 26 septembre, pas encore codée. À placer <b>dans le moteur</b> (compteur + contrôle serveur), à côté de la garde de licence, jamais
+      seulement dans l'interface : un écran se contourne, le moteur non.</p></div>
+  <div class="card"><span class="where">TESTS DÈS P0 · BASCULE EN P5 OU APRÈS P6</span><h4>Python 3.14</h4>
+    <p>Le moteur reste compatible 3.10+ (bibliothèque standard) et ses tests tournent sous 3.14 dès la phase 0. Le moteur livré passe en 3.14 en
+      phase 5 si PyInstaller, Pillow, pillow-heif, numpy et cryptography suivent ; sinon après la bascule, quand tkinter ne sert plus.</p></div>
+</div>
+
+<div class="panel">
+  <h3>Décisions à prendre</h3>
+  <table class="dec"><tbody>
+    <tr><td class="id">D1</td><td>Installeur de la 2.0 : Inno Setup (recommandé, même <code>AppId</code>) ou NSIS (si la mise à jour automatique devient prioritaire).</td><td class="when">avant P5</td></tr>
+    <tr><td class="id">D2</td><td>Identifiant Tauri définitif (par ex. <code>app.helpva.desktop</code>). Il ne devra plus jamais changer ensuite.</td><td class="when">avant P5</td></tr>
+    <tr><td class="id">D3</td><td>Revérifier aussi les licences « vie » toutes les heures ? Aujourd'hui, elles ne sont jamais revérifiées pendant une session.</td><td class="when">P1</td></tr>
+    <tr><td class="id">D4</td><td>Une seule fenêtre HelpVA à la fois (plugin single-instance) ? Aujourd'hui, une 2e instance n'est pas bloquée.</td><td class="when">P2</td></tr>
+    <tr><td class="id">D5</td><td>Signature de code : budget et fournisseur.</td><td class="when">P5</td></tr>
+  </tbody></table>
+</div>
+
+<div class="next">
+  <h3>Prochaines étapes, cette semaine</h3>
+  <ol class="steps">
+    <li><span class="num">1</span><div><b>Finir la phase 0</b> : moteur + pont + client TypeScript, et une vraie conversion MP4 depuis Edge.</div></li>
+    <li><span class="num">2</span><div><b>Christ</b> : commiter les changements en cours, puis installer le SDK Windows et Rust sur D: (section 5).</div></li>
+    <li><span class="num">3</span><div><b>Valider ce plan</b> et trancher D3 et D4, utiles dès les phases 1 et 2.</div></li>
+  </ol>
+</div>
+</div>
+
+<!--
+  Impression (PowerShell) :
+  & "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-pdf-header-footer
+    --allow-file-access-from-files --user-data-dir=<dossier temporaire> --print-to-pdf="<pdf>" "file:///<ce fichier>"
+-->
+</body>
+</html>

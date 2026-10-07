@@ -33,3 +33,8 @@ scratch_uniq/
 # Build Linux
 .venv-linux/
 tools/appimagetool-x86_64.AppImage
+
+# Moteur (sidecar) : jeton du pont de dev, régénéré à chaque lancement
+engine/.dev_token
+# Données de TEST du moteur lancé par le pont de dev (paramètres, licence, « Bureau »)
+engine/.donnees_dev/
