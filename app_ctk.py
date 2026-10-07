@@ -23,7 +23,7 @@ from tkinter import font as tkfont
 
 from agent import parametres, licence, version
 from agent import ranger as rangement
-from agent import unicite, calendrier, conversion
+from agent import unicite, calendrier, conversion, progression
 from agent import drive
 
 # Re-contrôle de l'abonnement quand l'app reste ouverte (réglable pour tests).
@@ -106,6 +106,60 @@ def icones_nettes(fenetre):
         fenetre._icones_win = icones      # garde les icônes en vie
     except Exception:
         pass
+
+
+def zone_travail(fenetre):
+    """Zone utile de l'écran qui contient `fenetre`, SANS la barre des tâches.
+
+    Renvoie (x, y, largeur, hauteur) en pixels réels. Sous Windows on demande au
+    système l'écran de la fenêtre (marche aussi avec un 2e écran) ; ailleurs, taille
+    de l'écran moins une marge pour le dock / la barre de menus."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                            ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+            u32 = ctypes.windll.user32
+            u32.MonitorFromWindow.restype = ctypes.c_void_p
+            u32.MonitorFromWindow.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+            u32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
+            u32.GetParent.restype = ctypes.c_void_p
+            u32.GetParent.argtypes = [ctypes.c_void_p]
+            hwnd = u32.GetParent(fenetre.winfo_id()) or fenetre.winfo_id()
+            mon = u32.MonitorFromWindow(hwnd, 2)          # 2 = écran le plus proche
+            mi = MONITORINFO()
+            mi.cbSize = ctypes.sizeof(MONITORINFO)
+            if mon and u32.GetMonitorInfoW(mon, ctypes.byref(mi)):
+                r = mi.rcWork
+                return r.left, r.top, r.right - r.left, r.bottom - r.top
+        except Exception:
+            pass
+    return 0, 0, fenetre.winfo_screenwidth(), fenetre.winfo_screenheight() - 80
+
+
+def ajuster_fenetre(fenetre, largeur, hauteur, parent=None, min_largeur=None, min_hauteur=None):
+    """Taille et position d'une fenêtre qui TIENNENT dans l'écran, puis centrage.
+
+    Sur un petit écran (portable 1366×768) ou avec le zoom Windows à 125–150 %,
+    une taille fixe dépasserait en bas, sous la barre des tâches : les boutons du
+    bas deviendraient invisibles. Ici la taille souhaitée est réduite si besoin.
+    largeur / hauteur / min_* : unités de geometry() de la fenêtre (CustomTkinter :
+    unités avant zoom ; fenêtre tk classique : pixels)."""
+    f = getattr(fenetre, "_get_window_scaling", None)
+    echelle = f() if callable(f) else 1.0               # CustomTkinter multiplie par le zoom
+    zx, zy, zw, zh = zone_travail(parent or fenetre)
+    cadre = 42                                          # barre de titre + bordures (pixels réels)
+    w = max(200, min(int(largeur), int((zw - 16) / echelle)))
+    h = max(200, min(int(hauteur), int((zh - cadre - 8) / echelle)))
+    x = zx + max(0, int((zw - w * echelle) / 2))
+    y = zy + max(0, int((zh - cadre - h * echelle) / 2))
+    fenetre.geometry(f"{w}x{h}+{x}+{y}")
+    if min_largeur or min_hauteur:
+        fenetre.minsize(min(int(min_largeur or 200), w), min(int(min_hauteur or 200), h))
+    return w, h
 
 
 def ouvrir_dans_explorateur(chemin: str) -> None:
@@ -201,8 +255,8 @@ class App(ctk.CTk):
         self.params = parametres.charger()
         ctk.set_appearance_mode(self.params.get("theme", "light"))
         self.title(f"HelpVA v{version.VERSION}")
-        self.geometry("1160x760")
-        self.minsize(980, 640)
+        # Taille qui tient dans l'écran (portables 1366×768, zoom 125–150 %).
+        ajuster_fenetre(self, 1160, 760, min_largeur=980, min_hauteur=640)
         self.configure(fg_color=BG)
 
         # Anti-« app gelée » : si une fenêtre modale (grab) reste cachée derrière
@@ -897,11 +951,21 @@ class App(ctk.CTk):
         if tag == "loading_fini":
             self._cacher_loading()
         elif tag == "uniq_progres":
-            # Met à jour en direct la ligne du popup de chargement.
+            # Met à jour en direct le popup de chargement : texte (« Dossier 2/3 …
+            # Vidéo 1/4 · clip.mov — 43 % ») et, si connue, la vraie progression.
+            if self._annule_tache:
+                return          # garder « Annulation en cours… » affiché
             try:
                 lbl = getattr(self, "_lbl_loading", None)
                 if lbl is not None and lbl.winfo_exists():
                     lbl.configure(text=item[1])
+                frac = item[2] if len(item) > 2 else None
+                pb = getattr(self, "_pb", None)
+                if frac is not None and pb is not None and pb.winfo_exists():
+                    if pb.cget("mode") != "determinate":
+                        pb.stop()
+                        pb.configure(mode="determinate")
+                    pb.set(max(0.0, min(1.0, frac)))
             except Exception:
                 pass
         elif tag == "verif_licence":
@@ -1053,13 +1117,15 @@ class App(ctk.CTk):
     def _afficher_loading(self, message, annulable=False):
         self._loading = ctk.CTkToplevel(self)
         self._loading.title("Veuillez patienter")
-        self._loading.geometry("340x190" if annulable else "320x130")
+        # Assez haut pour 2 lignes de progression (« Dossier 2/3 … » + « Vidéo 1/4 … »).
+        self._loading.geometry("380x215" if annulable else "360x150")
         self._loading.configure(fg_color=BG)
         self._loading.resizable(False, False)
         self._loading.transient(self)
         self._lbl_loading = ctk.CTkLabel(self._loading, text=message, font=(POLICE, 13),
-                                         text_color=TEXT, wraplength=300)
-        self._lbl_loading.pack(pady=(26, 12))
+                                         text_color=TEXT, wraplength=340, justify="center",
+                                         height=46)
+        self._lbl_loading.pack(pady=(22, 12))
         pb = ctk.CTkProgressBar(self._loading, mode="indeterminate", width=250,
                                 progress_color=ACCENT)
         pb.pack(pady=4)
@@ -1465,7 +1531,7 @@ class App(ctk.CTk):
             try:
                 res = rangement.ranger(
                     sources, sortie, actifs, aleatoire=aleatoire,
-                    progress=lambda txt: self.file_log.put(("uniq_progres", txt)),
+                    progress=lambda txt, frac=None: self.file_log.put(("uniq_progres", txt, frac)),
                     doit_arreter=lambda: self._annule_tache)
             except Exception as e:
                 print(f"\n[ERREUR] {e}")
@@ -1603,8 +1669,8 @@ class App(ctk.CTk):
             if os.path.exists(sortie):
                 shutil.rmtree(sortie, ignore_errors=True)
 
-            def progres(txt):
-                self.file_log.put(("uniq_progres", txt))
+            def progres(txt, frac=None):
+                self.file_log.put(("uniq_progres", txt, frac))
             try:
                 if fichiers:
                     res = unicite.uniquiser_fichiers(
@@ -1743,16 +1809,23 @@ class App(ctk.CTk):
 
         def job():
             os.makedirs(sortie, exist_ok=True)
-            if fichiers:
-                n, echecs = conversion.convertir_fichiers(fichiers, sortie)
-            else:
-                n, echecs = conversion.convertir_dossier(dossier, sortie)
-            print(f"\n✅ {n} vidéo(s) converties en .mp4 → {sortie}")
-            msg = f"✅ {n} vidéo(s) en .mp4 !\n\nRésultat :\n{sortie}"
-            if echecs:
-                msg += (f"\n\n⚠️ {len(echecs)} fichier(s) ignorés (vides/corrompus, "
-                        "à re-télécharger).")
-            self._notifier("Conversion terminée", msg)
+
+            def progres(txt, frac=None):
+                self.file_log.put(("uniq_progres", txt, frac))
+            arreter = lambda: self._annule_tache
+            try:
+                if fichiers:
+                    res = conversion.convertir_fichiers(fichiers, sortie, progres, arreter)
+                else:
+                    res = conversion.convertir_dossier(dossier, sortie, progres, arreter)
+            except Exception as e:
+                print(f"\n[ERREUR] {e}")
+                self._notifier("Convertir en MP4", str(e), erreur=True)
+                return
+            res["arrete"] = res.get("arrete") or bool(self._annule_tache)
+            nb_d = res.get("dossiers") if (dossier and res.get("dossiers", 1) > 1) else None
+            self._fin_traitement("Conversion terminée", res, sortie, "vidéo(s) en .mp4",
+                                 nb_dossiers=nb_d)
         self._tache(job, "Conversion en MP4… (peut être long)", annulable=True)
 
     # ==================================================================
@@ -1869,8 +1942,8 @@ class App(ctk.CTk):
             if os.path.exists(sortie):
                 shutil.rmtree(sortie, ignore_errors=True)
 
-            def progres(txt):
-                self.file_log.put(("uniq_progres", txt))
+            def progres(txt, frac=None):
+                self.file_log.put(("uniq_progres", txt, frac))
             try:
                 if fichiers:
                     res = unicite.convertir_images_fichiers(
@@ -1973,7 +2046,7 @@ class App(ctk.CTk):
         """Mini-tuto en images : rendre un dossier Google Drive public."""
         top = ctk.CTkToplevel(self)
         top.title("Rendre un dossier Drive public")
-        top.geometry("700x660")
+        ajuster_fenetre(top, 700, 660, parent=self)
         top.configure(fg_color=BG)
         top.transient(self)
         self._modale_devant(top)
@@ -2044,7 +2117,7 @@ class App(ctk.CTk):
     def _popup_apercu_drive(self, vignettes, total):
         top = ctk.CTkToplevel(self)
         top.title("Aperçu Google Drive")
-        top.geometry("790x650")
+        ajuster_fenetre(top, 790, 650, parent=self)
         top.configure(fg_color=BG)
         top.transient(self)
         self._modale_devant(top)
@@ -2107,8 +2180,11 @@ class App(ctk.CTk):
                     break
                 print(f"\n=== Dossier {idx}/{n} ===")
 
-                def prog(i, total, nom):
+                def prog(i, total, nom, idx=idx):
                     print(f"  [{i}/{total}] {nom}")
+                    self.file_log.put(("uniq_progres",
+                                       progression.texte("Fichier", i, total, idx, n, f"Lien {idx}", nom),
+                                       ((idx - 1) + i / max(1, total)) / n))
                 try:
                     ni, nv, err = drive.telecharger_dossier(
                         lien, sortie, prendre=prendre, limite=limite, progress=prog,
@@ -2249,11 +2325,24 @@ class App(ctk.CTk):
 
         top = tk.Toplevel(self)
         top.title("Calendrier")
-        top.geometry("760x780")
+        # Taille adaptée à l'écran : les polices suivent le zoom Windows (125 %, 150 %…),
+        # donc la taille souhaitée aussi ; puis on la réduit si l'écran est trop petit
+        # (sinon le bas de la fenêtre et ses boutons passent sous la barre des tâches).
+        try:
+            zoom = max(1.0, float(top.tk.call("tk", "scaling")) / (96 / 72))
+        except Exception:
+            zoom = 1.0
+        ajuster_fenetre(top, 760 * zoom, 780 * zoom, parent=self,
+                        min_largeur=600 * zoom, min_hauteur=460 * zoom)
         top.configure(bg=cBG)
         top.transient(self)
         self._modale_devant(top)
         top.after(200, lambda: top.winfo_exists() and top.grab_set())
+
+        # --- bas : Réinitialiser / Enregistrer — réservé AVANT tout le reste : même
+        # dans une petite fenêtre, ces boutons gardent leur place (le contenu défile).
+        bas = tk.Frame(top, bg=cBG)
+        bas.pack(side="bottom", fill="x", padx=22, pady=12)
 
         def bouton(parent, texte, cmd, genre="doux", **kw):
             couleurs = {"doux": (cSOFT, cHOVER),
@@ -2328,10 +2417,6 @@ class App(ctk.CTk):
             construire_mode()
             construire_barre()
             afficher_semaine(courant["nom"])
-
-        # --- bas : Réinitialiser / Enregistrer (réservé en premier -> toujours visible) ---
-        bas = tk.Frame(top, bg=cBG)
-        bas.pack(side="bottom", fill="x", padx=22, pady=12)
 
         # --- barre des semaines ---
         barre = tk.Frame(top, bg=cBG)
@@ -2571,7 +2656,20 @@ class App(ctk.CTk):
         afficher_semaine(courant["nom"])
 
 
+_MUTEX_INSTANCE = []
+
+
 def main():
+    if sys.platform == "win32":
+        # Signale à l'installeur (AppMutex d'Inno Setup) que HelpVA est ouvert :
+        # il demandera de le fermer avant une mise à jour ou une désinstallation.
+        # Global\ : visible aussi depuis une autre session Windows.
+        try:
+            import ctypes
+            for nom in ("HelpVA_Instance", "Global\\HelpVA_Instance"):
+                _MUTEX_INSTANCE.append(ctypes.windll.kernel32.CreateMutexW(None, False, nom))
+        except Exception:
+            pass
     app = App()
     app.mainloop()
 

@@ -11,7 +11,7 @@ hiddenimports = [
     'agent.horloge', 'agent.licence', 'agent.version', 'agent.emplacement',
     'agent.config', 'agent.parametres', 'agent.drive', 'agent.calendrier',
     'agent.ranger', 'agent.unicite', 'agent.conversion',
-    'agent.polices', 'gdown',
+    'agent.polices', 'agent.progression', 'gdown',
 ]
 
 for paquet in ('customtkinter', 'cryptography', 'imageio_ffmpeg', 'gdown',
@@ -53,7 +53,7 @@ exe = EXE(
     console=False,             # app fenêtrée (pas de terminal)
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch='universal2'         # None = arch du Mac qui build (mettre 'universal2' si voulu)
+    target_arch='universal2',        # None = arch du Mac qui build (mettre 'universal2' si voulu)
     codesign_identity=None,
     entitlements_file=None,
     icon='assets/logo.icns',

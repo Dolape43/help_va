@@ -38,6 +38,7 @@ try:
 except Exception:
     _HEIC_OK = False
 
+from . import conversion, progression
 from .config import UNICITE_FLIP_HORIZONTAL
 
 EXT_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
@@ -155,12 +156,14 @@ def _ffmpeg_exe() -> str:
     return imageio_ffmpeg.get_ffmpeg_exe()
 
 
-def uniquiser_video(source: str, dest: str | None = None) -> str:
+def uniquiser_video(source: str, dest: str | None = None, doit_arreter=None, sur_pct=None) -> str:
     """Crée une version unique d'une vidéo (métadonnées + ré-encodage léger).
 
     On nettoie toutes les métadonnées et on ré-encode avec de micro-variations
     (luminosité/contraste imperceptibles, qualité variable) : la vidéo reste
     identique à l'œil mais son empreinte (hash) change.
+    sur_pct(p) reçoit l'avancement (0–99) ; doit_arreter() arrête net
+    (conversion.Annulee est levée et le fichier à moitié écrit est supprimé).
     """
     if dest is None:
         dest = source
@@ -183,10 +186,18 @@ def uniquiser_video(source: str, dest: str | None = None) -> str:
         "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
         sortie,
     ]
-    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-    r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=flags)
-    if r.returncode != 0:
-        raise RuntimeError("Échec ffmpeg : " + r.stderr.decode("utf-8", "ignore")[-300:])
+    # Lancement surveillé (comme la conversion MP4) : pourcentage + arrêt immédiat.
+    try:
+        code, err = conversion._executer(cmd, conversion._infos(source)[1], doit_arreter, sur_pct)
+    except conversion.Annulee:
+        try:
+            if os.path.isfile(sortie):
+                os.remove(sortie)
+        except OSError:
+            pass
+        raise
+    if code != 0:
+        raise RuntimeError("Échec ffmpeg : " + err[-300:])
 
     if sur_place:
         os.replace(sortie, dest)
@@ -218,13 +229,74 @@ def uniquiser_dossier(dossier: str, dossier_sortie: str = None,
     return uniquiser_fichiers(fichiers, dossier_sortie, renommer, filtre)
 
 
+def _uniq_lot(images: list, cible_img: str, videos: list, cible_vid: str, renommer: bool,
+              filtre: bool, etat: dict, progress=None, doit_arreter=None,
+              dossier_i: int = None, dossier_n: int = None, nom: str = None):
+    """Uniquise les images (en parallèle) puis les vidéos (une par une) d'un groupe.
+
+    etat = {"ok", "echecs", "fait", "total", "arrete"} est partagé entre les groupes
+    pour une barre de progression GLOBALE. progress(texte, fraction) reçoit par ex.
+    « Dossier 2/3 — Modèle A » + « Vidéo 1/4 · clip.mov — 43 % ».
+    """
+    total = max(1, etat["total"])
+
+    def dire(txt, frac):
+        if progress:
+            try:
+                progress(txt, max(0.0, min(1.0, frac)))
+            except Exception:
+                pass
+    if images:
+        os.makedirs(cible_img, exist_ok=True)
+        debut = etat["fait"]
+
+        def rapport(k, t, fichier=None):
+            dire(progression.texte("Image", k, t, dossier_i, dossier_n, nom, fichier), (debut + k) / total)
+        rapport(0, len(images))
+        n, ech = _traiter_parallele(_planifier(cible_img, images, renommer, ".jpg"),
+                                    lambda s_, d_: uniquiser_image(s_, d_, filtre=filtre),
+                                    doit_arreter, None, "image(s)", rapport=rapport)
+        etat["ok"] += n
+        etat["echecs"] += ech
+        etat["fait"] += len(images)
+    if doit_arreter and doit_arreter():
+        etat["arrete"] = True
+        return
+    if videos:
+        os.makedirs(cible_vid, exist_ok=True)
+        plans = _planifier(cible_vid, videos, renommer, ".mp4")
+        for j, (source, dest) in enumerate(plans, 1):
+            if doit_arreter and doit_arreter():
+                etat["arrete"] = True
+                return
+            base = os.path.basename(source)
+
+            def pct(p, j=j, base=base):
+                dire(progression.texte("Vidéo", j, len(plans), dossier_i, dossier_n, nom, base, p),
+                     (etat["fait"] + p / 100) / total)
+            pct(0)
+            try:
+                uniquiser_video(source, dest, doit_arreter, pct)
+                etat["ok"] += 1
+            except conversion.Annulee:
+                etat["arrete"] = True
+                return
+            except Exception as e:
+                etat["echecs"].append(base)
+                sys.stdout.write(f"   [!] {base} ignoré : {e}\n")
+            etat["fait"] += 1
+    if doit_arreter and doit_arreter():
+        etat["arrete"] = True
+
+
 def uniquiser_fichiers(fichiers: list, dossier_sortie: str = None,
                        renommer: bool = False, filtre: bool = False,
                        progress=None, doit_arreter=None) -> dict:
     """Uniquise une LISTE de fichiers (images/vidéos) choisis.
 
     Mêmes règles que uniquiser_dossier (sortie en images\\ et videos\\).
-    Renvoie {"medias": int, "echecs": [noms]}.
+    progress(texte, fraction) : avancement ; doit_arreter() : annulation.
+    Renvoie {"medias": int, "echecs": [noms], "arrete": bool}.
     """
     images = [f for f in fichiers if os.path.splitext(f)[1].lower() in EXT_IMAGES]
     videos = [f for f in fichiers if os.path.splitext(f)[1].lower() in EXT_VIDEOS]
@@ -245,42 +317,19 @@ def uniquiser_fichiers(fichiers: list, dossier_sortie: str = None,
             if doit_arreter and doit_arreter():
                 break
             try:
-                uniquiser_video(source)
+                uniquiser_video(source, doit_arreter=doit_arreter)
                 n += 1
+            except conversion.Annulee:
+                break
             except Exception as e:
                 echecs.append(os.path.basename(source))
                 sys.stdout.write(f"   [!] {os.path.basename(source)} ignoré : {e}\n")
         return {"medias": n, "echecs": echecs}
 
-    sortie_images = os.path.join(dossier_sortie, "images")
-    sortie_videos = os.path.join(dossier_sortie, "videos")
-    n_img = n_vid = 0
-    echecs = []
-    if images:
-        os.makedirs(sortie_images, exist_ok=True)
-        n_img, e = _traiter_parallele(
-            _planifier(sortie_images, images, renommer, ".jpg"),
-            lambda s, d: uniquiser_image(s, d, filtre=filtre),
-            doit_arreter, progress, "image(s)")
-        echecs += e
-    if videos:
-        os.makedirs(sortie_videos, exist_ok=True)
-        plans_v = _planifier(sortie_videos, videos, renommer, ".mp4")
-        for i, (source, dest) in enumerate(plans_v, 1):
-            if doit_arreter and doit_arreter():
-                break
-            if progress:
-                try:
-                    progress(f"Vidéo {i}/{len(plans_v)} — {os.path.basename(source)}…")
-                except Exception:
-                    pass
-            try:
-                uniquiser_video(source, dest)
-                n_vid += 1
-            except Exception as e:
-                echecs.append(os.path.basename(source))
-                sys.stdout.write(f"   [!] {os.path.basename(source)} ignoré : {e}\n")
-    return {"medias": n_img + n_vid, "echecs": echecs}
+    etat = {"ok": 0, "echecs": [], "fait": 0, "total": len(images) + len(videos), "arrete": False}
+    _uniq_lot(images, os.path.join(dossier_sortie, "images"), videos,
+              os.path.join(dossier_sortie, "videos"), renommer, filtre, etat, progress, doit_arreter)
+    return {"medias": etat["ok"], "echecs": etat["echecs"], "arrete": etat["arrete"]}
 
 
 def _nb_travailleurs() -> int:
@@ -312,12 +361,14 @@ def _planifier(cible: str, sources: list, renommer: bool, ext: str) -> list:
 
 
 def _traiter_parallele(plans: list, fn, doit_arreter=None, progress=None,
-                       etiquette: str = "fichier(s)"):
+                       etiquette: str = "fichier(s)", rapport=None):
     """Applique fn(source, dest) à tous les plans, en parallèle sur les cœurs.
 
     Un fichier en erreur est ignoré (il n'arrête pas le lot) mais il est REMONTÉ.
     progress(texte) est appelé après chaque fichier (compteur protégé par verrou)
     pour que l'utilisateur voie l'avancement en direct.
+    rapport(k, total, nom) : variante qui reçoit les compteurs bruts (pour un texte
+    et une barre de progression personnalisés).
     Renvoie (nombre_traité, [noms des fichiers en échec]).
     """
     if not plans:
@@ -348,6 +399,11 @@ def _traiter_parallele(plans: list, fn, doit_arreter=None, progress=None,
             if progress:
                 try:
                     progress(f"{k}/{total} {etiquette}…")
+                except Exception:
+                    pass
+            if rapport:
+                try:
+                    rapport(k, total, os.path.basename(src))
                 except Exception:
                     pass
 
@@ -386,10 +442,11 @@ def uniquiser_arbre(dossier: str, dossier_sortie: str, renommer: bool = False,
     chaque image/vidéo uniquifiée. Les fichiers non-médias sont ignorés ; un
     sous-dossier sans média n'est pas recréé.
 
-    progress(texte) : appelé (thread-safe côté appelant) à l'entrée et à la fin
-        de chaque sous-dossier, pour un affichage vivant (« Dossier i/N … »).
-    doit_arreter() : si fourni et renvoie True, on s'arrête proprement.
-    Retourne {"medias": int, "dossiers": int, "arrete": bool}.
+    progress(texte, fraction) : « Dossier 2/3 — nom » + « Image 5/12 · photo.jpg »
+        (ou « Vidéo 1/4 · clip.mov — 43 % ») et la progression globale (0 → 1).
+    doit_arreter() : si fourni et renvoie True, on s'arrête proprement (même au
+        milieu d'une vidéo).
+    Retourne {"medias": int, "dossiers": int, "arrete": bool, "echecs": [noms]}.
     """
     if not os.path.isdir(dossier):
         raise RuntimeError(f"Dossier introuvable : {dossier}")
@@ -401,71 +458,31 @@ def uniquiser_arbre(dossier: str, dossier_sortie: str, renommer: bool = False,
                   if os.path.splitext(f)[1].lower() in (EXT_IMAGES | EXT_VIDEOS)]
         if medias:
             groupes.append((racine, medias))
-    groupes.sort(key=lambda g: g[0].lower())
+    groupes.sort(key=lambda g: (g[0] != dossier, g[0].lower()))   # dossier principal d'abord
     total_d = len(groupes)
     if total_d == 0:
         raise RuntimeError("Aucune image ni vidéo trouvée dans ce dossier.")
 
-    n_total = 0
-    arrete = False
-    echecs = []
+    etat = {"ok": 0, "echecs": [], "fait": 0, "arrete": False,
+            "total": sum(len(m) for _, m in groupes)}
     for i, (racine, medias) in enumerate(groupes, 1):
         if doit_arreter and doit_arreter():
-            arrete = True
+            etat["arrete"] = True
             break
         rel = os.path.relpath(racine, dossier)
-        nom_aff = "(dossier principal)" if rel == "." else rel
+        nom_aff = os.path.basename(os.path.abspath(dossier)) if rel == "." else rel
         cible = dossier_sortie if rel == "." else os.path.join(dossier_sortie, rel)
         os.makedirs(cible, exist_ok=True)
-        if progress:
-            try:
-                progress(f"Dossier {i}/{total_d} : {nom_aff} — en cours…")
-            except Exception:
-                pass
         images = [f for f in medias if os.path.splitext(f)[1].lower() in EXT_IMAGES]
         videos = [f for f in medias if os.path.splitext(f)[1].lower() in EXT_VIDEOS]
-        # Préfixe du message de progression : on garde le contexte du dossier,
-        # mais on affiche l'avancement FICHIER PAR FICHIER (sinon ça paraît figé).
-        prefixe = f"Dossier {i}/{total_d} · " if total_d > 1 else ""
-        avance = (lambda t: progress(prefixe + t)) if progress else None
-        # Images : en parallèle (plusieurs cœurs). Noms attribués avant -> pas de collision.
-        n_img, ech = _traiter_parallele(
-            _planifier(cible, images, renommer, ".jpg"),
-            lambda s, d: uniquiser_image(s, d, filtre=filtre),
-            doit_arreter, avance, "image(s)")
-        echecs += ech
-        # Vidéos : en séquentiel (ffmpeg sature déjà tous les cœurs à lui seul).
-        n_vid = 0
-        plans_v = _planifier(cible, videos, renommer, ".mp4")
-        for j, (source, dest) in enumerate(plans_v, 1):
-            if doit_arreter and doit_arreter():
-                arrete = True
-                break
-            if avance:
-                try:
-                    avance(f"vidéo {j}/{len(plans_v)} — {os.path.basename(source)}…")
-                except Exception:
-                    pass
-            try:
-                uniquiser_video(source, dest)
-                n_vid += 1
-            except Exception as e:
-                echecs.append(os.path.basename(source))
-                sys.stdout.write(f"   [!] {os.path.basename(source)} ignoré : {e}\n")
-        if doit_arreter and doit_arreter():
-            arrete = True
-        n_total += n_img + n_vid
-        print(f"[{i}/{total_d}] {nom_aff} : {n_img} image(s), {n_vid} vidéo(s)", flush=True)
-        if progress and not arrete:
-            try:
-                progress(f"Dossier {i}/{total_d} : {nom_aff} — terminé "
-                         f"({n_img + n_vid} média(s))")
-            except Exception:
-                pass
-        if arrete:
+        ok_avant = etat["ok"]
+        _uniq_lot(images, cible, videos, cible, renommer, filtre, etat, progress, doit_arreter,
+                  i, total_d, nom_aff)
+        print(f"[{i}/{total_d}] {nom_aff} : {etat['ok'] - ok_avant} média(s)", flush=True)
+        if etat["arrete"]:
             break
-    return {"medias": n_total, "dossiers": total_d, "arrete": arrete,
-            "echecs": echecs}
+    return {"medias": etat["ok"], "dossiers": total_d, "arrete": etat["arrete"],
+            "echecs": etat["echecs"]}
 
 
 # ======================================================================
@@ -494,31 +511,60 @@ def convertir_image_format(source: str, dossier_sortie: str, fmt: str = "jpg") -
     return _convertir_vers(source, _dest_libre(dossier_sortie, base), fmt)
 
 
+def _convertir_groupes(groupes: list, dossier_sortie: str, fmt: str, progress=None,
+                       doit_arreter=None) -> dict:
+    """Convertit des groupes [(nom_dossier, [images])] vers dossier_sortie (à plat).
+
+    progress(texte, fraction) : « Dossier 2/3 — nom » + « Image 5/12 · photo.heic »,
+    et la fraction globale (0 → 1) pour la barre de progression."""
+    os.makedirs(dossier_sortie, exist_ok=True)
+    ext = ".png" if str(fmt).lower() == "png" else ".jpg"
+    total = sum(len(imgs) for _, imgs in groupes)
+    n_ok, echecs, fait = 0, [], 0
+    for i, (nom, imgs) in enumerate(groupes, 1):
+        if doit_arreter and doit_arreter():
+            break
+
+        def rapport(k, t, fichier=None, i=i, nom=nom, base=fait):
+            if progress:
+                progress(progression.texte("Image", k, t, i, len(groupes), nom, fichier),
+                         (base + k) / max(1, total))
+        rapport(0, len(imgs))
+        # Noms attribués AVANT le traitement parallèle : aucune collision, y compris
+        # avec les groupes précédents (déjà écrits sur le disque).
+        plans = _planifier(dossier_sortie, imgs, False, ext)
+        n, ech = _traiter_parallele(plans, lambda s, d: _convertir_vers(s, d, fmt),
+                                    doit_arreter, None, "image(s)", rapport=rapport)
+        n_ok += n
+        echecs += ech
+        fait += len(imgs)
+    return {"images": n_ok, "echecs": echecs, "dossiers": len(groupes)}
+
+
 def convertir_images_fichiers(fichiers: list, dossier_sortie: str, fmt: str = "jpg",
                               progress=None, doit_arreter=None) -> dict:
     """Convertit une liste d'images vers dossier_sortie (en parallèle).
 
-    Renvoie {"images": int, "echecs": [noms]}.
+    progress(texte, fraction) : avancement. Renvoie {"images": int, "echecs": [noms]}.
     """
     imgs = [f for f in fichiers if os.path.splitext(f)[1].lower() in EXT_IMAGES]
-    os.makedirs(dossier_sortie, exist_ok=True)
-    ext = ".png" if str(fmt).lower() == "png" else ".jpg"
-    plans = _planifier(dossier_sortie, imgs, False, ext)
-    n, echecs = _traiter_parallele(plans, lambda s, d: _convertir_vers(s, d, fmt),
-                                   doit_arreter, progress, "image(s)")
-    return {"images": n, "echecs": echecs}
+    return _convertir_groupes([("", imgs)], dossier_sortie, fmt, progress, doit_arreter)
 
 
 def convertir_images_dossier(dossier: str, dossier_sortie: str, fmt: str = "jpg",
                              progress=None, doit_arreter=None) -> dict:
-    """Convertit toutes les images d'un dossier (et sous-dossiers) vers dossier_sortie."""
+    """Convertit toutes les images d'un dossier (et sous-dossiers) vers dossier_sortie.
+
+    La progression annonce le sous-dossier en cours (« Dossier 2/3 — nom »)."""
     if not os.path.isdir(dossier):
         raise RuntimeError(f"Dossier introuvable : {dossier}")
-    fichiers = []
+    groupes = []
     for racine, _sous, noms in os.walk(dossier):
-        for f in sorted(noms):
-            if os.path.splitext(f)[1].lower() in EXT_IMAGES:
-                fichiers.append(os.path.join(racine, f))
-    if not fichiers:
+        imgs = [os.path.join(racine, f) for f in sorted(noms)
+                if os.path.splitext(f)[1].lower() in EXT_IMAGES]
+        if imgs:
+            rel = os.path.relpath(racine, dossier)
+            groupes.append((os.path.basename(os.path.abspath(dossier)) if rel == "." else rel, imgs))
+    if not groupes:
         raise RuntimeError("Aucune image trouvée dans ce dossier.")
-    return convertir_images_fichiers(fichiers, dossier_sortie, fmt, progress, doit_arreter)
+    return _convertir_groupes(groupes, dossier_sortie, fmt, progress, doit_arreter)

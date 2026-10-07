@@ -1,0 +1,68 @@
+﻿END USER LICENSE AGREEMENT — HelpVA
+
+Please read this agreement carefully before installing HelpVA. By
+installing or using the software, you accept these terms. If you do
+not accept them, do not install the software.
+
+1. LICENSE
+HelpVA grants you a personal, non-exclusive, non-transferable right to
+use the software, for the duration and the number of computers covered
+by the license you obtained (monthly, yearly or lifetime). The software
+remains the property of HelpVA: it is licensed to you, not sold.
+
+2. ACTIVATION
+The software is activated with a code provided by HelpVA. Each
+activation is tied to one computer. A trial version may be limited in
+features or in the number of files processed.
+
+3. RESTRICTIONS
+You agree not to:
+- copy, resell, rent, lend or distribute the software or your
+  activation codes;
+- decompile, disassemble or modify the software, except where the law
+  allows it;
+- bypass or attempt to bypass the license system.
+
+4. YOUR CONTENT
+HelpVA processes your files on your computer, without modifying the
+originals. You alone are responsible for the files you process: you
+must hold the necessary rights to this content and comply with the
+terms of use of the platforms where you publish it.
+
+5. CONNECTION AND DATA
+The software processes your files without an Internet connection.
+However, it needs a connection to check your license: at startup and,
+for a subscription or a trial, regularly while in use. Without a
+connection, it keeps working for up to 3 days after the last successful
+check, whatever the license type, then asks for a connection.
+During these checks, it sends a technical fingerprint of the computer
+and a fingerprint of your license (and your code at activation). To
+check the date, it may also read the time from public servers (Google,
+Cloudflare, Microsoft, time servers). None of your media is sent to
+HelpVA.
+
+6. SUBSCRIPTION
+With a monthly or yearly license, the software works until the last
+day of the subscription included, then locks until it is renewed.
+Files already prepared remain yours.
+
+7. NO WARRANTY
+The software is provided "as is". To the extent permitted by law,
+HelpVA does not warrant that it is error-free or fit for a particular
+purpose. Always keep a copy of your original files.
+
+8. LIMITATION OF LIABILITY
+To the extent permitted by law, HelpVA shall not be liable for indirect
+damages (loss of data, revenue or accounts). Its total liability is
+limited to the amount you paid for the license.
+
+9. TERMINATION
+If you breach this agreement, HelpVA may suspend or terminate your
+license. You must then stop using the software.
+
+10. UPDATES
+HelpVA may provide updates. This agreement also applies to them, unless
+they come with a new agreement.
+
+11. CONTACT
+Licenses and support: Telegram @helpvaLicence (https://t.me/helpvaLicence)

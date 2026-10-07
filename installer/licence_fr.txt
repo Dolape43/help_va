@@ -1,0 +1,72 @@
+﻿CONTRAT DE LICENCE UTILISATEUR FINAL — HelpVA
+
+Veuillez lire attentivement ce contrat avant d'installer HelpVA. En
+installant ou en utilisant le logiciel, vous acceptez ces conditions.
+Si vous ne les acceptez pas, n'installez pas le logiciel.
+
+1. LICENCE
+HelpVA vous accorde un droit d'utilisation du logiciel, personnel, non
+exclusif et non transférable, pour la durée et le nombre d'ordinateurs
+prévus par la licence que vous avez obtenue (mensuelle, annuelle ou à
+vie). Le logiciel reste la propriété de HelpVA : il vous est concédé
+sous licence, il ne vous est pas vendu.
+
+2. ACTIVATION
+Le logiciel s'active avec un code fourni par HelpVA. Chaque activation
+est liée à un ordinateur. Une version d'essai peut être limitée en
+fonctionnalités ou en quantité de fichiers traités.
+
+3. RESTRICTIONS
+Vous vous engagez à ne pas :
+- copier, revendre, louer, prêter ou distribuer le logiciel ou vos codes
+  d'activation ;
+- décompiler, désassembler ou modifier le logiciel, sauf dans les cas
+  autorisés par la loi ;
+- contourner ou tenter de contourner le système de licence.
+
+4. VOS CONTENUS
+HelpVA traite vos fichiers sur votre ordinateur, sans modifier les
+originaux. Vous êtes seul responsable des fichiers que vous traitez :
+vous devez détenir les droits nécessaires sur ces contenus et respecter
+les conditions d'utilisation des plateformes où vous les publiez.
+
+5. CONNEXION ET DONNÉES
+Le logiciel traite vos fichiers sans connexion Internet. Il a toutefois
+besoin d'une connexion pour vérifier votre licence : au démarrage et,
+pour un abonnement ou un essai, régulièrement pendant l'utilisation.
+Sans connexion, il continue de fonctionner jusqu'à 3 jours après la
+dernière vérification réussie, quel que soit le type de licence, puis
+demande une connexion.
+Lors de ces vérifications, il transmet une empreinte technique de
+l'ordinateur et une empreinte de votre licence (ainsi que votre code
+lors de l'activation). Pour contrôler la date, il peut aussi lire
+l'heure sur des serveurs publics (Google, Cloudflare, Microsoft,
+serveurs de temps). Aucun de vos médias n'est envoyé à HelpVA.
+
+6. ABONNEMENT
+Pour une licence mensuelle ou annuelle, le logiciel fonctionne jusqu'au
+dernier jour inclus de l'abonnement, puis se bloque jusqu'au
+renouvellement. Les fichiers déjà préparés restent à vous.
+
+7. ABSENCE DE GARANTIE
+Le logiciel est fourni « en l'état ». Dans les limites permises par la
+loi, HelpVA ne garantit pas qu'il sera exempt d'erreurs ni adapté à un
+usage particulier. Conservez toujours une copie de vos fichiers
+originaux.
+
+8. LIMITATION DE RESPONSABILITÉ
+Dans les limites permises par la loi, HelpVA ne pourra être tenu
+responsable des dommages indirects (perte de données, de revenus ou de
+comptes). Sa responsabilité totale est limitée au montant que vous avez
+payé pour la licence.
+
+9. RÉSILIATION
+En cas de non-respect de ce contrat, HelpVA peut suspendre ou résilier
+votre licence. Vous devez alors cesser d'utiliser le logiciel.
+
+10. MISES À JOUR
+HelpVA peut proposer des mises à jour. Ce contrat s'applique aussi à
+elles, sauf si un nouveau contrat les accompagne.
+
+11. CONTACT
+Licences et assistance : Telegram @helpvaLicence (https://t.me/helpvaLicence)

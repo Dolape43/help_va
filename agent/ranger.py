@@ -21,6 +21,7 @@ import random
 import re
 import shutil
 
+from . import progression
 from .calendrier import charger_calendrier
 from .config import IMAGES_PAR_CAROUSEL
 
@@ -110,7 +111,8 @@ def ranger(sources: dict, dossier_sortie: str, types_actifs=None,
     types_actifs : types à ranger (les autres créneaux ne sont pas créés).
     aleatoire    : mélange les réels / stories / stories CTA ; les carrousels
                    gardent TOUJOURS l'ordre 1, 2, 3… (photos qui se suivent).
-    progress(txt): appelé pendant le rangement (texte d'avancement).
+    progress(texte, fraction): avancement, ex. « Semaine 1/3 — Jour 2 » +
+                   « Créneau 5/87 · 1_10h00_reel », et la fraction 0 → 1.
     """
     choisis = TYPES if types_actifs is None else types_actifs
     actifs = [t for t in TYPES if t in choisis]
@@ -140,16 +142,28 @@ def ranger(sources: dict, dossier_sortie: str, types_actifs=None,
     incomplets = {t: 0 for t in actifs}
     fait = 0
     arrete = False
+    n_semaines = len(calendrier)
 
-    for nom_semaine, jours in calendrier.items():
+    def dire(txt, frac):
+        if progress:
+            try:
+                progress(txt, max(0.0, min(1.0, frac)))
+            except Exception:
+                pass
+
+    for i_sem, (nom_semaine, jours) in enumerate(calendrier.items(), start=1):
         for nom_jour, creneaux in jours.items():
             du_jour = [cr for cr in creneaux if cr.get("type") in actifs]
+            # « jour-2 » -> « Jour 2 » pour l'affichage
+            jour_aff = nom_jour.replace("jour-", "Jour ").replace("jour_", "Jour ")
             for ordre, cr in enumerate(du_jour, start=1):
                 if doit_arreter and doit_arreter():
                     arrete = True
                     break
                 t = cr["type"]
                 slot = f"{ordre}_{cr.get('heure', '')}_{NOM_DOSSIER[t]}"
+                dire(progression.texte("Créneau", fait + 1, total, i_sem, n_semaines, jour_aff, slot,
+                                       groupe="Semaine", toujours=True), fait / max(1, total))
                 dossier_slot = os.path.join(dossier_sortie, nom_semaine, nom_jour, slot)
                 os.makedirs(dossier_slot, exist_ok=True)
                 if t in ("reel", "carousel"):
@@ -169,8 +183,6 @@ def ranger(sources: dict, dossier_sortie: str, types_actifs=None,
                     incomplets[t] += 1
 
                 fait += 1
-                if progress:
-                    progress(f"Rangement : {fait}/{total} créneau(x)")
             if arrete:
                 break
         if arrete:
@@ -179,13 +191,22 @@ def ranger(sources: dict, dossier_sortie: str, types_actifs=None,
     # Surplus : médias non utilisés -> surplus/<type>
     surplus = {}
     if not arrete:
+        restes = {t: list(iterateurs[t]) for t in actifs}
+        n_reste = sum(len(r) for r in restes.values())
+        k = 0
         for t in actifs:
-            reste = list(iterateurs[t])
-            if reste:
+            if restes[t]:
                 d = os.path.join(dossier_sortie, "surplus", LIBELLES[t])
-                for f in reste:
+                for f in restes[t]:
+                    if doit_arreter and doit_arreter():
+                        arrete = True
+                        break
+                    k += 1
+                    dire(progression.texte("Média en trop", k, n_reste, fichier=os.path.basename(f)), 1.0)
                     _copier(f, d)
-            surplus[t] = len(reste)
+            surplus[t] = len(restes[t])
+            if arrete:
+                break
 
     manques = {t: max(0, besoins[t] * medias_par_creneau(t) - len(medias[t]))
                for t in actifs}

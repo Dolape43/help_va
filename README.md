@@ -153,7 +153,9 @@ agent/
 assets/                 Logo (png / ico / icns), icônes, polices, tutoriel
 web/admin.html          Tableau de bord vendeur
 supabase/functions/     Fonction serveur des licences
-HelpVA.spec             Build Windows (PyInstaller)
+HelpVA.spec             Build Windows (PyInstaller, mode dossier)
+installer/              Installeur Windows (Inno Setup) : script, contrat de licence FR/EN, images
+tools/build_setup.ps1   Build Windows complet -> dist/HelpVA-Setup-<version>.exe
 HelpVA_mac.spec         Build macOS
 HelpVA_linux.spec       Build Linux (voir tools/build_linux.sh)
 BUILD_MAC.md            Guide de build sur Mac
@@ -172,7 +174,15 @@ python app_ctk.py
 
 ## Construction (exe / .app)
 
-- **Windows** : `pyinstaller --noconfirm --clean HelpVA.spec` → `dist/HelpVA.exe`
+- **Windows (installeur)** : `powershell -ExecutionPolicy Bypass -File tools\build_setup.ps1`
+  → `dist/HelpVA-Setup-<version>.exe`. C'est **ce fichier** qu'on envoie aux clients.
+  - Assistant d'installation en français ou en anglais selon la langue de Windows (sinon, l'utilisateur choisit), clair ou sombre, avec contrat de licence.
+  - Installe **sans droits administrateur** dans `%LOCALAPPDATA%\Programs\HelpVA` (ou pour tous les utilisateurs, au choix).
+  - Crée un raccourci dans le menu Démarrer et, en option, sur le Bureau. Désinstallation dans Paramètres > Applications.
+  - Une nouvelle version s'installe **par-dessus** l'ancienne. Licence et réglages (`%APPDATA%\HelpVA`) sont conservés, même après désinstallation.
+  - Prérequis : [Inno Setup 7](https://jrsoftware.org/isdl.php). Avant chaque version : changer `VERSION` dans `agent/version.py`.
+  - Images de l'assistant : `python tools/images_installeur.py` (à relancer si le logo change).
+  - Build seul, sans installeur : `pyinstaller --noconfirm --clean HelpVA.spec` → dossier `dist/HelpVA/`.
 - **macOS** (à faire sur un Mac) : voir [`BUILD_MAC.md`](BUILD_MAC.md)
 - **Linux** (sous Linux ou WSL) : `bash tools/build_linux.sh` → `dist/HelpVA-x86_64.AppImage`, voir [`BUILD_LINUX.md`](BUILD_LINUX.md)
 
