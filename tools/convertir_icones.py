@@ -5,7 +5,7 @@ Convertit les SVG déposés dans  assets/icons_svg/  en PNG haute résolution
 
 Usage :
     python tools/convertir_icones.py            # convertit tous les .svg
-    python tools/convertir_icones.py drive tag  # seulement ceux-là
+    python tools/convertir_icones.py folder tag  # seulement ceux-là
 
 Rendu via Microsoft Edge (headless, fidèle à n'importe quel SVG, y compris
 duotone/dégradés), puis le fond blanc est rendu transparent (remplissage

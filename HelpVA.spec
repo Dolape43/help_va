@@ -44,18 +44,17 @@ binaries = []
 # Modules importés "à la demande" -> on les force.
 hiddenimports = [
     'agent.horloge', 'agent.licence', 'agent.version', 'agent.emplacement',
-    'agent.config', 'agent.parametres', 'agent.drive', 'agent.calendrier',
+    'agent.config', 'agent.parametres', 'agent.calendrier',
     'agent.ranger', 'agent.unicite', 'agent.conversion',
-    'agent.polices', 'agent.progression', 'gdown',
+    'agent.polices', 'agent.progression',
 ]
 
 # Paquets à embarquer entièrement :
 #  - customtkinter : la nouvelle interface (thèmes/assets internes)
 #  - cryptography : vérification de la licence (Ed25519)
 #  - imageio_ffmpeg : binaire ffmpeg pour l'uniquisation vidéo
-#  - gdown : téléchargement Google Drive (repli)
 #  - pillow_heif : lecture des photos iPhone (.heic/.heif) -> binaires natifs
-for paquet in ('customtkinter', 'cryptography', 'imageio_ffmpeg', 'gdown',
+for paquet in ('customtkinter', 'cryptography', 'imageio_ffmpeg',
                'pillow_heif'):
     d, b, h = collect_all(paquet)
     datas += d

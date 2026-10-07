@@ -10,12 +10,12 @@ datas = [
 binaries = []
 hiddenimports = [
     'agent.horloge', 'agent.licence', 'agent.version', 'agent.emplacement',
-    'agent.config', 'agent.parametres', 'agent.drive', 'agent.calendrier',
+    'agent.config', 'agent.parametres', 'agent.calendrier',
     'agent.ranger', 'agent.unicite', 'agent.conversion',
-    'agent.polices', 'agent.progression', 'gdown', 'PIL._tkinter_finder',
+    'agent.polices', 'agent.progression', 'PIL._tkinter_finder',
 ]
 
-for paquet in ('customtkinter', 'cryptography', 'imageio_ffmpeg', 'gdown',
+for paquet in ('customtkinter', 'cryptography', 'imageio_ffmpeg',
                'pillow_heif'):
     d, b, h = collect_all(paquet)
     datas += d

@@ -148,7 +148,6 @@ agent/
 ├── emplacement.py      Dossier des données (AppData / Application Support)
 ├── polices.py          Chargement de la police Poppins
 ├── config.py           Réglages (carrousels, Supabase…)
-├── drive.py            Ancien module Google Drive (masqué dans l'interface)
 └── version.py
 assets/                 Logo (png / ico / icns), icônes, polices, tutoriel
 web/admin.html          Tableau de bord vendeur

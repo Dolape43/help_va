@@ -23,8 +23,7 @@ from tkinter import font as tkfont
 
 from agent import parametres, licence, version
 from agent import ranger as rangement
-from agent import unicite, calendrier, conversion, progression
-from agent import drive
+from agent import unicite, calendrier, conversion
 
 # Re-contrôle de l'abonnement quand l'app reste ouverte (réglable pour tests).
 # Toutes les 1 h : vérifie en ligne l'état de la licence (résiliation/expiration).
@@ -444,11 +443,6 @@ class App(ctk.CTk):
                     d.ellipse([0.28 * S, 0.18 * S, 0.72 * S, 0.62 * S], outline=col, width=lw)
                     d.line([(0.42 * S, 0.64 * S), (0.58 * S, 0.64 * S)], fill=col, width=lw)
                     d.line([(0.44 * S, 0.72 * S), (0.56 * S, 0.72 * S)], fill=col, width=lw)
-                elif nom == "drive":   # téléchargement : flèche bas + bac
-                    d.line([(0.5 * S, 0.22 * S), (0.5 * S, 0.58 * S)], fill=col, width=lw)
-                    d.line([(0.34 * S, 0.44 * S), (0.5 * S, 0.60 * S), (0.66 * S, 0.44 * S)],
-                           fill=col, width=lw, joint="curve")
-                    d.line([(0.26 * S, 0.74 * S), (0.74 * S, 0.74 * S)], fill=col, width=lw)
                 elif nom == "sun":
                     d.ellipse([0.36 * S, 0.36 * S, 0.64 * S, 0.64 * S], outline=col, width=lw)
                     for i in range(8):
@@ -970,34 +964,6 @@ class App(ctk.CTk):
                 pass
         elif tag == "verif_licence":
             self._traiter_verif(item[1])
-        elif tag == "drive_apercu":
-            self._cacher_loading()
-            _, vignettes, total = item
-            self._popup_apercu_drive(vignettes, total)
-        elif tag == "drive_fini":
-            self._cacher_loading()
-            _, sortie, ni, nv, err, bloque = item
-            if bloque:
-                messagebox.showwarning(
-                    "Google a bloqué votre réseau",
-                    "⛔ Google a TEMPORAIREMENT bloqué les téléchargements depuis "
-                    "votre connexion internet.\n\n"
-                    "POURQUOI : trop de téléchargements en peu de temps depuis la même "
-                    "adresse IP → Google te prend pour un robot (« automated queries »). "
-                    "Ce n'est PAS un bug, ni un problème de partage de vos dossiers.\n\n"
-                    "SOLUTIONS :\n"
-                    "1) Change de connexion : partage 4G du téléphone, ou un VPN "
-                    "(nouvelle IP → ça remarche tout de suite).\n"
-                    "2) Ou attends (le blocage se lève tout seul, souvent quelques "
-                    "heures).\n\n"
-                    f"({ni} image(s) et {nv} vidéo(s) déjà récupérées avant le blocage.)")
-                return
-            msg = (f"✅ Téléchargé : {ni} image(s) et {nv} vidéo(s).\n\n"
-                   f"Dossier :\n{sortie}\n(sous-dossiers images\\ et videos\\)\n\n"
-                   "Vous pouvez maintenant l'utiliser pour Ranger ou Changer les métadonnées.")
-            if err:
-                msg += f"\n\n⚠️ {err} fichier(s) en échec."
-            messagebox.showinfo("Google Drive", msg)
         elif tag == "popup":
             self._cacher_loading()
             _, titre, msg, err = item
@@ -1138,7 +1104,7 @@ class App(ctk.CTk):
                           hover_color="#F8D7D5",
                           command=self._annuler_tache).pack(pady=(16, 8))
         # PAS de grab_set ici : l'écran de chargement d'une opération LONGUE
-        # (téléchargement Drive…) ne doit pas verrouiller l'app, sinon réduire
+        # (conversion de nombreuses vidéos…) ne doit pas verrouiller l'app, sinon réduire
         # puis rouvrir depuis la barre des tâches ne marche plus. `self.occupe`
         # empêche déjà de lancer deux tâches en même temps.
         self._modale_devant(self._loading)
@@ -1960,246 +1926,6 @@ class App(ctk.CTk):
             res["arrete"] = bool(self._annule_tache)
             self._fin_traitement("Images converties", res, sortie, f"image(s) en .{fmt}")
         self._tache(job, f"Conversion des images en .{fmt}…", annulable=True)
-
-    # ==================================================================
-    #  Page : Télécharger depuis Google Drive
-    # ==================================================================
-    def _page_drive(self):
-        self._entete_page("Télécharger depuis Google Drive",
-                          "Récupère les médias d'un dossier Drive partagé, classés par type.")
-
-        # ---------- Encart info : partage requis + rangement ----------
-        info = self._carte(pad=18)
-        info_row = ctk.CTkFrame(info, fg_color="transparent")
-        info_row.pack(fill="x")
-        self._badge(info_row, "drive", taille=46).pack(side="left", padx=(0, 14))
-        info_txt = ctk.CTkFrame(info_row, fg_color="transparent")
-        info_txt.pack(side="left", fill="x", expand=True)
-        ctk.CTkLabel(info_txt, text="Avant de commencer", font=(POLICE, 14, "bold"),
-                     text_color=TEXT).pack(anchor="w")
-        ctk.CTkLabel(
-            info_txt, justify="left", font=(POLICE, 13), text_color=MUTED,
-            text="Le dossier Google Drive doit être partagé « Tous les utilisateurs disposant\n"
-                 "du lien ». Les médias seront rangés dans les sous-dossiers images et videos\n"
-                 "— prêts pour Ranger ou Changer les métadonnées.").pack(anchor="w", pady=(2, 0))
-        ctk.CTkButton(info_txt, text="Comment rendre un dossier Drive public ?  →",
-                      command=self._popup_tuto_drive, height=28, anchor="w",
-                      fg_color="transparent", text_color=ACCENT_HOVER,
-                      hover_color=ACCENT_SOFTER, corner_radius=8,
-                      font=(POLICE, 13, "bold")).pack(anchor="w", pady=(6, 0))
-
-        # ---------- Étape 1 : coller le(s) lien(s) ----------
-        c1 = self._carte()
-        self._entete_etape(c1, 1, "Coller le(s) lien(s)",
-                           "Le lien de partage du dossier Google Drive.")
-        self.champ_drive = ctk.CTkTextbox(c1, height=90, font=(POLICE, 13), corner_radius=10)
-        self.champ_drive.pack(fill="x", pady=(16, 0))
-        ctk.CTkLabel(c1, text="Un lien par ligne : ils sont téléchargés l'un après l'autre, "
-                              "dans le même dossier de sortie.",
-                     font=(POLICE, 11), text_color=MUTED).pack(anchor="w", pady=(3, 0))
-
-        # ---------- Étape 2 : options de téléchargement ----------
-        c2 = self._carte()
-        self._entete_etape(c2, 2, "Options de téléchargement",
-                           "Ce que vous prenez, dans quel ordre, et combien.")
-
-        ctk.CTkLabel(c2, text="Que télécharger ?", font=(POLICE, 13, "bold"),
-                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(16, 4))
-        self.seg_drive = ctk.CTkSegmentedButton(c2, values=["Images", "Vidéos", "Les deux"],
-                                                selected_color=ACCENT_HOVER,
-                                                selected_hover_color="#4A3FCC", font=(POLICE, 14))
-        self.seg_drive.set("Les deux")
-        self.seg_drive.pack(anchor="w")
-
-        ctk.CTkLabel(c2, text="Ordre", font=(POLICE, 13, "bold"),
-                     text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
-        self.seg_tri_drive = ctk.CTkSegmentedButton(c2, values=["Plus récents", "Par nom"],
-                                                    selected_color=ACCENT_HOVER,
-                                                    selected_hover_color="#4A3FCC", font=(POLICE, 14))
-        self.seg_tri_drive.set("Plus récents")
-        self.seg_tri_drive.pack(anchor="w")
-        ctk.CTkLabel(c2, text="« Plus récents » : prend d'abord les médias les plus "
-                              "récemment ajoutés.",
-                     font=(POLICE, 11), text_color=MUTED).pack(anchor="w", pady=(3, 0))
-
-        ctk.CTkLabel(c2, text="Combien de médias prendre ? (vide = tout)",
-                     font=(POLICE, 13, "bold"), text_color=ACCENT_HOVER).pack(anchor="w", pady=(14, 4))
-        self.champ_nb_drive = ctk.CTkEntry(c2, width=160, height=42, font=(POLICE, 14),
-                                           placeholder_text="Ex : 35  (ou vide)")
-        self.champ_nb_drive.pack(anchor="w")
-
-        # ---------- Actions : aperçu (secondaire) + télécharger (primaire pleine largeur) ----------
-        action = ctk.CTkFrame(self.contenu, fg_color="transparent")
-        action.pack(fill="x", padx=36, pady=(14, 2))
-        row = ctk.CTkFrame(action, fg_color="transparent")
-        row.pack(fill="x", pady=(0, 10))
-        self._btn(row, "Voir le contenu", self._apercu_drive).pack(side="left")
-        self._btn(action, "Télécharger  →", self._importer_drive, primaire=True).pack(fill="x")
-        ctk.CTkLabel(
-            action, justify="left", font=(POLICE, 11, "bold"), text_color=MUTED,
-            text="Résultat dans « telechargement drive » (sous-dossiers images\\ et videos\\)."
-        ).pack(anchor="w", pady=(8, 0))
-
-        self._zone_journal()
-
-    def _popup_tuto_drive(self):
-        """Mini-tuto en images : rendre un dossier Google Drive public."""
-        top = ctk.CTkToplevel(self)
-        top.title("Rendre un dossier Drive public")
-        ajuster_fenetre(top, 700, 660, parent=self)
-        top.configure(fg_color=BG)
-        top.transient(self)
-        self._modale_devant(top)
-        top.after(200, lambda: top.winfo_exists() and top.grab_set())
-
-        cont = ctk.CTkScrollableFrame(top, fg_color=BG)
-        cont.pack(fill="both", expand=True, padx=18, pady=16)
-        ctk.CTkLabel(cont, text="Rendre un dossier Google Drive public",
-                     font=(POLICE, 20, "bold"), text_color=TEXT).pack(anchor="w")
-        ctk.CTkLabel(cont, text="Deux étapes, directement dans Google Drive :",
-                     font=(POLICE, 13), text_color=MUTED).pack(anchor="w", pady=(2, 14))
-
-        self._tuto_imgs = []
-        etapes = [
-            (1, "Clic droit sur le dossier → Partager → Partager", "drive_etape1.png"),
-            (2, "Accès général → « Tous les utilisateurs disposant du lien »", "drive_etape2.png"),
-            (3, "Ouvrez le dossier, puis copiez le lien dans la barre d'adresse (encadré en rouge)", "drive_etape3.png"),
-        ]
-        for num, titre, fichier in etapes:
-            self._entete_etape(cont, num, titre)
-            try:
-                from PIL import Image
-                im = Image.open(chemin_ressource(os.path.join("assets", "tuto", fichier)))
-                w, h = im.size
-                lw = min(620, w)
-                img = ctk.CTkImage(im, size=(lw, int(h * lw / w)))
-                self._tuto_imgs.append(img)
-                ctk.CTkLabel(cont, image=img, text="").pack(anchor="w", pady=(10, 20))
-            except Exception:
-                ctk.CTkLabel(cont, text="(image indisponible)", font=(POLICE, 12),
-                             text_color=MUTED).pack(anchor="w", pady=(6, 16))
-
-        ctk.CTkButton(cont, text="J'ai compris", command=top.destroy, height=44,
-                      corner_radius=12, fg_color=ACCENT_HOVER, hover_color="#4A3FCC",
-                      font=(POLICE, 15, "bold")).pack(fill="x", pady=(4, 6))
-
-    def _liens_drive(self):
-        """Liste des liens Drive saisis (un par ligne, vides ignorés)."""
-        txt = self.champ_drive.get("1.0", "end")
-        return [l.strip() for l in txt.splitlines() if l.strip()]
-
-    def _apercu_drive(self):
-        liens = self._liens_drive()
-        if not liens:
-            messagebox.showwarning("Google Drive", "Collez d'abord au moins un lien de dossier partagé.")
-            return
-        lien = liens[0]   # l'aperçu se base sur le PREMIER lien
-        choix = self.seg_drive.get()
-        prendre = {"Images": {"images"}, "Vidéos": {"videos"},
-                   "Les deux": {"images", "videos"}}.get(choix, {"images", "videos"})
-        txt_nb = self.champ_nb_drive.get().strip()
-        limite = int(txt_nb) if (txt_nb.isdigit() and int(txt_nb) > 0) else None
-        tri = "recent" if self.seg_tri_drive.get() == "Plus récents" else "nom"
-
-        def job():
-            import tempfile
-            items = drive.lister_apercu(lien, prendre, limite, tri=tri)
-            cap = items[:40]
-            print(f"Chargement de l'aperçu ({len(cap)} vignette(s))…")
-            vignettes = []
-            for i, it in enumerate(cap, 1):
-                tmp = os.path.join(tempfile.gettempdir(), f"helpva_thumb_{i}.jpg")
-                ok = drive.telecharger_vignette(it["id"], tmp)
-                vignettes.append((i, it["est_video"], tmp if ok else None))
-            self.file_log.put(("drive_apercu", vignettes, len(items)))
-        self._tache(job, "Chargement de l'aperçu…")
-
-    def _popup_apercu_drive(self, vignettes, total):
-        top = ctk.CTkToplevel(self)
-        top.title("Aperçu Google Drive")
-        ajuster_fenetre(top, 790, 650, parent=self)
-        top.configure(fg_color=BG)
-        top.transient(self)
-        self._modale_devant(top)
-        top.after(200, lambda: top.winfo_exists() and top.grab_set())
-        ctk.CTkLabel(top, text=f"Aperçu — {total} média(s) dans le dossier",
-                     font=(POLICE, 19, "bold"), text_color=TEXT).pack(pady=(16, 2))
-        if total > 40:
-            ctk.CTkLabel(top, text="(aperçu des 40 premiers)", font=(POLICE, 12),
-                         text_color=MUTED).pack()
-        sc = ctk.CTkScrollableFrame(top, fg_color="transparent")
-        sc.pack(fill="both", expand=True, padx=16, pady=12)
-        self._thumb_refs = []
-        from PIL import Image
-        col = 5
-        for idx, (num, est_video, path) in enumerate(vignettes):
-            cell = ctk.CTkFrame(sc, fg_color=CARD, corner_radius=10,
-                                border_width=1, border_color=BORDER)
-            cell.grid(row=idx // col, column=idx % col, padx=6, pady=6)
-            try:
-                if path and os.path.isfile(path):
-                    img = Image.open(path)
-                    img.thumbnail((120, 120))
-                    cimg = ctk.CTkImage(img, size=img.size)
-                    self._thumb_refs.append(cimg)
-                    ctk.CTkLabel(cell, image=cimg, text="").pack(padx=8, pady=(8, 2))
-                else:
-                    ctk.CTkLabel(cell, text=("vidéo" if est_video else "image"),
-                                 font=(POLICE, 13), text_color=MUTED).pack(padx=28, pady=(26, 2))
-            except Exception:
-                ctk.CTkLabel(cell, text="?", font=(POLICE, 20)).pack(padx=28, pady=26)
-            ctk.CTkLabel(cell, text=f"{'vidéo' if est_video else 'image'} {num}",
-                         font=(POLICE, 11), text_color=MUTED).pack(pady=(0, 8))
-
-    def _importer_drive(self):
-        liens = self._liens_drive()
-        if not liens:
-            messagebox.showwarning("Google Drive", "Collez d'abord au moins un lien de dossier partagé.")
-            return
-        choix = self.seg_drive.get()
-        prendre = {"Images": {"images"}, "Vidéos": {"videos"},
-                   "Les deux": {"images", "videos"}}.get(choix, {"images", "videos"})
-        txt_nb = self.champ_nb_drive.get().strip()
-        limite = None
-        if txt_nb:
-            if not txt_nb.isdigit() or int(txt_nb) <= 0:
-                messagebox.showwarning("Nombre", "Entre un nombre valide (ex : 35), ou laisse vide pour tout.")
-                return
-            limite = int(txt_nb)
-        sortie = os.path.join(self.dossier_sortie(), "telechargement drive")
-        tri = "recent" if self.seg_tri_drive.get() == "Plus récents" else "nom"
-
-        def job():
-            n = len(liens)
-            print(f"Téléchargement de {n} dossier(s) Drive…")
-            total_i = total_v = total_err = 0
-            bloque = False
-            for idx, lien in enumerate(liens, 1):
-                if self._annule_tache:
-                    print("⛔ Annulé — dossiers suivants ignorés.")
-                    break
-                print(f"\n=== Dossier {idx}/{n} ===")
-
-                def prog(i, total, nom, idx=idx):
-                    print(f"  [{i}/{total}] {nom}")
-                    self.file_log.put(("uniq_progres",
-                                       progression.texte("Fichier", i, total, idx, n, f"Lien {idx}", nom),
-                                       ((idx - 1) + i / max(1, total)) / n))
-                try:
-                    ni, nv, err = drive.telecharger_dossier(
-                        lien, sortie, prendre=prendre, limite=limite, progress=prog,
-                        tri=tri, doit_arreter=lambda: self._annule_tache)
-                    total_i += ni; total_v += nv; total_err += err
-                    print(f"  → Dossier {idx} : {ni} image(s), {nv} vidéo(s), {err} erreur(s)")
-                except drive.BlocageGoogleError:
-                    bloque = True
-                    print("  ⛔ Google a bloqué les téléchargements depuis votre réseau.")
-                    break   # inutile de continuer, tout échouera
-                except Exception as e:
-                    print(f"  ❌ Dossier {idx} échoué : {e}")
-                    total_err += 1
-            self.file_log.put(("drive_fini", sortie, total_i, total_v, total_err, bloque))
-        self._tache(job, "Téléchargement Google Drive…", annulable=True)
 
     # ==================================================================
     #  Page : Paramètres

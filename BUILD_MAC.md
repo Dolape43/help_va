@@ -21,7 +21,7 @@ python3 -m venv venv
 source venv/bin/activate
 python3 -m pip install --upgrade pip
 python3 -m pip install pyinstaller customtkinter cryptography imageio-ffmpeg \
-    gdown pillow pillow-heif numpy requests
+    pillow pillow-heif numpy requests
 ```
 
 (Le `venv` isole les paquets — recommandé. Une fois activé, ton terminal affiche `(venv)`.)
