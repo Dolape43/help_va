@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { Check, FolderOpen, StopCircle, Warning } from "@phosphor-icons/react";
-import { Bouton } from "../ui";
+import { FolderOpen, StopCircle, Warning } from "@phosphor-icons/react";
+import { Bouton, Icone3D } from "../ui";
+import { ICONES_3D } from "../../icones3d";
 
 /**
  * Ce qui RESTE à l'écran après le traitement (la notification, elle, disparaît) :
@@ -40,9 +41,7 @@ export default function CarteResultat({
           <StopCircle weight="fill" className="h-5 w-5" aria-hidden="true" />
         </span>
       ) : (
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-btn text-white shadow-[0_8px_18px_-8px_rgba(76,111,255,0.9)]">
-          <Check weight="bold" className="h-5 w-5" aria-hidden="true" />
-        </span>
+        <Icone3D src={ICONES_3D.succes} taille={44} />
       )}
       <div className="min-w-[180px] flex-1">
         <p className="text-14 font-semibold">{titre}</p>

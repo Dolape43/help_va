@@ -193,3 +193,35 @@ export function Segments<T extends string>({
     </fieldset>
   );
 }
+
+/**
+ * Une icône 3D (image à fond transparent, voir icones3d.ts), avec une ombre douce qui la pose
+ * sur la page. Décorative : le texte à côté dit déjà ce qu'elle représente.
+ */
+export function Icone3D({ src, taille = 40, className = "" }: { src: string; taille?: number; className?: string }) {
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      width={taille}
+      height={taille}
+      draggable={false}
+      className={`shrink-0 select-none object-contain drop-shadow-[0_6px_12px_rgba(9,9,11,0.16)] dark:drop-shadow-[0_8px_16px_rgba(0,0,0,0.55)] ${className}`}
+      style={{ width: taille, height: taille }}
+    />
+  );
+}
+
+/** Une icône 3D dans une tuile arrondie, comme les icônes des cartes de modules de l'accueil. */
+export function Tuile3D({ src, taille = 48 }: { src: string; taille?: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="grid shrink-0 place-items-center rounded-[14px] border border-line bg-[linear-gradient(180deg,var(--surface-2),var(--surface))]"
+      style={{ width: taille, height: taille }}
+    >
+      <Icone3D src={src} taille={Math.round(taille * 0.74)} />
+    </span>
+  );
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { GearSix, House } from "@phosphor-icons/react";
+import { House } from "@phosphor-icons/react";
+import { ICONES_3D } from "../icones3d";
 import SelecteurTheme from "./SelecteurTheme";
 import logo from "../assets/logo.png";
 import { MODULES, type CleModule } from "../modules";
@@ -101,7 +102,7 @@ export default function Sidebar({
         <Lien
           actif={page === "parametres"}
           onClick={() => aller("parametres")}
-          icone={<GearSix weight={page === "parametres" ? "fill" : "regular"} className={ico(page === "parametres")} />}
+          icone={<img src={ICONES_3D.parametres} alt="" className="h-[18px] w-[18px] object-contain" />}
         >
           Paramètres
         </Lien>

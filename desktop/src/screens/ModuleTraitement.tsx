@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { ArrowRight, FolderOpen, FolderSimpleStar, Warning, type Icon } from "@phosphor-icons/react";
-import { Bouton, Rouage, Surtitre } from "../components/ui";
+import { ArrowRight, FolderOpen, Warning, type Icon } from "@phosphor-icons/react";
+import { Bouton, Icone3D, Rouage, Surtitre } from "../components/ui";
+import { ICONES_3D } from "../icones3d";
 import EnteteModule from "../components/EnteteModule";
 import Dialogue from "../components/Dialogue";
 import CarteProgression from "../components/module/CarteProgression";
@@ -110,12 +111,9 @@ export default function ModuleTraitement({
           </div>
           {s ? (
             <div className="mt-3 flex items-center gap-3 rounded-xl border border-brand/20 bg-brand-soft p-3.5">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-surface text-brand-text shadow-[0_0_0_1px_var(--line)]">
-                {s.source.type === "dossier" ? (
-                  <FolderSimpleStar weight="duotone" className="h-5 w-5" aria-hidden="true" />
-                ) : (
-                  <IconeFichiers weight="duotone" className="h-5 w-5" aria-hidden="true" />
-                )}
+              {/* Un dossier : l'icône 3D du dossier ; des fichiers choisis : l'icône 3D du module. */}
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[12px] bg-surface shadow-[0_0_0_1px_var(--line)]">
+                <Icone3D src={s.source.type === "dossier" ? ICONES_3D.dossier : mod.icone} taille={34} />
               </span>
               <div className="min-w-0 flex-1">
                 <Surtitre>Source sélectionnée</Surtitre>

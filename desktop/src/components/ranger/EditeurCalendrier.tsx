@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowCounterClockwise, CalendarBlank, Copy, FloppyDisk, Plus, Trash, Warning, X } from "@phosphor-icons/react";
-import { Bouton, Rouage } from "../ui";
+import { ArrowCounterClockwise, Copy, FloppyDisk, Plus, Trash, Warning, X } from "@phosphor-icons/react";
+import { Bouton, Icone3D, Rouage } from "../ui";
+import { ICONES_3D } from "../../icones3d";
 import Dialogue from "../Dialogue";
 import { TYPES_POST, type Calendrier, type Moteur, type TypePost, type VueCalendrier } from "../../engine/api";
 import { fr, pluriel } from "../../fr";
@@ -255,9 +256,7 @@ export default function EditeurCalendrier({
       <div className="flex h-[min(86vh,820px)] w-[min(820px,calc(100vw-48px))] flex-col overflow-hidden rounded-[20px] border border-line bg-surface shadow-pop">
         {/* En-tête */}
         <div className="flex items-start gap-4 border-b border-line px-6 pb-4 pt-5">
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-brand/15 bg-brand-soft text-brand-text" aria-hidden="true">
-            <CalendarBlank weight="duotone" className="h-6 w-6" />
-          </span>
+          <Icone3D src={ICONES_3D.calendrier} taille={48} />
           <div className="min-w-0 flex-1">
             <h2 id={idTitre} className="text-20 font-semibold">
               Ajuster le calendrier

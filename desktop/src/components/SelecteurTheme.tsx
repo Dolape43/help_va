@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent } from "react";
-import { Moon, Sun } from "@phosphor-icons/react";
+import { ICONES_3D } from "../icones3d";
 import type { Theme } from "../App";
 
 /**
@@ -38,11 +38,19 @@ export default function SelecteurTheme({ theme, setTheme }: { theme: Theme; setT
           onKeyDown={fleche}
           aria-label={t === "light" ? "Thème clair" : "Thème sombre"}
           onClick={() => setTheme(t)}
-          className={`relative z-10 grid h-6 w-6 place-items-center rounded-md transition-colors duration-150 ${
+          className={`group relative z-10 grid h-6 w-6 place-items-center rounded-md transition-colors duration-150 ${
             theme === t ? "text-fg" : "text-fg-3 hover:text-fg-2"
           }`}
         >
-          {t === "light" ? <Sun weight="bold" className="h-3.5 w-3.5" /> : <Moon weight="bold" className="h-3.5 w-3.5" />}
+          {/* Le choix inactif est grisé : on voit tout de suite quel thème est en place. */}
+          <img
+            src={t === "light" ? ICONES_3D.soleil : ICONES_3D.lune}
+            alt=""
+            draggable={false}
+            className={`h-[18px] w-[18px] object-contain transition-[filter,opacity] duration-150 ${
+              theme === t ? "" : "opacity-45 grayscale group-hover:opacity-80"
+            }`}
+          />
         </button>
       ))}
     </div>

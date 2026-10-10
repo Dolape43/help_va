@@ -258,7 +258,9 @@ export default function App() {
 
   /* ---------- Licence : écrans du portail ---------- */
   // DEV : pont lancé avec --sans-licence → la licence n'est pas exigée (badge visible). Jamais livré.
-  const contournee = import.meta.env.DEV && !!m.info?.licence_contournee_dev;
+  // « ?avec-licence » dans l'adresse : on voit quand même les vrais écrans de licence (tests).
+  const contournee =
+    import.meta.env.DEV && !!m.info?.licence_contournee_dev && !new URLSearchParams(location.search).has("avec-licence");
   const premierLancement = m.parametres === null ? null : m.parametres.deja_demarre !== true;
   const [bienvenueVue, setBienvenueVue] = useState(false);
   const ecranL = ecranLicence({

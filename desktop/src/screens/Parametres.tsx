@@ -1,5 +1,6 @@
-import { ArrowCounterClockwise, ArrowSquareOut, FolderSimple, IdentificationCard, PencilSimple, WarningCircle } from "@phosphor-icons/react";
-import { Bouton, Carte, PastilleIcone, Rouage, Surtitre, TitrePage } from "../components/ui";
+import { ArrowCounterClockwise, ArrowSquareOut, PencilSimple, WarningCircle } from "@phosphor-icons/react";
+import { Bouton, Carte, Rouage, Surtitre, TitrePage, Tuile3D } from "../components/ui";
+import { ICONES_3D } from "../icones3d";
 import Dialogue from "../components/Dialogue";
 import { useEffect, useState, type ReactNode } from "react";
 import { versionApp } from "../plateforme";
@@ -75,9 +76,7 @@ export default function Parametres({
 
       <Carte className="mt-7 p-5">
         <div className="flex items-start gap-3">
-          <PastilleIcone>
-            <FolderSimple weight="duotone" className="h-5 w-5" />
-          </PastilleIcone>
+          <Tuile3D src={ICONES_3D.dossier} taille={52} />
           <div className="min-w-0 flex-1">
             <p className="text-16 font-semibold">Dossier de sortie</p>
             <p className="text-13 text-fg-2">
@@ -115,9 +114,7 @@ export default function Parametres({
 
       <Carte className="mt-4 p-5">
         <div className="flex items-start gap-3">
-          <PastilleIcone>
-            <IdentificationCard weight="duotone" className="h-5 w-5" />
-          </PastilleIcone>
+          <Tuile3D src={ICONES_3D.licence} taille={52} />
           <div className="min-w-0 flex-1">
             <p className="text-16 font-semibold">Licence &amp; abonnement</p>
             <dl className="mt-3 grid grid-cols-[170px_1fr] gap-y-2 text-13">

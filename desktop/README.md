@@ -53,6 +53,7 @@ attendent, et une notification prévient de la fin si vous êtes sur un autre é
 | `src/components/module/` | Étape numérotée, journal, carte de progression, carte de résultat |
 | `src/components/ranger/EditeurCalendrier.tsx` | L'éditeur de calendrier |
 | `src/licence.ts` | Textes et règles de la licence (quel écran montrer, rappels) |
+| `src/icones3d.ts` + `src/assets/icons/3d/` | Les icônes 3D des grandes icônes (3dicons.co, licence CC0, et images générées) ; les petites icônes de boutons restent au trait (Phosphor) |
 
 **Pourquoi ce découpage ?** Les écrans ne parlent qu'à `api.ts`, et la logique vit dans les crochets
 (`use…`). On passe du pont de dev au sidecar Tauri **sans toucher aux écrans**, et les 4 modules
@@ -73,7 +74,8 @@ arrête ensemble avec Ctrl+C. Si l'un des deux tourne déjà (autre terminal), i
 
 - `--sans-licence` : le moteur accepte les tâches sans licence activée, et l'interface saute les écrans
   de licence (« Licence non exigée (dev) » dans la barre latérale). C'est réservé au dev : l'app livrée l'ignore.
-  Pour tester les vrais écrans de licence : `node tools/dev.mjs --avec-licence`.
+  Pour voir les vrais écrans de licence : ouvrez `http://localhost:1420/?avec-licence` (l'interface
+  ignore alors le contournement), ou relancez le moteur avec `node tools/dev.mjs --avec-licence`.
 - Si Python n'est pas dans le PATH : `$env:HELPVA_PYTHON = "C:\…\python.exe"` avant la commande.
 - Ouvrez bien **http://localhost:1420** et pas `127.0.0.1` : le pont n'accepte que cette origine.
 - En bas de la barre latérale, le point vert « Moteur » indique que le vrai moteur est connecté ; rouge

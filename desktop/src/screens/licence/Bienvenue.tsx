@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { ArrowRight, SealCheck } from "@phosphor-icons/react";
+import { ArrowRight } from "@phosphor-icons/react";
+import { ICONES_3D } from "../../icones3d";
 import logo from "../../assets/logo.png";
-import { Bouton, Rouage } from "../../components/ui";
+import { Bouton, Icone3D, Rouage } from "../../components/ui";
 import { MODULES } from "../../modules";
 import type { StatutLicence } from "../../engine/api";
 import { nomLicence, resumeLicence } from "../../licence";
@@ -40,7 +41,7 @@ export default function Bienvenue({
       <p className="mt-2 text-16 text-fg-2">Votre assistant pour préparer vos contenus Instagram.</p>
 
       <p className="mt-5 inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-surface px-3.5 py-1.5 text-13 text-fg-2 shadow-card">
-        <SealCheck weight="fill" className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+        <Icone3D src={ICONES_3D.succes} taille={20} />
         <span className="truncate">
           <span className="font-medium text-fg">{resume ?? resumeLicence(statut)}</span>
           {nom && <> · {nom}</>}

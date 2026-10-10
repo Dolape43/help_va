@@ -1,5 +1,6 @@
-import { ArrowRight, ArrowSquareOut, FolderSimple, Lightbulb, PencilSimple, ShieldCheck } from "@phosphor-icons/react";
-import { Bouton, Carte, PastilleIcone, Surtitre, TitrePage } from "../components/ui";
+import { ArrowRight, ArrowSquareOut, PencilSimple, ShieldCheck } from "@phosphor-icons/react";
+import { Bouton, Carte, Surtitre, TitrePage, Tuile3D } from "../components/ui";
+import { ICONES_3D } from "../icones3d";
 import { MODULES, type CleModule } from "../modules";
 import type { ReactNode } from "react";
 import type { Activite } from "../App";
@@ -53,9 +54,7 @@ export default function Accueil({
         <Carte className="p-5">
           <Surtitre accent>Dossier de sortie</Surtitre>
           <div className="mt-3 flex items-center gap-3">
-            <PastilleIcone taille={42}>
-              <FolderSimple weight="duotone" className="h-[22px] w-[22px]" />
-            </PastilleIcone>
+            <Tuile3D src={ICONES_3D.dossier} taille={52} />
             <div className="min-w-0">
               <p className="truncate text-16 font-semibold tracking-[-0.01em]">{nomDossier}</p>
               <p id="accueil-sortie" className="selectable truncate font-mono text-12 text-fg-3" title={sortie ?? undefined}>
@@ -79,9 +78,7 @@ export default function Accueil({
         <Carte className="flex flex-col p-5">
           <Surtitre accent>Conseil</Surtitre>
           <div className="mt-3 flex gap-3">
-            <PastilleIcone taille={42}>
-              <Lightbulb weight="duotone" className="h-[22px] w-[22px]" />
-            </PastilleIcone>
+            <Tuile3D src={ICONES_3D.ampoule} taille={52} />
             <p className="text-14 leading-relaxed text-fg-2">
               Changez d'abord <span className="text-fg">les métadonnées</span>, puis rangez vos médias selon le
               calendrier.

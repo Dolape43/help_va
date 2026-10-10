@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { Bouton, Rouage } from "../../components/ui";
 import { CartePortail, EntetePortail } from "./Portail";
+import { ICONES_3D } from "../../icones3d";
 import type { ResultatActivation, StatutLicence } from "../../engine/api";
 import { blocage, lienVendeur, normaliserCode } from "../../licence";
 import { messageErreur } from "../../erreurs";
@@ -24,6 +25,15 @@ const ICONES: Record<string, ReactNode> = {
   suspendu: <PauseCircle weight="duotone" className="h-6 w-6" />,
   mauvais_pc: <Desktop weight="duotone" className="h-6 w-6" />,
   invalide: <FileX weight="duotone" className="h-6 w-6" />,
+};
+
+/** L'icône 3D de chaque situation (le fichier de licence abîmé garde son icône au trait). */
+const IMAGES_3D: Record<string, string> = {
+  pas_active: ICONES_3D.cle,
+  expire: ICONES_3D.expire,
+  revoquee: ICONES_3D.bloque,
+  suspendu: ICONES_3D.bloque,
+  mauvais_pc: ICONES_3D.ordinateur,
 };
 
 type Message = { texte: string; ton: "erreur" | "info" };
@@ -97,6 +107,7 @@ export default function Activation({
     <CartePortail>
       <EntetePortail
         icone={ICONES[statut.raison] ?? <Key weight="duotone" className="h-6 w-6" />}
+        image={statut.raison === "invalide" ? undefined : (IMAGES_3D[statut.raison] ?? ICONES_3D.cle)}
         ton={b.ton}
         titre={b.titre}
         texte={fr(b.texte)}

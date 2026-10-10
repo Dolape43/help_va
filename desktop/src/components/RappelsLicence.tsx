@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { CalendarBlank, X } from "@phosphor-icons/react";
+import { X } from "@phosphor-icons/react";
 import type { StatutLicence } from "../engine/api";
+import { ICONES_3D } from "../icones3d";
 import { lienVendeur, rappelFin } from "../licence";
-import { Bouton } from "./ui";
+import { Bouton, Icone3D } from "./ui";
 import { fr } from "../fr";
 
 /**
@@ -32,7 +33,7 @@ export default function RappelsLicence({
           className="toast pointer-events-auto relative w-[360px] overflow-hidden rounded-2xl border border-warning/30 bg-surface shadow-pop"
         >
           <div className="flex gap-3 p-4 pr-10">
-            <CalendarBlank weight="duotone" className="mt-px h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+            <Icone3D src={ICONES_3D.calendrier} taille={32} />
             <div className="min-w-0">
               <p className="text-14 font-semibold">{fr(rappel.titre)}</p>
               <p className="mt-0.5 text-13 leading-snug text-fg-2">{fr(rappel.texte)}</p>

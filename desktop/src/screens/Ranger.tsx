@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowRight, CalendarBlank, Check, FolderOpen, FolderSimpleStar, Package, Warning, X } from "@phosphor-icons/react";
-import { Bouton, Case, Rouage, Surtitre } from "../components/ui";
+import { ArrowRight, CalendarBlank, Check, FolderOpen, Package, Warning, X } from "@phosphor-icons/react";
+import { Bouton, Case, Icone3D, Rouage, Surtitre } from "../components/ui";
+import { ICONES_3D } from "../icones3d";
 import EnteteModule from "../components/EnteteModule";
 import Dialogue from "../components/Dialogue";
 import CarteProgression from "../components/module/CarteProgression";
@@ -278,8 +279,8 @@ export default function Ranger({
                       dossier ? "border-brand/20 bg-brand-soft" : "border-dashed border-line-2"
                     }`}
                   >
-                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-surface text-brand-text shadow-[0_0_0_1px_var(--line)]">
-                      <FolderSimpleStar weight="duotone" className="h-5 w-5" aria-hidden="true" />
+                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[12px] bg-surface shadow-[0_0_0_1px_var(--line)]">
+                      <Icone3D src={ICONES_3D.dossier} taille={34} className={dossier ? "" : "opacity-50 grayscale"} />
                     </span>
                     <div className="min-w-0 flex-1">
                       <Surtitre>Dossier des {NOMS_TYPES[t]}</Surtitre>
@@ -409,6 +410,7 @@ export default function Ranger({
         fermer={r.refuserConfirmation}
         ton={r.confirmation?.existe ? "warning" : "brand"}
         icone={<CalendarBlank weight="duotone" className="h-6 w-6" />}
+        image={ICONES_3D.calendrier}
         titre="Confirmer le rangement"
         actions={
           <>

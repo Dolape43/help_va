@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import logo from "../../assets/logo.png";
 import SelecteurTheme from "../../components/SelecteurTheme";
-import { PastilleIcone, type Ton } from "../../components/ui";
+import { Icone3D, PastilleIcone, type Ton } from "../../components/ui";
 import type { Theme } from "../../App";
 import { versionApp } from "../../plateforme";
 
@@ -71,20 +71,27 @@ export function CartePortail({ children, className = "" }: { children: ReactNode
 /** Icône + titre + phrase, centrés, en haut de la carte. */
 export function EntetePortail({
   icone,
+  image,
   ton,
   titre,
   texte,
 }: {
   icone: ReactNode;
+  /** icône 3D (voir icones3d.ts) : remplace la pastille si elle est donnée */
+  image?: string;
   ton: Ton;
   titre: string;
   texte: ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center text-center">
-      <PastilleIcone taille={52} ton={ton} className="rounded-2xl">
-        {icone}
-      </PastilleIcone>
+      {image ? (
+        <Icone3D src={image} taille={88} />
+      ) : (
+        <PastilleIcone taille={52} ton={ton} className="rounded-2xl">
+          {icone}
+        </PastilleIcone>
+      )}
       <h1 className="mt-5 text-20 font-semibold leading-tight">{titre}</h1>
       <p className="mt-2 max-w-[340px] text-14 leading-relaxed text-fg-2">{texte}</p>
     </div>

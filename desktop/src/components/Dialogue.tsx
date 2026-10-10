@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
-import { PastilleIcone, type Ton } from "./ui";
+import { Icone3D, PastilleIcone, type Ton } from "./ui";
 
 /**
  * Fenêtre de confirmation (modale), construite sur le <dialog> natif du navigateur.
@@ -16,6 +16,7 @@ export default function Dialogue({
   fermer,
   titre,
   icone,
+  image,
   ton = "brand",
   occupe = false,
   children,
@@ -25,6 +26,8 @@ export default function Dialogue({
   fermer: () => void;
   titre: string;
   icone: ReactNode;
+  /** icône 3D (voir icones3d.ts) : remplace la pastille si elle est donnée */
+  image?: string;
   ton?: Ton;
   /** action en cours : Échap et le clic à côté ne ferment pas */
   occupe?: boolean;
@@ -73,9 +76,13 @@ export default function Dialogue({
     >
       <div className="w-[460px] max-w-full rounded-[20px] border border-line bg-surface p-6 shadow-pop">
         <div className="flex gap-4">
-          <PastilleIcone ton={ton} taille={44}>
-            {icone}
-          </PastilleIcone>
+          {image ? (
+            <Icone3D src={image} taille={48} />
+          ) : (
+            <PastilleIcone ton={ton} taille={44}>
+              {icone}
+            </PastilleIcone>
+          )}
           <div className="min-w-0 flex-1 pt-0.5">
             <h2 id={idTitre} className="text-16 font-semibold">
               {titre}
