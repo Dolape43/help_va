@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, Info, WifiSlash } from "@phosphor-icons/react";
 import { Bouton, Rouage } from "../../components/ui";
 import { CartePortail, EntetePortail } from "./Portail";
+import { ICONES_3D } from "../../icones3d";
 import type { StatutLicence } from "../../engine/api";
 
 /** Nouvel essai automatique toutes les 20 s (comme app_ctk.py > _ecran_internet). */
@@ -42,6 +43,7 @@ export default function ConnexionRequise({
     <CartePortail>
       <EntetePortail
         icone={<WifiSlash weight="duotone" className="h-6 w-6" />}
+        image={ICONES_3D.alerte}
         ton="warning"
         titre="Connexion internet requise"
         texte="Veuillez vous connecter à internet, puis réessayez."

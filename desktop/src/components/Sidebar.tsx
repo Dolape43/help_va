@@ -164,7 +164,7 @@ export default function Sidebar({
         </span>
       </button>
 
-      {/* Version, état du moteur, badge « Aperçu » (dev seulement), thème */}
+      {/* Version, état du moteur, thème */}
       <div className="mt-3 flex items-center justify-between px-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="tabular text-12 text-fg-3">v{version}</span>
@@ -196,14 +196,6 @@ export default function Sidebar({
                   ? "…"
                   : "Arrêté"}
           </span>
-          {import.meta.env.DEV && (
-            <span
-              title="Version de développement (npm run dev)"
-              className="rounded-md border border-brand/20 bg-brand-soft px-1.5 py-0.5 text-11 font-medium text-brand-text"
-            >
-              Aperçu
-            </span>
-          )}
         </div>
         <SelecteurTheme theme={theme} setTheme={setTheme} />
       </div>

@@ -17,7 +17,9 @@ import parametres from "./assets/icons/3d/parametres.webp";
 import ampoule from "./assets/icons/3d/ampoule.webp";
 import expire from "./assets/icons/3d/expire.webp";
 import licence from "./assets/icons/3d/licence.webp";
+import alerte from "./assets/icons/3d/alerte.webp";
 import calendrier from "./assets/icons/ranger.webp";
+import bouclier from "./assets/icons/metadonnees.webp";
 
 export const ICONES_3D = {
   /** dossier de sortie, source choisie, dossiers du Ranger */
@@ -43,6 +45,10 @@ export const ICONES_3D = {
   licence,
   /** calendrier de posts (même image que le module Ranger) */
   calendrier,
+  /** panneau attention : « Remplacer ? », résiliation, connexion requise, panne */
+  alerte,
+  /** « Vos originaux ne sont jamais modifiés » (même image que le module Métadonnées) */
+  bouclier,
 } as const;
 
 export type NomIcone3D = keyof typeof ICONES_3D;

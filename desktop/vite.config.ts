@@ -4,6 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+// LA version de l'app, écrite à un seul endroit : package.json. Tauri la lit aussi
+// (tauri.conf.json > "version": "../package.json"). Après l'avoir changée, relancez Vite.
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string };
 
 /** Fichier où engine/dev_bridge.py écrit son jeton à chaque démarrage. */

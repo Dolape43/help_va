@@ -407,8 +407,6 @@ export default function App() {
           personnalise={!!m.vue?.personnalise}
           licence={lic.statut}
           formule={formule}
-          info={m.info}
-          transport={moteur.transport}
           changerSortie={changerSortie}
           reinitialiserSortie={reinitialiserSortie}
           ouvrirSortie={ouvrirSortieGenerale}

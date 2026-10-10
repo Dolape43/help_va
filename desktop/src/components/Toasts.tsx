@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckCircle, FolderOpen, Info, StopCircle, WarningCircle, X } from "@phosphor-icons/react";
+import { CheckCircle, Info, StopCircle, WarningCircle, X } from "@phosphor-icons/react";
+import { Icone3D } from "./ui";
+import { ICONES_3D } from "../icones3d";
 
 export type Toast = {
   id: number;
@@ -70,7 +72,7 @@ function UnToast({ t, fermer }: { t: Toast; fermer: (id: number) => void }) {
               }}
               className="mt-2.5 inline-flex items-center gap-1.5 rounded-md text-13 font-medium text-brand-text hover:underline"
             >
-              <FolderOpen weight="duotone" className="h-4 w-4" />
+              <Icone3D src={ICONES_3D.dossier} taille={18} />
               {t.action.libelle}
             </button>
           )}

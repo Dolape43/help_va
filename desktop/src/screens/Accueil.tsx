@@ -1,5 +1,5 @@
-import { ArrowRight, ArrowSquareOut, PencilSimple, ShieldCheck } from "@phosphor-icons/react";
-import { Bouton, Carte, Surtitre, TitrePage, Tuile3D } from "../components/ui";
+import { ArrowRight, PencilSimple } from "@phosphor-icons/react";
+import { Bouton, Carte, Icone3D, Surtitre, TitrePage, Tuile3D } from "../components/ui";
 import { ICONES_3D } from "../icones3d";
 import { MODULES, type CleModule } from "../modules";
 import type { ReactNode } from "react";
@@ -64,7 +64,7 @@ export default function Accueil({
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Bouton taille="sm" onClick={ouvrirSortie} disabled={!sortie}>
-              <ArrowSquareOut className="h-4 w-4" />
+              <Icone3D src={ICONES_3D.dossier} taille={18} />
               Ouvrir
             </Bouton>
             <Bouton taille="sm" variante="fantome" onClick={allerParametres}>
@@ -123,7 +123,7 @@ export default function Accueil({
       </div>
 
       <p className="mt-7 flex items-center gap-2 text-13 text-fg-3">
-        <ShieldCheck weight="duotone" className="h-4 w-4 text-brand-text" />
+        <Icone3D src={ICONES_3D.bouclier} taille={22} />
         {fr("Vos originaux ne sont jamais modifiés : HelpVA travaille sur des copies.")}
       </p>
     </div>

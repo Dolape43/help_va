@@ -1,10 +1,9 @@
-import { ArrowCounterClockwise, ArrowSquareOut, PencilSimple, WarningCircle } from "@phosphor-icons/react";
-import { Bouton, Carte, Rouage, Surtitre, TitrePage, Tuile3D } from "../components/ui";
+import { ArrowCounterClockwise, PencilSimple, WarningCircle } from "@phosphor-icons/react";
+import { Bouton, Carte, Icone3D, Rouage, TitrePage, Tuile3D } from "../components/ui";
 import { ICONES_3D } from "../icones3d";
 import Dialogue from "../components/Dialogue";
-import { useEffect, useState, type ReactNode } from "react";
-import { versionApp } from "../plateforme";
-import type { InfoMoteur, StatutLicence } from "../engine/api";
+import { useState, type ReactNode } from "react";
+import type { StatutLicence } from "../engine/api";
 import { dateLongue, nomLicence } from "../licence";
 import { messageErreur } from "../erreurs";
 import { fr } from "../fr";
@@ -15,8 +14,6 @@ export default function Parametres({
   personnalise,
   licence,
   formule,
-  info,
-  transport,
   changerSortie,
   reinitialiserSortie,
   ouvrirSortie,
@@ -29,8 +26,6 @@ export default function Parametres({
   licence: StatutLicence | null;
   /** « Abonnement mensuel »… (calculé par App, qui connaît aussi le mode développement) */
   formule: string;
-  info: InfoMoteur | null;
-  transport: string;
   changerSortie: () => void;
   /** retour au dossier par défaut (Bureau\HelpVA) */
   reinitialiserSortie: () => void;
@@ -39,11 +34,6 @@ export default function Parametres({
   resilier: () => Promise<void>;
   bandeau: ReactNode;
 }) {
-  const [version, setVersion] = useState(__APP_VERSION__);
-  useEffect(() => {
-    versionApp().then(setVersion);
-  }, []);
-
   const [confirmer, setConfirmer] = useState(false);
   const [resiliation, setResiliation] = useState(false);
   const [erreurResiliation, setErreurResiliation] = useState<string | null>(null);
@@ -91,7 +81,7 @@ export default function Parametres({
                 Changer…
               </Bouton>
               <Bouton taille="sm" onClick={ouvrirSortie} disabled={!sortie}>
-                <ArrowSquareOut className="h-4 w-4" />
+                <Icone3D src={ICONES_3D.dossier} taille={18} />
                 Ouvrir
               </Bouton>
               {personnalise && (
@@ -144,20 +134,13 @@ export default function Parametres({
         </div>
       </Carte>
 
-      <div className="mt-6">
-        <Surtitre>À propos</Surtitre>
-        <p className="mt-1.5 text-13 text-fg-3">
-          HelpVA {version} · interface Tauri v2 (React) ·{" "}
-          {info ? `moteur ${info.version} (Python ${info.python}, ${transport})` : `moteur : ${transport}`}
-        </p>
-      </div>
-
       <Dialogue
         ouvert={confirmer}
         fermer={() => setConfirmer(false)}
         occupe={resiliation}
         ton="danger"
         icone={<WarningCircle weight="duotone" className="h-6 w-6" />}
+        image={ICONES_3D.alerte}
         titre="Résilier la licence de ce PC ?"
         actions={
           <>

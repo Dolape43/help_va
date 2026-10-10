@@ -27,13 +27,14 @@ const ICONES: Record<string, ReactNode> = {
   invalide: <FileX weight="duotone" className="h-6 w-6" />,
 };
 
-/** L'icône 3D de chaque situation (le fichier de licence abîmé garde son icône au trait). */
+/** L'icône 3D de chaque situation. */
 const IMAGES_3D: Record<string, string> = {
   pas_active: ICONES_3D.cle,
   expire: ICONES_3D.expire,
   revoquee: ICONES_3D.bloque,
   suspendu: ICONES_3D.bloque,
   mauvais_pc: ICONES_3D.ordinateur,
+  invalide: ICONES_3D.alerte,
 };
 
 type Message = { texte: string; ton: "erreur" | "info" };
@@ -147,7 +148,7 @@ export default function Activation({
     <CartePortail>
       <EntetePortail
         icone={ICONES[statut.raison] ?? <Key weight="duotone" className="h-6 w-6" />}
-        image={statut.raison === "invalide" ? undefined : (IMAGES_3D[statut.raison] ?? ICONES_3D.cle)}
+        image={IMAGES_3D[statut.raison] ?? ICONES_3D.cle}
         ton={b.ton}
         titre={b.titre}
         texte={fr(b.texte)}

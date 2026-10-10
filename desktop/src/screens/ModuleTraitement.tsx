@@ -203,6 +203,7 @@ export default function ModuleTraitement({
         fermer={t.refuserRemplacement}
         ton="warning"
         icone={<Warning weight="duotone" className="h-6 w-6" />}
+        image={ICONES_3D.alerte}
         titre="Remplacer le dossier existant ?"
         actions={
           <>

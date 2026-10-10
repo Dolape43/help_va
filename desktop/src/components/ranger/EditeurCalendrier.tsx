@@ -478,6 +478,7 @@ export default function EditeurCalendrier({
         fermer={() => setConfirmation(null)}
         ton={confirmation?.danger ? "danger" : "warning"}
         icone={<Warning weight="duotone" className="h-6 w-6" />}
+        image={ICONES_3D.alerte}
         titre={confirmation?.titre ?? ""}
         actions={
           <>

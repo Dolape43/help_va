@@ -1,6 +1,7 @@
 import { ArrowClockwise, WarningOctagon } from "@phosphor-icons/react";
 import { Bouton, Rouage } from "../../components/ui";
 import { CartePortail, EntetePortail } from "./Portail";
+import { ICONES_3D } from "../../icones3d";
 import { fr } from "../../fr";
 
 /**
@@ -20,6 +21,7 @@ export default function Panne({
     <CartePortail>
       <EntetePortail
         icone={<WarningOctagon weight="duotone" className="h-6 w-6" />}
+        image={ICONES_3D.alerte}
         ton="danger"
         titre="HelpVA n'a pas pu vérifier votre licence"
         texte={<span className="selectable">{fr(erreur)}</span>}

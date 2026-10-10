@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FolderOpen, StopCircle, Warning } from "@phosphor-icons/react";
+import { StopCircle, Warning } from "@phosphor-icons/react";
 import { Bouton, Icone3D } from "../ui";
 import { ICONES_3D } from "../../icones3d";
 
@@ -57,7 +57,7 @@ export default function CarteResultat({
         {details}
       </div>
       <Bouton taille="sm" onClick={ouvrirSortie}>
-        <FolderOpen className="h-4 w-4 text-fg-2" aria-hidden="true" />
+        <Icone3D src={ICONES_3D.dossier} taille={18} />
         Ouvrir le dossier
       </Bouton>
     </div>
