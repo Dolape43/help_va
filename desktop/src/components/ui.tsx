@@ -225,3 +225,13 @@ export function Tuile3D({ src, taille = 48 }: { src: string; taille?: number }) 
     </span>
   );
 }
+
+/** Le chiffre 3D d'une étape (1 à 4), foncé en thème clair et argenté en thème sombre. */
+export function Chiffre3D({ n, taille = 44, fonce, clair }: { n: number; taille?: number; fonce: string; clair: string }) {
+  return (
+    <span aria-hidden="true" className="relative inline-grid shrink-0 place-items-center" style={{ width: taille, height: taille }} data-chiffre={n}>
+      <Icone3D src={fonce} taille={taille} className="dark:hidden" />
+      <Icone3D src={clair} taille={taille} className="hidden dark:block" />
+    </span>
+  );
+}

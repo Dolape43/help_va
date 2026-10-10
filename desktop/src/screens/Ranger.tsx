@@ -7,7 +7,7 @@ import Dialogue from "../components/Dialogue";
 import CarteProgression from "../components/module/CarteProgression";
 import CarteResultat from "../components/module/CarteResultat";
 import Journal from "../components/module/Journal";
-import { BlocInfo, Etape } from "../components/module/Etape";
+import { Etape } from "../components/module/Etape";
 import EditeurCalendrier from "../components/ranger/EditeurCalendrier";
 import { moduleParCle } from "../modules";
 import { TYPES_POST, type AnalyseRanger, type Moteur, type ResultatRanger, type TypePost, type VueCalendrier } from "../engine/api";
@@ -159,6 +159,9 @@ export default function Ranger({
   const x = t && a ? a.types[t] : null;
   const dossier = t ? r.sources[t] : undefined;
   const fin = termine && r.resultat ? detailsResultat(r.resultat, imagesParCarrousel) : null;
+  /** chaque type coché a son dossier (l'analyse du moteur dira ensuite s'il en manque) */
+  const dossiersPrets = r.actifs.length > 0 && r.actifs.every((type) => !!r.sources[type]);
+  const creneauxActifs = r.actifs.reduce((total, type) => total + (n?.[type] ?? 0), 0);
   // Pour les lecteurs d'écran : le résultat de l'analyse du dossier affiché, une fois connu.
   const annonceAnalyse =
     t && x && dossier && !r.analyseEnCours
@@ -174,19 +177,23 @@ export default function Ranger({
 
   return (
     <div className="entree grid min-h-full content-start gap-5 px-6 pb-7 pt-6 @min-[840px]:grid-cols-[minmax(0,1fr)_300px] @min-[840px]:content-stretch @min-[840px]:px-8 @min-[1040px]:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="min-w-0">
+      <div className="@container min-w-0">
         {bandeau}
-        <EnteteModule mod={mod} sousTitre="Classe vos photos et vidéos selon votre calendrier de posts." retour={retour} />
-        <BlocInfo>
-          HelpVA crée un dossier par semaine / jour / créneau et y copie vos médias. Chaque type de post a son propre dossier
-          source. Vos originaux ne sont pas touchés.
-        </BlocInfo>
+        <EnteteModule
+          mod={mod}
+          sousTitre="Classe vos photos et vidéos selon votre calendrier de posts."
+          points={["Semaine / jour / créneau", "Un dossier par type de post", "Copie : originaux intacts"]}
+          details="HelpVA crée un dossier par semaine, par jour et par créneau, et y copie vos médias. Chaque type de post (réels, stories, stories CTA, carrousels) a son propre dossier source. Les carrousels gardent l'ordre 1, 2, 3… Vos originaux ne sont pas touchés."
+          retour={retour}
+        />
+        <div className="mt-2">
 
         {/* Étape 1 : calendrier + types */}
         <Etape
           numero={1}
           titre="Régler le calendrier"
           sousTitre="Choisissez les types de posts à ranger."
+          fait={!!r.calendrier && r.actifs.length > 0}
           action={
             <Bouton taille="sm" onClick={() => setEditeur(true)} disabled={!r.calendrier || occupe}>
               <CalendarBlank className="h-4 w-4 text-fg-2" aria-hidden="true" />
@@ -223,7 +230,7 @@ export default function Ranger({
         </Etape>
 
         {/* Étape 2 : un dossier par type (onglets) */}
-        <Etape numero={2} titre="Choisir les dossiers" sousTitre="Un dossier par type de post.">
+        <Etape numero={2} titre="Choisir les dossiers" sousTitre="Un dossier par type de post." fait={dossiersPrets}>
           {r.actifs.length === 0 ? (
             <p className="mt-4 text-13 text-fg-3">{r.calendrier ? "Cochez au moins un type de post à l'étape 1." : "Chargement…"}</p>
           ) : (
@@ -338,11 +345,13 @@ export default function Ranger({
         </p>
 
         {/* Étape 3 : lancer */}
-        <Etape numero={3} titre="Lancer le rangement" sousTitre="Les médias sont copiés dans votre dossier de sortie.">
+        <Etape numero={3} titre="Options du rangement" sousTitre="Les médias sont copiés dans votre dossier de sortie." dernier>
           <Case className="mt-4" coche={r.aleatoire} onChange={r.setAleatoire} disabled={occupe}>
             {"Répartir au hasard (les carrousels gardent toujours l'ordre 1, 2, 3…)"}
           </Case>
         </Etape>
+
+        </div>
 
         {occupe ? (
           <CarteProgression
@@ -357,20 +366,38 @@ export default function Ranger({
           />
         ) : (
           <>
-            <Bouton
-              ref={boutonLancer}
-              variante="primaire"
-              taille="lg"
-              className="group mt-5 w-full"
-              onClick={() => void r.lancer()}
-              disabled={!r.actifs.length || !!occupeAilleurs || !r.calendrier}
-              aria-busy={r.analyseEnCours || undefined}
-              title={occupeAilleurs ? fr(`Patientez : « ${occupeAilleurs} » est en cours.`) : undefined}
-            >
-              Ranger les médias
-              <ArrowRight weight="bold" className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
-            </Bouton>
-            {termine && r.resultat && fin ? (
+            <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4 pl-5 shadow-card @min-[600px]:flex-row @min-[600px]:items-center @min-[600px]:gap-5">
+              <div className="min-w-0 flex-1">
+                <p className="text-14 font-semibold">
+                  {occupeAilleurs
+                    ? "Une autre action est en cours"
+                    : dossiersPrets
+                      ? fr(`${pluriel(r.actifs.length, "type")} de post · ${creneauxActifs} créneau${creneauxActifs > 1 ? "x" : ""} à remplir`)
+                      : r.actifs.length
+                        ? "Choisissez un dossier pour chaque type"
+                        : "Cochez au moins un type de post"}
+                </p>
+                <p className="text-12 text-fg-3">
+                  {occupeAilleurs
+                    ? fr(`Patientez : « ${occupeAilleurs} » doit d'abord se terminer.`)
+                    : fr("Résultat dans « ranger », dans votre dossier de sortie. Un récapitulatif s'affiche avant de commencer.")}
+                </p>
+              </div>
+              <Bouton
+                ref={boutonLancer}
+                variante="primaire"
+                taille="lg"
+                className="group w-full @min-[600px]:w-auto @min-[600px]:min-w-[210px]"
+                onClick={() => void r.lancer()}
+                disabled={!r.actifs.length || !!occupeAilleurs || !r.calendrier}
+                aria-busy={r.analyseEnCours || undefined}
+                title={occupeAilleurs ? fr(`Patientez : « ${occupeAilleurs} » est en cours.`) : undefined}
+              >
+                Ranger les médias
+                <ArrowRight weight="bold" className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
+              </Bouton>
+            </div>
+            {termine && r.resultat && fin && (
               <CarteResultat
                 id="resultat-ranger"
                 arrete={r.resultat.arrete}
@@ -385,12 +412,6 @@ export default function Ranger({
                 sortie={r.resultat.sortie}
                 ouvrirSortie={() => r.resultat && ouvrirDossier(r.resultat.sortie)}
               />
-            ) : (
-              <p className="mt-2.5 text-center text-12 text-fg-3">
-                {occupeAilleurs
-                  ? fr(`Une autre action est en cours (« ${occupeAilleurs} ») : patientez.`)
-                  : fr("Résultat dans « ranger » (dans votre dossier de sortie). Un récapitulatif s'affiche avant de commencer.")}
-              </p>
             )}
           </>
         )}

@@ -4,6 +4,8 @@ import SelecteurTheme from "../../components/SelecteurTheme";
 import { Icone3D, PastilleIcone, type Ton } from "../../components/ui";
 import type { Theme } from "../../App";
 import { versionApp } from "../../plateforme";
+import { MODULES } from "../../modules";
+import { ILLUSTRATION_LICENCE } from "../../illustrations";
 
 /**
  * Le « portail » : tout ce qui s'affiche AVANT l'application (vérification de la licence,
@@ -60,10 +62,54 @@ export default function Portail({
 }
 
 /** La carte centrale des écrans de licence. */
+/**
+ * La colonne de gauche des écrans de licence : l'illustration (illustrations.ts), ou à défaut un
+ * panneau aux couleurs de HelpVA. Décorative : masquée aux lecteurs d'écran, et cachée quand la
+ * fenêtre est trop étroite (le formulaire passe avant).
+ */
+function PanneauVisuel() {
+  if (ILLUSTRATION_LICENCE) {
+    return (
+      <div aria-hidden="true" className="relative hidden md:block">
+        <img src={ILLUSTRATION_LICENCE} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div aria-hidden="true" className="panneau-portail relative hidden flex-col justify-between overflow-hidden p-8 text-white md:flex">
+      <div className="relative flex items-center gap-2.5">
+        <img src={logo} alt="" className="h-8 w-8 drop-shadow-[0_6px_14px_rgba(0,0,0,0.3)]" />
+        <span className="text-16 font-semibold tracking-[-0.02em]">HelpVA</span>
+      </div>
+      <div className="relative mx-auto grid w-full max-w-[260px] grid-cols-2 gap-4 py-5">
+        {MODULES.map((m, i) => (
+          <div
+            key={m.cle}
+            className="flottant grid aspect-square place-items-center rounded-[24px] border border-white/20 bg-white/10 shadow-[0_18px_40px_-20px_rgba(0,0,0,0.6)] backdrop-blur-sm"
+            style={{ animationDelay: `${i * 0.6}s` }}
+          >
+            <img src={m.icone} alt="" className="h-[68px] w-[68px] object-contain drop-shadow-[0_10px_16px_rgba(0,0,0,0.35)]" />
+          </div>
+        ))}
+      </div>
+      <div className="relative">
+        <p className="text-20 font-semibold leading-snug">Préparez vos contenus Instagram en quelques clics.</p>
+        <p className="mt-2 text-13 leading-relaxed text-white/85">
+          Conversion, métadonnées et rangement se font sur votre ordinateur. Vos originaux ne sont jamais modifiés.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** La carte des écrans de licence : le visuel à gauche, le contenu (formulaire…) à droite. */
 export function CartePortail({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`w-full max-w-[440px] rounded-[20px] border border-line bg-surface p-8 shadow-pop ${className}`}>
-      {children}
+    <div
+      className={`grid w-full max-w-[460px] overflow-hidden rounded-[24px] border border-line bg-surface shadow-pop md:max-w-[920px] md:grid-cols-[minmax(0,1fr)_460px] ${className}`}
+    >
+      <PanneauVisuel />
+      <div className="px-8 py-7">{children}</div>
     </div>
   );
 }

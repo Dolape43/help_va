@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { FileVideo } from "@phosphor-icons/react";
 import ModuleTraitement, { type ConfigTraitement } from "./ModuleTraitement";
 import { moduleParCle } from "../modules";
 import type { Traitement } from "../engine/useTraitement";
@@ -18,6 +17,9 @@ const s = (n: number) => (n > 1 ? "s" : "");
 /** Convertir en MP4 : mêmes textes que l'ancienne app (app_ctk.py > _page_convertir). */
 const CONFIG: ConfigTraitement = {
   sousTitre: "Transforme vos vidéos (.mov, .avi, .mkv…) en .mp4.",
+  points: ["Rapide quand c'est possible", "Compatible partout (H.264)", "Originaux intacts"],
+  mot: "vidéo",
+  feminin: true,
   info: fr(
     "HelpVA crée une version .mp4 de chaque vidéo dans « media (mp4) ». Rapide quand c'est possible (il change juste le conteneur), sinon ré-encodage automatique (H.264/AAC) pour que ça marche à coup sûr. Vos originaux ne sont pas touchés.",
   ),
@@ -26,8 +28,7 @@ const CONFIG: ConfigTraitement = {
     sousTitre: "Un dossier entier, ou des vidéos précises.",
     boutonDossier: "Importer un dossier…",
     boutonFichiers: "Importer des vidéos…",
-    iconeFichiers: FileVideo,
-    vide: "Aucune source pour l'instant : importez un dossier ou des vidéos.",
+    aideFichiers: "Seulement les vidéos que vous choisissez",
     resume: (src) =>
       src.source.type === "dossier"
         ? `Dossier · ${pluriel(src.nbMedias, "vidéo")}, sous-dossiers compris`

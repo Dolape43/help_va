@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { FilmStrip } from "@phosphor-icons/react";
 import ModuleTraitement, { type ConfigTraitement } from "./ModuleTraitement";
 import type { PropsEcranTraitement } from "./ConvertirMp4";
 import { Case } from "../components/ui";
@@ -19,6 +18,9 @@ export default function Metadonnees({
   const config = useMemo<ConfigTraitement>(
     () => ({
       sousTitre: "Rendez chaque photo et vidéo unique, en 2 étapes simples.",
+      points: ["Photos et vidéos", "Changements invisibles à l'œil", "Arborescence conservée"],
+      mot: "média",
+      feminin: false,
       info: fr(
         "Chaque média devient unique : nouvelles métadonnées et micro-variations invisibles à l'œil. Les photos iPhone HEIC / HEIF, qui ne s'affichent pas sur Instagram, sont aussi converties en .jpg automatiquement. Importez un dossier même avec des sous-dossiers : la structure est conservée. Vos fichiers originaux ne sont jamais modifiés.",
       ),
@@ -27,8 +29,7 @@ export default function Metadonnees({
         sousTitre: "Un dossier entier, ou des images / vidéos précises.",
         boutonDossier: "Importer un dossier…",
         boutonFichiers: "Importer des images / vidéos…",
-        iconeFichiers: FilmStrip,
-        vide: "Aucune source pour l'instant : importez un dossier ou des images / vidéos.",
+        aideFichiers: "Seulement les photos et vidéos que vous choisissez",
         resume: (src) =>
           src.source.type === "dossier"
             ? `Dossier · ${pluriel(src.nbMedias, "média")}, sous-dossiers compris`

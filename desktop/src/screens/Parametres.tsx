@@ -1,4 +1,4 @@
-import { ArrowCounterClockwise, PencilSimple, WarningCircle } from "@phosphor-icons/react";
+import { ArrowCounterClockwise, WarningCircle } from "@phosphor-icons/react";
 import { Bouton, Carte, Icone3D, Rouage, TitrePage, Tuile3D } from "../components/ui";
 import { ICONES_3D } from "../icones3d";
 import Dialogue from "../components/Dialogue";
@@ -77,7 +77,7 @@ export default function Parametres({
             </p>
             <div className="mt-3 flex gap-2">
               <Bouton id="bouton-changer-sortie" taille="sm" variante="primaire" onClick={changerSortie}>
-                <PencilSimple className="h-4 w-4" />
+                <Icone3D src={ICONES_3D.crayon} taille={18} />
                 Changer…
               </Bouton>
               <Bouton taille="sm" onClick={ouvrirSortie} disabled={!sortie}>

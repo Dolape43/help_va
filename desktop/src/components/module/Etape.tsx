@@ -1,59 +1,71 @@
 import type { ReactNode } from "react";
-import { Info } from "@phosphor-icons/react";
-import { Carte } from "../ui";
+import { Check } from "@phosphor-icons/react";
+import { Carte, Chiffre3D } from "../ui";
+import { CHIFFRES_3D } from "../../icones3d";
 
 /**
- * Une étape numérotée d'un module (« 1 · Choisir les vidéos »), dans une carte.
- * Même présentation que l'ancienne app (_entete_etape) : pastille, titre, phrase.
+ * Une étape numérotée d'un module, présentée comme une frise verticale :
+ *
+ *   [1]  ┌ Choisir les vidéos ─────────────┐
+ *    │   │ …                               │
+ *    │   └─────────────────────────────────┘
+ *   [2]  ┌ Options ────────────────────────┐
+ *
+ * Le chiffre 3D sert de repère, un fil relie les étapes, et une petite coche verte apparaît
+ * sur le chiffre quand l'étape est faite (source choisie…). On voit d'un coup d'œil où on en est.
  */
 export function Etape({
   numero,
   titre,
   sousTitre,
   action,
+  fait = false,
+  dernier = false,
   children,
-  className = "mt-4",
 }: {
   numero: number;
   titre: string;
   sousTitre?: ReactNode;
   /** bouton à droite du titre (« Modifier le calendrier ») */
   action?: ReactNode;
+  /** étape terminée : coche verte sur le chiffre */
+  fait?: boolean;
+  /** dernière étape : pas de fil vers la suivante */
+  dernier?: boolean;
   children?: ReactNode;
-  className?: string;
 }) {
+  const chiffre = CHIFFRES_3D[numero] ?? CHIFFRES_3D[1];
   return (
-    <Carte className={`p-5 ${className}`}>
-      <div className="flex items-start gap-3">
+    <section className="relative grid grid-cols-[48px_minmax(0,1fr)] gap-x-4 pt-4">
+      {!dernier && (
+        // Le fil part sous le chiffre et descend jusqu'au chiffre de l'étape suivante.
         <span
           aria-hidden="true"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-soft text-13 font-semibold text-brand-text ring-1 ring-brand/20"
-        >
-          {numero}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-16 font-semibold">
-            <span className="sr-only">Étape {numero} : </span>
-            {titre}
-          </h2>
-          {sousTitre && <p className="text-13 text-fg-2">{sousTitre}</p>}
+          className="absolute bottom-[-26px] left-[23px] top-[86px] w-[2px] rounded-full bg-[linear-gradient(to_bottom,var(--line-2),var(--line))]"
+        />
+      )}
+      <div className="relative flex justify-center pt-4">
+        <Chiffre3D n={numero} taille={48} fonce={chiffre.fonce} clair={chiffre.clair} />
+        {fait && (
+          <span className="entree absolute -right-1 top-3 grid h-5 w-5 place-items-center rounded-full bg-success text-white ring-2 ring-panel">
+            <Check weight="bold" className="h-3 w-3" aria-hidden="true" />
+          </span>
+        )}
+      </div>
+      <Carte className="min-w-0 p-5">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-16 font-semibold">
+              <span className="sr-only">Étape {numero} : </span>
+              {titre}
+              {fait && <span className="sr-only"> (faite)</span>}
+            </h2>
+            {sousTitre && <p className="text-13 text-fg-2">{sousTitre}</p>}
+          </div>
+          {action && <div className="shrink-0">{action}</div>}
         </div>
-        {action && <div className="shrink-0">{action}</div>}
-      </div>
-      {children}
-    </Carte>
-  );
-}
-
-/** « Ce que fait ce module » : l'encart d'explication en haut de chaque module. */
-export function BlocInfo({ children }: { children: ReactNode }) {
-  return (
-    <div className="mt-6 flex gap-3 rounded-2xl border border-line p-4">
-      <Info weight="duotone" className="mt-0.5 h-5 w-5 shrink-0 text-brand-text" aria-hidden="true" />
-      <div>
-        <p className="text-14 font-semibold">Ce que fait ce module</p>
-        <div className="mt-1 text-13 leading-relaxed text-fg-2">{children}</div>
-      </div>
-    </div>
+        {children}
+      </Carte>
+    </section>
   );
 }

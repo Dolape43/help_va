@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { House } from "@phosphor-icons/react";
 import { ICONES_3D } from "../icones3d";
 import SelecteurTheme from "./SelecteurTheme";
 import logo from "../assets/logo.png";
@@ -80,7 +79,6 @@ export default function Sidebar({
   }, []);
 
   const moduleActif: CleModule | null = typeof page === "object" ? page.module : null;
-  const ico = (actif: boolean) => `h-[18px] w-[18px] ${actif ? "text-brand-text" : "text-fg-3 group-hover:text-fg-2"}`;
 
   return (
     <aside className="flex w-[248px] shrink-0 flex-col px-3 pb-3 pt-4">
@@ -95,7 +93,7 @@ export default function Sidebar({
         <Lien
           actif={page === "accueil"}
           onClick={() => aller("accueil")}
-          icone={<House weight={page === "accueil" ? "fill" : "regular"} className={ico(page === "accueil")} />}
+          icone={<img src={ICONES_3D.accueil} alt="" className="h-[18px] w-[18px] object-contain" />}
         >
           Accueil
         </Lien>

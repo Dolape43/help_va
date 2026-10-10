@@ -350,6 +350,35 @@ button:disabled {
   opacity: 0.55;
 }
 
+/* Panneau de gauche des écrans de licence (en attendant l'illustration) : le bleu de la marque,
+   plus foncé en bas (là où est le texte blanc : contraste AA), avec une trame de points. */
+.panneau-portail {
+  background:
+    radial-gradient(120% 70% at 85% 0%, rgba(142, 162, 255, 0.55), transparent 60%),
+    linear-gradient(200deg, #5b74ff 0%, #3a5cff 40%, #1d3fe6 75%, #1530b8 100%);
+}
+.panneau-portail::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.22) 1px, transparent 1.2px);
+  background-size: 20px 20px;
+  mask-image: linear-gradient(to bottom, #000, transparent 85%);
+  opacity: 0.6;
+}
+@keyframes flotter {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+.flottant {
+  animation: flotter 4.5s ease-in-out infinite;
+}
+
 /* Lueur qui « respire » derrière le logo (vérification, bienvenue) */
 @keyframes aura {
   0%,
@@ -438,7 +467,8 @@ dialog.dialogue[open]::backdrop {
   .barre-remplie::after,
   .tourne,
   .point-actif,
-  .aura-logo {
+  .aura-logo,
+  .flottant {
     animation: none !important;
   }
   /* sans mouvement, la barre d'attente devient une simple barre fixe */

@@ -1,4 +1,4 @@
-import { ArrowRight, PencilSimple } from "@phosphor-icons/react";
+import { ArrowRight } from "@phosphor-icons/react";
 import { Bouton, Carte, Icone3D, Surtitre, TitrePage, Tuile3D } from "../components/ui";
 import { ICONES_3D } from "../icones3d";
 import { MODULES, type CleModule } from "../modules";
@@ -68,7 +68,7 @@ export default function Accueil({
               Ouvrir
             </Bouton>
             <Bouton taille="sm" variante="fantome" onClick={allerParametres}>
-              <PencilSimple className="h-4 w-4" />
+              <Icone3D src={ICONES_3D.crayon} taille={18} />
               Changer
             </Bouton>
             <span className="ml-auto text-12 text-fg-3">Vos fichiers préparés arrivent ici.</span>

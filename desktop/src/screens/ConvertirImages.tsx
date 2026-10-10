@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { Image as IconeImage } from "@phosphor-icons/react";
 import ModuleTraitement, { type ConfigTraitement } from "./ModuleTraitement";
 import type { PropsEcranTraitement } from "./ConvertirMp4";
 import { Segments } from "../components/ui";
@@ -21,6 +20,9 @@ export default function ConvertirImages({
   const config = useMemo<ConfigTraitement>(
     () => ({
       sousTitre: "Convertit vos images en .jpg ou .png (HEIC iPhone inclus).",
+      points: ["JPG ou PNG", "Photos iPhone HEIC lisibles", "Originaux intacts"],
+      mot: "image",
+      feminin: true,
       info: fr(
         "Convertit chaque image au format choisi (.jpg ou .png). Les photos iPhone HEIC / HEIF, qui ne s'affichent pas sur Instagram, deviennent lisibles. Les images des sous-dossiers sont aussi converties, toutes dans le même dossier. Vos fichiers originaux ne sont jamais modifiés.",
       ),
@@ -29,8 +31,7 @@ export default function ConvertirImages({
         sousTitre: "Un dossier entier, ou des images précises.",
         boutonDossier: "Importer un dossier…",
         boutonFichiers: "Importer des images…",
-        iconeFichiers: IconeImage,
-        vide: "Aucune source pour l'instant : importez un dossier ou des images.",
+        aideFichiers: "Seulement les images que vous choisissez",
         resume: (src) =>
           src.source.type === "dossier"
             ? `Dossier · ${pluriel(src.nbMedias, "image")}, sous-dossiers compris (tout dans un seul dossier)`
