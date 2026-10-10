@@ -4,7 +4,6 @@ import SelecteurTheme from "../../components/SelecteurTheme";
 import { Icone3D, PastilleIcone, type Ton } from "../../components/ui";
 import type { Theme } from "../../App";
 import { versionApp } from "../../plateforme";
-import { MODULES } from "../../modules";
 import { ILLUSTRATION_LICENCE } from "../../illustrations";
 
 /**
@@ -76,21 +75,12 @@ function PanneauVisuel() {
     );
   }
   return (
-    <div aria-hidden="true" className="panneau-portail relative hidden flex-col justify-between overflow-hidden p-8 text-white md:flex">
-      <div className="relative flex items-center gap-2.5">
-        <img src={logo} alt="" className="h-8 w-8 drop-shadow-[0_6px_14px_rgba(0,0,0,0.3)]" />
-        <span className="text-16 font-semibold tracking-[-0.02em]">HelpVA</span>
-      </div>
-      <div className="relative mx-auto grid w-full max-w-[260px] grid-cols-2 gap-4 py-5">
-        {MODULES.map((m, i) => (
-          <div
-            key={m.cle}
-            className="flottant grid aspect-square place-items-center rounded-[24px] border border-white/20 bg-white/10 shadow-[0_18px_40px_-20px_rgba(0,0,0,0.6)] backdrop-blur-sm"
-            style={{ animationDelay: `${i * 0.6}s` }}
-          >
-            <img src={m.icone} alt="" className="h-[68px] w-[68px] object-contain drop-shadow-[0_10px_16px_rgba(0,0,0,0.35)]" />
-          </div>
-        ))}
+    <div aria-hidden="true" className="panneau-portail relative hidden flex-col overflow-hidden p-8 text-white md:flex">
+      <div className="relative flex flex-1 flex-col items-center justify-center py-6">
+        <div className="flottant grid h-[148px] w-[148px] place-items-center rounded-[36px] border border-white/20 bg-white/10 shadow-[0_24px_50px_-22px_rgba(0,0,0,0.65)] backdrop-blur-sm">
+          <img src={logo} alt="" className="h-[92px] w-[92px] object-contain drop-shadow-[0_14px_22px_rgba(0,0,0,0.35)]" />
+        </div>
+        <span className="mt-5 text-20 font-semibold tracking-[-0.02em]">HelpVA</span>
       </div>
       <div className="relative">
         <p className="text-20 font-semibold leading-snug">Préparez vos contenus Instagram en quelques clics.</p>
