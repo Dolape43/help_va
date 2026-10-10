@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import {
   ArrowClockwise,
   CalendarX,
@@ -15,7 +15,7 @@ import { Bouton, Rouage } from "../../components/ui";
 import { CartePortail, EntetePortail } from "./Portail";
 import { ICONES_3D } from "../../icones3d";
 import type { ResultatActivation, StatutLicence } from "../../engine/api";
-import { blocage, lienVendeur, normaliserCode } from "../../licence";
+import { blocage, formaterCode, lienVendeur, nbUtiles, normaliserCode, positionCurseur } from "../../licence";
 import { messageErreur } from "../../erreurs";
 import { fr } from "../../fr";
 
@@ -64,6 +64,44 @@ export default function Activation({
   const idAide = useId();
   const idMessage = useId();
   const occupe = envoi || reverif;
+
+  /* ---------- Saisie du code : tirets placés tout seuls (HELP-XXXX-XXXX-XXXX) ----------
+     Après chaque frappe, on remet en forme, puis on replace le curseur au bon endroit
+     (sinon, l'ajout d'un tiret l'enverrait à la fin du champ). */
+  const curseur = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = champ.current;
+    if (curseur.current === null || !el || document.activeElement !== el) return;
+    el.setSelectionRange(curseur.current, curseur.current);
+    curseur.current = null;
+  }, [code]);
+
+  const saisir = (el: HTMLInputElement) => {
+    const brut = el.value;
+    const utilesAvant = nbUtiles(brut.slice(0, el.selectionStart ?? brut.length));
+    const texte = formaterCode(brut);
+    const position = positionCurseur(texte, utilesAvant);
+    if (texte === code) {
+      // Rien n'a changé une fois mis en forme (17e caractère, tiret tapé…) : React ne
+      // redessinerait pas, on remet donc nous-mêmes le texte et le curseur.
+      el.value = texte;
+      el.setSelectionRange(position, position);
+      return;
+    }
+    curseur.current = position;
+    setCode(texte);
+    if (message?.ton === "erreur") setMessage(null);
+  };
+
+  // Retour arrière juste APRÈS un tiret, ou Suppr juste AVANT : on saute le tiret pour effacer
+  // le caractère d'à côté (sinon le tiret serait remis aussitôt, et rien ne s'effacerait).
+  const touche = (e: KeyboardEvent<HTMLInputElement>) => {
+    const el = e.currentTarget;
+    const p = el.selectionStart ?? 0;
+    if (p !== el.selectionEnd) return;
+    if (e.key === "Backspace" && code[p - 1] === "-") el.setSelectionRange(p - 1, p - 1);
+    else if (e.key === "Delete" && code[p] === "-") el.setSelectionRange(p + 1, p + 1);
+  };
 
   const envoyer = async (e: FormEvent) => {
     e.preventDefault();
@@ -121,10 +159,8 @@ export default function Activation({
           id={idChamp}
           ref={champ}
           value={code}
-          onChange={(e) => {
-            setCode(e.target.value);
-            if (message?.ton === "erreur") setMessage(null);
-          }}
+          onChange={(e) => saisir(e.target)}
+          onKeyDown={touche}
           // readOnly (et non disabled) : le champ garde le focus pendant l'envoi.
           readOnly={envoi}
           autoFocus
@@ -133,6 +169,7 @@ export default function Activation({
           autoCapitalize="characters"
           spellCheck={false}
           maxLength={40}
+          inputMode="text"
           placeholder="HELP-XXXX-XXXX-XXXX"
           aria-invalid={message?.ton === "erreur" || undefined}
           aria-describedby={message ? idMessage : idAide}

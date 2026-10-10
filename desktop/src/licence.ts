@@ -141,6 +141,37 @@ export function normaliserCode(code: string): string {
   return code.replace(/\s+/g, "").toUpperCase();
 }
 
+/** Un code fait 16 caractères utiles (HELP + 3 × 4), en groupes de 4 : HELP-XXXX-XXXX-XXXX. */
+const UTILES_MAX = 16;
+const nonUtile = /[^A-Z0-9]/gi;
+
+/**
+ * Mise en forme PENDANT la saisie : majuscules, tirets placés tout seuls tous les 4 caractères,
+ * le reste (espaces, tirets tapés à la main, accents…) retiré. Coller « help abcd efgh jkmn »
+ * donne donc « HELP-ABCD-EFGH-JKMN ». Le tiret n'apparaît qu'une fois le groupe suivant
+ * commencé : avec la touche Retour arrière, on efface donc naturellement.
+ */
+export function formaterCode(saisie: string): string {
+  const utiles = saisie.replace(nonUtile, "").toUpperCase().slice(0, UTILES_MAX);
+  return utiles.match(/.{1,4}/g)?.join("-") ?? "";
+}
+
+/** Nombre de caractères utiles (lettres et chiffres) dans un morceau de saisie. */
+export const nbUtiles = (texte: string) => texte.replace(nonUtile, "").length;
+
+/**
+ * Où remettre le curseur dans le code mis en forme : juste après le même nombre de caractères
+ * utiles qu'avant la mise en forme. Sans ça, ajouter un tiret enverrait le curseur à la fin.
+ */
+export function positionCurseur(codeFormate: string, utilesAvant: number): number {
+  if (utilesAvant <= 0) return 0;
+  let n = 0;
+  for (let i = 0; i < codeFormate.length; i++) {
+    if (codeFormate[i] !== "-" && ++n === utilesAvant) return i + 1;
+  }
+  return codeFormate.length;
+}
+
 /* ---------- Rappel de fin d'abonnement (la veille et le jour même) ---------- */
 
 export type RappelFin = { titre: string; texte: string; action: string; message: string; cle: string };
