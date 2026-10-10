@@ -138,7 +138,8 @@ export function blocage(raison: string, type: string | null = null): Blocage {
  * On ne « corrige » rien d'autre : c'est le serveur qui dit si le code existe.
  */
 export function normaliserCode(code: string): string {
-  return code.replace(/\s+/g, "").toUpperCase();
+  // Le tiret ajouté tout seul en fin de groupe (« HELP-ABCD- ») ne part pas au serveur.
+  return code.replace(/\s+/g, "").toUpperCase().replace(/-+$/, "");
 }
 
 /** Un code fait 16 caractères utiles (HELP + 3 × 4), en groupes de 4 : HELP-XXXX-XXXX-XXXX. */
@@ -148,12 +149,15 @@ const nonUtile = /[^A-Z0-9]/gi;
 /**
  * Mise en forme PENDANT la saisie : majuscules, tirets placés tout seuls tous les 4 caractères,
  * le reste (espaces, tirets tapés à la main, accents…) retiré. Coller « help abcd efgh jkmn »
- * donne donc « HELP-ABCD-EFGH-JKMN ». Le tiret n'apparaît qu'une fois le groupe suivant
- * commencé : avec la touche Retour arrière, on efface donc naturellement.
+ * donne donc « HELP-ABCD-EFGH-JKMN ».
+ * Le tiret apparaît DÈS le 4e caractère d'un groupe (« HELP » → « HELP- »), sauf à la toute fin
+ * du code. (Retour arrière juste après ce tiret efface aussi le caractère d'avant : voir Activation.)
  */
 export function formaterCode(saisie: string): string {
   const utiles = saisie.replace(nonUtile, "").toUpperCase().slice(0, UTILES_MAX);
-  return utiles.match(/.{1,4}/g)?.join("-") ?? "";
+  const groupes = utiles.match(/.{1,4}/g) ?? [];
+  const groupeComplet = utiles.length > 0 && utiles.length % 4 === 0 && utiles.length < UTILES_MAX;
+  return groupes.join("-") + (groupeComplet ? "-" : "");
 }
 
 /** Nombre de caractères utiles (lettres et chiffres) dans un morceau de saisie. */

@@ -78,9 +78,11 @@ export default function Activation({
 
   const saisir = (el: HTMLInputElement) => {
     const brut = el.value;
-    const utilesAvant = nbUtiles(brut.slice(0, el.selectionStart ?? brut.length));
+    const curseurBrut = el.selectionStart ?? brut.length;
+    const utilesAvant = nbUtiles(brut.slice(0, curseurBrut));
     const texte = formaterCode(brut);
-    const position = positionCurseur(texte, utilesAvant);
+    // On tapait à la fin : le curseur reste à la fin, donc APRÈS le tiret ajouté (« HELP-| »).
+    const position = curseurBrut >= brut.length ? texte.length : positionCurseur(texte, utilesAvant);
     if (texte === code) {
       // Rien n'a changé une fois mis en forme (17e caractère, tiret tapé…) : React ne
       // redessinerait pas, on remet donc nous-mêmes le texte et le curseur.
