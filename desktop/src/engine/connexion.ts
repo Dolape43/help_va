@@ -2,15 +2,15 @@
  * connexion.ts — choisit le bon transport et se connecte au moteur.
  *
  *   Dans l'app Tauri          → sidecar (helpva-engine.exe). En dev, si l'exe manque, on essaie le pont.
- *   Dans le navigateur (dev)  → pont de dev (engine/dev_bridge.py).
- *   Rien ne répond            → en dev : moteur SIMULÉ ; dans l'app livrée : moteur INDISPONIBLE
- *                               (erreurs claires, jamais de faux résultats). Bandeau bien visible.
+ *   Dans le navigateur (dev)  → pont de dev (engine/dev_bridge.py, lancé par « npm run dev:moteur »).
+ *   Rien ne répond            → moteur INDISPONIBLE : chaque action dit clairement que le moteur
+ *                               n'a pas démarré (jamais de faux résultats). Bandeau bien visible.
  */
 import { DANS_TAURI } from "../plateforme";
 import { MoteurReel, type Moteur } from "./api";
 import { ClientMoteur } from "./client";
 import { ErreurMoteur } from "./protocole";
-import { moteurDeSecours } from "./indisponible";
+import { MoteurIndisponible } from "./indisponible";
 import type { Transport } from "./transport";
 
 export type Connexion = { moteur: Moteur; raison: string | null };
@@ -45,5 +45,5 @@ export async function connecterMoteur(): Promise<Connexion> {
     }
   }
   const raison = raisons.join(" · ") || "Aucun moteur disponible.";
-  return { moteur: moteurDeSecours(raison), raison };
+  return { moteur: new MoteurIndisponible(raison), raison };
 }

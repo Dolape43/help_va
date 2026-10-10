@@ -2,48 +2,49 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Sidebar from "./components/Sidebar";
 import Toasts, { type Toast } from "./components/Toasts";
 import BandeauMoteur from "./components/BandeauMoteur";
+import RappelsLicence from "./components/RappelsLicence";
 import Accueil from "./screens/Accueil";
 import ConvertirMp4 from "./screens/ConvertirMp4";
+import ConvertirImages, { type FormatImage } from "./screens/ConvertirImages";
+import Metadonnees from "./screens/Metadonnees";
+import Ranger from "./screens/Ranger";
 import Parametres from "./screens/Parametres";
-import ModuleBientot from "./screens/ModuleBientot";
-import type { CleModule } from "./modules";
+import Portail from "./screens/licence/Portail";
+import Verification from "./screens/licence/Verification";
+import Activation from "./screens/licence/Activation";
+import ConnexionRequise from "./screens/licence/ConnexionRequise";
+import Panne from "./screens/licence/Panne";
+import Bienvenue from "./screens/licence/Bienvenue";
+import { MODULES, moduleParCle, type CleModule } from "./modules";
 import { useMoteur } from "./engine/useMoteur";
-import type { ResultatConversion, Source, TacheEnCours } from "./engine/api";
-import { ErreurMoteur, type EvLog } from "./engine/protocole";
-import {
-  ligneDepuisLog,
-  ligneDossier,
-  progressionDepuis,
-  type LigneJournal,
-  type Progression,
-} from "./engine/affichage";
-import { fr, pluriel } from "./fr";
-import { libelleFormule, nomLicence } from "./licence";
-import { themeFenetre } from "./plateforme";
+import { useLicence } from "./engine/useLicence";
+import { useTraitement } from "./engine/useTraitement";
+import { useRanger } from "./engine/useRanger";
+import type { Bilan, Source, TypePost } from "./engine/api";
+import type { EvLog } from "./engine/protocole";
+import { ligneDepuisLog } from "./engine/affichage";
+import { fr } from "./fr";
+import { ecranLicence, libelleFormule, nomLicence } from "./licence";
+import { messageErreur } from "./erreurs";
+import { ouvrirLien, themeFenetre } from "./plateforme";
 
 export type Page = "accueil" | "parametres" | { module: CleModule };
 export type Theme = "light" | "dark";
-export type EtatTache = "inactif" | "en_cours" | "annulation" | "fini" | "arrete";
 
-/** La source choisie pour « Convertir en MP4 », déjà vérifiée par le moteur (commande « preparer »). */
-export type SourceChoisie = {
-  source: Source;
-  /** texte court affiché (« C:\…\Shooting juin » ou « clip_07.mov, clip_08.mov +2 ») */
-  libelle: string;
-  /** info-bulle : chemin complet / liste complète */
-  libelleComplet: string;
-  /** nombre de vidéos trouvées par le moteur (sert au « 4 / 11 vidéos ») */
-  nbVideos: number;
-  /** où iront les .mp4 */
-  sortie: string;
-  /** .mp4 déjà présents dans la sortie, qui seront remplacés (ffmpeg écrase sans prévenir) */
-  dejaPresents: number;
-};
+/** Ce qui tourne en ce moment (une seule tâche longue à la fois, comme dans le moteur). */
+export type Activite = { module: CleModule; pct: number } | null;
 
-/* Le thème est mémorisé dans le navigateur (simple confort ; try/catch car le stockage peut être bloqué). */
+/* Le thème est mémorisé dans le navigateur (affiché dès le premier instant, sans flash) ET dans
+   les paramètres du moteur (comme l'ancienne app). try/catch : le stockage peut être bloqué. */
 function themeInitial(): Theme {
-  const t = document.documentElement.dataset.theme;
-  return t === "light" ? "light" : "dark";
+  return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+}
+function themeMemorise(): string | null {
+  try {
+    return localStorage.getItem("helpva-theme");
+  } catch {
+    return null;
+  }
 }
 function memoriserTheme(t: Theme) {
   try {
@@ -53,62 +54,51 @@ function memoriserTheme(t: Theme) {
   }
 }
 
-const nomFichier = (chemin: string) => chemin.split(/[\\/]/).pop() || chemin;
-
-/** Texte d'une erreur du moteur, avec une phrase plus claire pour les cas fréquents. */
-function messageErreur(e: unknown): string {
-  if (!(e instanceof ErreurMoteur)) return String(e);
-  if (e.code === "LICENCE_REQUISE") return "Licence non activée : activez HelpVA dans l'application actuelle (ou lancez le pont avec --sans-licence en dev).";
-  if (e.code === "MOTEUR_ARRETE") return `Le moteur s'est arrêté. ${e.message}`;
-  return e.message;
+/**
+ * Le texte d'une notification de fin, tiré du bilan du moteur (même texte que l'ancienne popup) :
+ * « ✅ 12 image(s) en .jpg traité(s) !\n\nRésultat :\n…\n\n⚠️ 2 fichier(s) n'ont PAS pu… »
+ *   → « 12 image(s) en .jpg traité(s) ! » + la première ligne de l'avertissement, s'il y en a un.
+ */
+function resumeBilan(b: Bilan, cle: CleModule): string {
+  const paragraphes = b.message.split("\n\n");
+  const nettoyer = (t: string) => t.replace(/^[\s✅⚠️📦]+/u, "").split("\n")[0];
+  const resume = nettoyer(paragraphes[0]);
+  if (!b.erreur) return resume;
+  const alerte = paragraphes.find((t) => t.trim().startsWith("⚠️"));
+  if (alerte) return `${resume}\n${nettoyer(alerte)}`;
+  return `${resume}\n${cle === "ranger" ? "Certains créneaux sont incomplets : voir le module." : "Certains fichiers n'ont pas pu être traités : voir le module."}`;
 }
 
 export default function App() {
   const [page, setPage] = useState<Page>("accueil");
   const [theme, setThemeState] = useState<Theme>(themeInitial);
-  const [etat, setEtat] = useState<EtatTache>("inactif");
-  const [source, setSource] = useState<SourceChoisie | null>(null);
-  const [progression, setProgression] = useState<Progression | null>(null);
-  const [journal, setJournal] = useState<LigneJournal[]>([]);
-  const [resultat, setResultat] = useState<ResultatConversion | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const tache = useRef<TacheEnCours<ResultatConversion> | null>(null);
   const contenu = useRef<HTMLElement>(null);
   const prochainId = useRef(1);
-  // Page courante lisible depuis la fin de conversion (qui arrive plusieurs secondes après le clic).
+  // Page courante lisible depuis la fin d'un traitement (qui arrive bien après le clic).
   const pageRef = useRef<Page>(page);
   pageRef.current = page;
 
-  const ajouterLigne = useCallback((l: LigneJournal | null) => {
-    if (l) setJournal((j) => [...j, l]);
-  }, []);
-  // Journal « sans propriétaire » (plantage dur du moteur) : on l'affiche aussi.
-  const logLibre = useCallback((ev: EvLog) => ajouterLigne(ligneDepuisLog(ev)), [ajouterLigne]);
-  const m = useMoteur(logLibre);
-  const moteur = m.moteur;
-
-  const setTheme = useCallback((t: Theme) => {
-    document.documentElement.dataset.theme = t;
-    memoriserTheme(t);
-    themeFenetre(t); // barre de titre Windows assortie (dans Tauri seulement)
-    setThemeState(t);
-  }, []);
-  useEffect(() => themeFenetre(themeInitial()), []);
-
-  const aller = useCallback((p: Page) => {
-    setPage(p);
-    contenu.current?.scrollTo({ top: 0 });
-  }, []);
-
+  /* ---------- Notifications ---------- */
   const notifier = useCallback((t: Omit<Toast, "id">) => {
     const id = prochainId.current++;
     setToasts((l) => [...l.slice(-2), { ...t, id }]);
   }, []);
-  const info = useCallback((titre: string, texte: string) => notifier({ type: "info", titre, texte, duree: 3500 }), [notifier]);
-  const erreur = useCallback((titre: string, e: unknown) => notifier({ type: "erreur", titre, texte: messageErreur(e), duree: 8000 }), [notifier]);
+  const info = useCallback((titre: string, texte: string) => notifier({ type: "info", titre, texte: fr(texte), duree: 4000 }), [notifier]);
+  const erreur = useCallback(
+    (titre: string, e: unknown) => notifier({ type: "erreur", titre, texte: fr(messageErreur(e)), duree: 8000 }),
+    [notifier],
+  );
   const fermerToast = useCallback((id: number) => setToasts((l) => l.filter((t) => t.id !== id)), []);
 
-  /* ---------- Ouvrir un dossier dans l'Explorateur (fait par le moteur, qui vérifie le chemin) ---------- */
+  /* ---------- Moteur et licence ---------- */
+  // Journal « sans propriétaire » (plantage dur du moteur) : dans le journal du module qui travaille.
+  const versJournalActif = useRef<(ev: EvLog) => void>(() => {});
+  const logLibre = useCallback((ev: EvLog) => versJournalActif.current(ev), []);
+  const m = useMoteur(logLibre);
+  const moteur = m.moteur;
+  const lic = useLicence(moteur, m.connexion);
+
   const ouvrir = useCallback(
     async (chemin: string) => {
       try {
@@ -119,6 +109,123 @@ export default function App() {
     },
     [moteur, erreur],
   );
+
+  /* ---------- Thème ---------- */
+  const moteurRef = useRef(moteur);
+  moteurRef.current = moteur;
+  const setTheme = useCallback((t: Theme) => {
+    document.documentElement.dataset.theme = t;
+    memoriserTheme(t);
+    themeFenetre(t); // barre de titre Windows assortie (dans Tauri seulement)
+    setThemeState(t);
+    // Aussi dans parametres.json (comme l'ancienne app). Sans moteur : tant pis, c'est un confort.
+    moteurRef.current.parametresEcrire({ theme: t }).catch(() => {});
+  }, []);
+  useEffect(() => themeFenetre(themeInitial()), []);
+  // Premier lancement de la nouvelle interface : on reprend le thème choisi dans l'ancienne app.
+  const themeRepris = useRef(false);
+  useEffect(() => {
+    if (themeRepris.current || !m.parametres) return;
+    themeRepris.current = true;
+    const t = m.parametres.theme;
+    if (!themeMemorise() && (t === "light" || t === "dark") && t !== themeInitial()) setTheme(t);
+  }, [m.parametres, setTheme]);
+
+  /* ---------- Navigation ---------- */
+  const aller = useCallback((p: Page) => {
+    setPage(p);
+    contenu.current?.scrollTo({ top: 0 });
+  }, []);
+
+  /* ---------- Les 4 modules ---------- */
+  // Fin d'un traitement : la carte de résultat suffit si l'utilisateur est sur l'écran du module ;
+  // sinon, une notification avec « Ouvrir le dossier ».
+  const surFin = useCallback(
+    (cle: CleModule) => (res: { arrete: boolean; bilan: Bilan; sortie: string }) => {
+      const p = pageRef.current;
+      if (typeof p === "object" && p.module === cle) return;
+      const titreModule = moduleParCle(cle).titre;
+      if (res.arrete) {
+        notifier({ type: "arret", titre: "Interrompu", texte: fr(`${titreModule} : ${resumeBilan(res.bilan, cle)}`) });
+        return;
+      }
+      notifier({
+        type: res.bilan.erreur ? "erreur" : "succes",
+        titre: cle === "ranger" ? "Rangement terminé" : res.bilan.titre,
+        texte: fr(resumeBilan(res.bilan, cle)),
+        action: { libelle: "Ouvrir le dossier", onClick: () => void ouvrir(res.sortie) },
+        duree: 8000,
+      });
+    },
+    [notifier, ouvrir],
+  );
+
+  // Le module qui travaille (calculé plus bas, après les crochets) : lu juste avant chaque lancement.
+  const actifRef = useRef<CleModule | null>(null);
+  const autreQue = (cle: CleModule) => () => {
+    const a = actifRef.current;
+    return a && a !== cle ? moduleParCle(a).titre : null;
+  };
+
+  // Options gardées quand on change d'écran (comme les sources).
+  const [formatImages, setFormatImages] = useState<FormatImage>("jpg");
+  const [renommer, setRenommer] = useState(true);
+
+  const mp4 = useTraitement({
+    moteur,
+    commande: "conversion_mp4",
+    options: {},
+    titreDossier: "Choisir le dossier de vidéos",
+    titreFichiers: "Choisir des vidéos",
+    filtre: "videos",
+    erreur,
+    surFin: surFin("mp4"),
+    occupeAilleurs: autreQue("mp4"),
+  });
+  const images = useTraitement({
+    moteur,
+    commande: "conversion_images",
+    options: { format: formatImages },
+    titreDossier: "Choisir le dossier d'images",
+    titreFichiers: "Choisir des images",
+    filtre: "images",
+    erreur,
+    surFin: surFin("images"),
+    occupeAilleurs: autreQue("images"),
+  });
+  const meta = useTraitement({
+    moteur,
+    commande: "metadonnees",
+    options: { renommer },
+    titreDossier: "Choisir le dossier (images ou vidéos)",
+    titreFichiers: "Choisir des images / vidéos",
+    filtre: "medias",
+    erreur,
+    surFin: surFin("metadonnees"),
+    occupeAilleurs: autreQue("metadonnees"),
+  });
+  const ranger = useRanger({
+    moteur,
+    connexion: m.connexion,
+    parametres: m.parametres,
+    ecrireParametres: m.ecrireParametres,
+    erreur,
+    surFin: surFin("ranger"),
+    occupeAilleurs: autreQue("ranger"),
+  });
+
+  const suivis = { mp4, images, metadonnees: meta, ranger };
+  const actif = MODULES.map((x) => x.cle).find((cle) => suivis[cle].occupe) ?? null;
+  actifRef.current = actif;
+  const activite: Activite = actif ? { module: actif, pct: Math.round((suivis[actif].progression?.fraction ?? 0) * 100) } : null;
+  const occupeAilleurs = (cle: CleModule) => (actif && actif !== cle ? moduleParCle(actif).titre : null);
+
+  versJournalActif.current = (ev: EvLog) => {
+    const cible = actif ?? (typeof pageRef.current === "object" ? pageRef.current.module : null);
+    if (cible) suivis[cible].ajouter(ligneDepuisLog(ev));
+  };
+
+  /* ---------- Dossier de sortie ---------- */
   const ouvrirSortieGenerale = useCallback(async () => {
     try {
       // « dossier_sortie » le CRÉE s'il n'existe pas encore (comme l'ancienne app), puis on l'ouvre.
@@ -133,170 +240,149 @@ export default function App() {
     try {
       const d = await moteur.choisirDossier("Choisir le dossier de sortie");
       if (!d) return;
-      await moteur.parametresEcrire({ dossier_sortie: d });
-      await m.relireParametres();
-      info("Dossier de sortie", fr(`Vos fichiers arriveront dans : ${d}`));
+      const vue = await m.ecrireParametres({ dossier_sortie: d });
+      info("Dossier de sortie", `Vos fichiers arriveront dans : ${vue.dossier_sortie}`);
     } catch (e) {
       erreur("Dossier de sortie", e);
     }
   }, [moteur, m, info, erreur]);
 
-  /* ---------- Choix de la source (fenêtre de choix, puis vérification par le moteur) ---------- */
-  const utiliserSource = useCallback(
-    async (src: Source) => {
-      try {
-        // « preparer » vérifie TOUT côté moteur (existe ? contient des vidéos ? pas dans la sortie ?)
-        // et compte les vidéos. Une erreur ici (ex. SOURCE_VIDE) s'affiche AVANT de lancer.
-        const prep = await moteur.preparer("conversion_mp4", { source: src });
-        const libelle =
-          src.type === "dossier"
-            ? src.chemin
-            : src.chemins.slice(0, 2).map(nomFichier).join(", ") + (src.chemins.length > 2 ? ` +${src.chemins.length - 2}` : "");
-        setSource({
-          source: src,
-          libelle,
-          libelleComplet: src.type === "dossier" ? src.chemin : src.chemins.join("\n"),
-          nbVideos: prep.nb_medias,
-          sortie: prep.sortie,
-          dejaPresents: prep.deja_presents ?? 0,
-        });
-        setResultat(null);
-        if (etat === "fini" || etat === "arrete") setEtat("inactif");
-      } catch (e) {
-        erreur("Source refusée", e);
-      }
-    },
-    [moteur, erreur, etat],
-  );
-
-  const choisir = useCallback(
-    async (type: "dossier" | "fichiers") => {
-      try {
-        if (type === "dossier") {
-          const d = await moteur.choisirDossier("Choisir le dossier de vidéos");
-          if (d) await utiliserSource({ type: "dossier", chemin: d });
-        } else {
-          const f = await moteur.choisirFichiers("Choisir des vidéos", "videos");
-          if (f.length) await utiliserSource({ type: "fichiers", chemins: f });
-        }
-      } catch (e) {
-        erreur("Fenêtre de choix", e);
-      }
-    },
-    [moteur, utiliserSource, erreur],
-  );
-
-  /* ---------- Conversion ---------- */
-  const lancer = useCallback(async () => {
-    if (tache.current || !source) return;
-    setJournal([]);
-    setProgression(null);
-    setResultat(null);
-    setEtat("en_cours");
-    ajouterLigne({ niveau: "info", texte: fr(`Source : ${source.libelleComplet.split("\n")[0]}${source.source.type === "fichiers" && source.source.chemins.length > 1 ? " …" : ""}`) });
-
-    let dernierGroupe = "";
-    const t = moteur.convertirMp4(source.source, {
-      onProgress: (ev) => {
-        const p = progressionDepuis(ev, source.nbVideos);
-        // Nouveau dossier → une ligne « Dossier 2/3 — Modèle A » dans le journal.
-        if (p.groupe) {
-          const cle = `${p.groupe.index}/${p.groupe.total}`;
-          if (cle !== dernierGroupe) {
-            dernierGroupe = cle;
-            ajouterLigne(ligneDossier(p.groupe));
-          }
-        }
-        setProgression(p);
-      },
-      onLog: (ev) => ajouterLigne(ligneDepuisLog(ev)),
-    });
-    tache.current = t;
-
-    let res: ResultatConversion;
+  const reinitialiserSortie = useCallback(async () => {
     try {
-      res = await t.resultat;
+      const vue = await m.ecrireParametres({ dossier_sortie: "" });
+      info("Dossier de sortie", `Retour au dossier par défaut : ${vue.dossier_sortie}`);
     } catch (e) {
-      tache.current = null;
-      setEtat("inactif");
-      setProgression(null);
-      ajouterLigne({ niveau: "erreur", texte: messageErreur(e) });
-      erreur("Conversion impossible", e);
-      return;
+      erreur("Dossier de sortie", e);
     }
-    tache.current = null;
-    setResultat(res);
-    setEtat(res.arrete ? "arrete" : "fini");
+  }, [m, info, erreur]);
 
-    // Sur l'écran MP4, la carte de résultat (qui reste affichée) suffit. La notification ne sert
-    // que si l'utilisateur est parti sur un autre écran pendant la conversion.
-    const surMp4 = typeof pageRef.current === "object" && pageRef.current.module === "mp4";
-    if (surMp4) return;
-    const s = res.traites > 1 ? "s" : "";
-    if (res.arrete) {
-      notifier({
-        type: "arret",
-        titre: "Interrompu",
-        texte: fr(`Opération arrêtée. ${pluriel(res.traites, "vidéo")} déjà convertie${s}.`),
-      });
-    } else {
-      notifier({
-        type: "succes",
-        titre: "Conversion terminée",
-        texte: fr(
-          res.dossiers > 1
-            ? `${pluriel(res.traites, "vidéo")} convertie${s} dans ${pluriel(res.dossiers, "dossier")} ! Même arborescence que votre dossier.`
-            : `${pluriel(res.traites, "vidéo")} convertie${s} !`,
-        ),
-        action: { libelle: fr("Ouvrir « media (mp4) »"), onClick: () => ouvrir(res.sortie) },
-        duree: 8000,
-      });
+  /* ---------- Licence : écrans du portail ---------- */
+  // DEV : pont lancé avec --sans-licence → la licence n'est pas exigée (badge visible). Jamais livré.
+  const contournee = import.meta.env.DEV && !!m.info?.licence_contournee_dev;
+  const premierLancement = m.parametres === null ? null : m.parametres.deja_demarre !== true;
+  const [bienvenueVue, setBienvenueVue] = useState(false);
+  const ecranL = ecranLicence({
+    statut: lic.statut,
+    erreur: lic.erreur,
+    enCours: lic.enCours,
+    connexion: m.connexion,
+    premierLancement: premierLancement === null ? null : premierLancement && !bienvenueVue,
+    contournee,
+    infoPrete: !import.meta.env.DEV || m.connexion !== "connecte" || m.info !== null,
+  });
+  const ecranLRef = useRef(ecranL);
+  ecranLRef.current = ecranL;
+
+  const ouvrirLienExterne = useCallback(
+    (url: string) => {
+      ouvrirLien(url).catch((e) => erreur("Lien impossible à ouvrir", e));
+    },
+    [erreur],
+  );
+
+  // « Commencer » (écran Bienvenue) : on retient que l'app a déjà démarré, puis on entre.
+  // Si l'enregistrement échoue, on entre quand même (l'écran reviendra au prochain lancement).
+  const commencer = useCallback(async () => {
+    try {
+      await m.ecrireParametres({ deja_demarre: true });
+    } catch (e) {
+      erreur("Préférence non enregistrée", e);
     }
-  }, [source, moteur, ajouterLigne, erreur, notifier, ouvrir]);
+    setBienvenueVue(true);
+    aller("accueil");
+  }, [m, erreur, aller]);
 
-  const annuler = useCallback(() => {
-    if (!tache.current || etat !== "en_cours") return;
-    setEtat("annulation");
-    // Le moteur arrête ffmpeg tout de suite et supprime le fichier à moitié écrit.
-    // La fin arrive ensuite comme un résultat normal, avec arrete: true.
-    tache.current.annuler().catch((e) => erreur("Annulation", e));
-  }, [etat, erreur]);
+  // Panne au démarrage : moteur absent → on se reconnecte ; moteur là → on revérifie.
+  const reessayerLicence = useCallback(() => {
+    if (m.connexion === "non_connecte") m.reconnecter();
+    else void lic.verifier();
+  }, [m, lic]);
 
-  // Échap annule la conversion en cours (comme une fenêtre de progression classique).
+  /* ---------- Échap annule l'action en cours (sur l'écran de son module) ---------- */
   useEffect(() => {
-    if (etat !== "en_cours") return;
+    if (!actif) return;
     const touche = (e: KeyboardEvent) => {
-      if (e.key === "Escape") annuler();
+      if (e.key !== "Escape" || e.defaultPrevented || ecranLRef.current !== "app") return;
+      if ((e.target as Element | null)?.closest?.("dialog")) return; // Échap ferme d'abord la fenêtre ouverte
+      const p = pageRef.current;
+      if (typeof p === "object" && p.module === actif) suivis[actif].annuler();
     };
     window.addEventListener("keydown", touche);
     return () => window.removeEventListener("keydown", touche);
-  }, [etat, annuler]);
+  });
 
   /* ---------- Crochets de DÉVELOPPEMENT (captures d'écran, tests automatiques) ----------
-     Dans la console :  __demo("theme", "light")  ·  __demo("page", "mp4")
-                        __helpvaTest.source({ type: "dossier", chemin: "C:\\…" })   (sans fenêtre de choix)
+     Dans la console :  __demo("theme", "light")  ·  __demo("page", "images")
+                        __helpvaTest.source("images", { type: "dossier", chemin: "C:\\…" })  (sans fenêtre de choix)
+                        __helpvaTest.rangerDossier("reel", "C:\\…")  (dossier d'un type de post, Ranger)
      Absents de l'app livrée (import.meta.env.DEV vaut false au build). */
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const w = window as unknown as {
       __demo?: (scenario: string, arg?: unknown) => void;
-      __helpvaTest?: { source: (s: Source) => Promise<void>; connexion: () => string };
+      __helpvaTest?: {
+        source: (cle: "mp4" | "images" | "metadonnees", s: Source) => Promise<void>;
+        connexion: () => string;
+        activer: (code: string) => Promise<unknown>;
+        rangerDossier: (type: TypePost, chemin: string) => void;
+      };
     };
     w.__demo = (scenario, arg) => {
       if (scenario === "theme") setTheme(arg === "light" ? "light" : "dark");
-      else if (scenario === "page") aller(arg === "mp4" ? { module: "mp4" } : arg === "parametres" ? "parametres" : "accueil");
+      else if (scenario === "page") {
+        const cle = MODULES.find((x) => x.cle === arg)?.cle;
+        aller(cle ? { module: cle } : arg === "parametres" ? "parametres" : "accueil");
+      }
     };
-    w.__helpvaTest = { source: utiliserSource, connexion: () => m.connexion };
+    w.__helpvaTest = {
+      source: (cle, s) => ({ mp4, images, metadonnees: meta })[cle].utiliserSource(s),
+      connexion: () => m.connexion,
+      activer: lic.activer,
+      rangerDossier: ranger.definirDossier,
+    };
     return () => {
       delete w.__demo;
       delete w.__helpvaTest;
     };
-  }, [aller, setTheme, utiliserSource, m.connexion]);
+  });
 
-  const occupe = etat === "en_cours" || etat === "annulation";
-  const nom = nomLicence(m.licence);
-  const formule = libelleFormule(m.licence);
+  const nom = nomLicence(lic.statut);
+  const formule = contournee && !lic.statut?.ok ? "Licence non exigée (dev)" : libelleFormule(lic.statut);
+
+  /* ---------- Portail : tant que la licence n'est pas réglée, pas d'application ---------- */
+  if (ecranL !== "app") {
+    const st = lic.statut;
+    const contenuPortail =
+      ecranL === "activation" && st ? (
+        <Activation key={st.raison} statut={st} activer={lic.activer} verifier={lic.verifier} ouvrirLien={ouvrirLienExterne} />
+      ) : ecranL === "connexion" ? (
+        <ConnexionRequise verifier={lic.verifier} enCours={lic.enCours} />
+      ) : ecranL === "panne" ? (
+        <Panne erreur={lic.erreur ?? ""} reessayer={reessayerLicence} enCours={lic.enCours || m.connexion === "connexion"} />
+      ) : ecranL === "bienvenue" && st ? (
+        <Bienvenue statut={st} commencer={commencer} resume={contournee && !st.ok ? "Mode développement (licence non exigée)" : undefined} />
+      ) : (
+        <Verification />
+      );
+    return (
+      <>
+        <Portail
+          ecran={ecranL === "activation" ? `activation-${st?.raison}` : ecranL}
+          theme={theme}
+          setTheme={setTheme}
+          marque={ecranL !== "verification" && ecranL !== "bienvenue"}
+        >
+          {contenuPortail}
+        </Portail>
+        <Toasts toasts={toasts} fermer={fermerToast} />
+      </>
+    );
+  }
+
+  /* ---------- L'application ---------- */
   const bandeau = <BandeauMoteur connexion={m.connexion} raison={m.raison} reconnecter={m.reconnecter} />;
+  const retour = () => aller("accueil");
+  const commun = { bandeau, retour, ouvrirDossier: (c: string) => void ouvrir(c) };
 
   const ecran = (() => {
     if (page === "accueil")
@@ -308,6 +394,7 @@ export default function App() {
           sortie={m.sortie}
           nom={nom}
           formule={formule}
+          activite={activite}
           bandeau={bandeau}
         />
       );
@@ -315,38 +402,38 @@ export default function App() {
       return (
         <Parametres
           sortie={m.sortie}
-          licence={m.licence}
+          personnalise={!!m.vue?.personnalise}
+          licence={lic.statut}
+          formule={formule}
           info={m.info}
           transport={moteur.transport}
           changerSortie={changerSortie}
+          reinitialiserSortie={reinitialiserSortie}
           ouvrirSortie={ouvrirSortieGenerale}
-          notifier={info}
+          resilier={lic.resilier}
           bandeau={bandeau}
         />
       );
-    if (page.module === "mp4")
-      return (
-        <ConvertirMp4
-            bandeau={bandeau}
-            source={source}
-            choisir={choisir}
-            demo={moteur.mode === "simule"}
-            etat={etat}
-            progression={progression}
-            resultat={resultat}
-            journal={journal}
-            lancer={lancer}
-            annuler={annuler}
-            ouvrirSortie={() => resultat && ouvrir(resultat.sortie)}
-            effacer={() => {
-              setJournal([]);
-              setResultat(null);
-              setEtat("inactif");
-            }}
-            retour={() => aller("accueil")}
+    switch (page.module) {
+      case "mp4":
+        return <ConvertirMp4 t={mp4} occupeAilleurs={occupeAilleurs("mp4")} {...commun} />;
+      case "images":
+        return <ConvertirImages t={images} format={formatImages} setFormat={setFormatImages} occupeAilleurs={occupeAilleurs("images")} {...commun} />;
+      case "metadonnees":
+        return <Metadonnees t={meta} renommer={renommer} setRenommer={setRenommer} occupeAilleurs={occupeAilleurs("metadonnees")} {...commun} />;
+      case "ranger":
+        return (
+          <Ranger
+            r={ranger}
+            moteur={moteur}
+            imagesParCarrousel={m.info?.images_par_carrousel ?? 3}
+            occupeAilleurs={occupeAilleurs("ranger")}
+            erreur={erreur}
+            info={info}
+            {...commun}
           />
-      );
-    return <ModuleBientot cle={page.module} retour={() => aller("accueil")} voirMp4={() => aller({ module: "mp4" })} />;
+        );
+    }
   })();
 
   // Clé d'écran : rejoue l'animation d'entrée à chaque changement de page.
@@ -359,10 +446,11 @@ export default function App() {
         aller={aller}
         theme={theme}
         setTheme={setTheme}
-        pctMp4={occupe ? Math.round((progression?.fraction ?? 0) * 100) : null}
+        activite={activite}
         nom={nom}
         formule={formule}
-        licenceOk={m.licence ? m.licence.ok : null}
+        licenceOk={contournee ? true : lic.statut ? lic.statut.ok : null}
+        horsLigne={!!lic.statut?.ok && !!lic.statut.hors_ligne}
         connexion={m.connexion}
         transport={moteur.transport}
         raison={m.raison}
@@ -377,7 +465,11 @@ export default function App() {
           {ecran}
         </div>
       </main>
-      <Toasts toasts={toasts} fermer={fermerToast} />
+      <Toasts
+        toasts={toasts}
+        fermer={fermerToast}
+        persistants={<RappelsLicence statut={lic.statut} ouvrirLien={ouvrirLienExterne} />}
+      />
     </div>
   );
 }

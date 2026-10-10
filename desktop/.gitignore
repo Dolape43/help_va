@@ -3,6 +3,7 @@ dist
 captures
 *.log
 .env.local
+.env.*.local
 # L'exe du moteur (construit avec PyInstaller) : un artefact de build, jamais versionné.
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep

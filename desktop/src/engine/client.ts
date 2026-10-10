@@ -119,7 +119,7 @@ export class ClientMoteur {
       if (delaiMs > 0) {
         attente.minuteur = setTimeout(() => {
           this.terminer(id);
-          rejeter(new ErreurMoteur("DELAI_DEPASSE", `Pas de réponse du moteur pour « ${cmd} ».`));
+          rejeter(new ErreurMoteur("DELAI_DEPASSE", `Pas de réponse du moteur pour « ${cmd} ».`, { cmd }));
         }, delaiMs);
       }
       if (surveiller) attente.surveillance = setInterval(() => void this.verifierTache(id, cmd), SURVEILLANCE_MS);
@@ -173,6 +173,14 @@ export class ClientMoteur {
   }
 
   async fermer() {
+    // Tâches longues en cours : on demande leur annulation. Avec le pont de dev, le moteur survit
+    // à la page (rechargement, onglet fermé) : sans ça, une conversion continuerait sans personne
+    // pour la suivre. (Avec le sidecar, « quitter » les annule de toute façon.)
+    for (const [id, attente] of this.enAttente) {
+      if (attente.surveillance) {
+        this.transport.envoyer({ id: `ui-annuler-${id}`, cmd: "annuler", args: { cible: id } }).catch(() => {});
+      }
+    }
     this.deconnecte = true;
     this.echouerTout("Interface fermée.");
     await this.transport.arreter();

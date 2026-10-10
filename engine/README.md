@@ -235,9 +235,10 @@ Déroulé type d'un bouton « Convertir les images » :
 
 ## 4. Le pont de développement (`dev_bridge.py`)
 
-Tant que Rust n'est pas installé, `tauri dev` ne marche pas. Le pont permet de
-développer l'interface React **dans le navigateur** (`npm run dev` → `http://localhost:1420`)
-avec le **vrai** moteur.
+Tant que l'exe du moteur (PyInstaller) n'existe pas, l'interface parle au moteur par ce pont,
+**dans le navigateur** (`http://localhost:1420`) comme **dans la fenêtre Tauri** (`npm run tauri:dev`).
+Le plus simple : `cd desktop` puis `npm run dev:moteur`, qui lance le pont ET l'interface
+(voir `desktop/README.md`). À la main :
 
 ```powershell
 python engine\dev_bridge.py --sans-licence  # http://127.0.0.1:8765, tâches longues sans licence

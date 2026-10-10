@@ -1,35 +1,72 @@
-import { ArrowSquareOut, FolderSimple, IdentificationCard, PencilSimple } from "@phosphor-icons/react";
-import { Bouton, Carte, PastilleIcone, Surtitre, TitrePage } from "../components/ui";
+import { ArrowCounterClockwise, ArrowSquareOut, FolderSimple, IdentificationCard, PencilSimple, WarningCircle } from "@phosphor-icons/react";
+import { Bouton, Carte, PastilleIcone, Rouage, Surtitre, TitrePage } from "../components/ui";
+import Dialogue from "../components/Dialogue";
 import { useEffect, useState, type ReactNode } from "react";
 import { versionApp } from "../plateforme";
 import type { InfoMoteur, StatutLicence } from "../engine/api";
-import { dateLongue, libelleFormule, nomLicence } from "../licence";
+import { dateLongue, nomLicence } from "../licence";
+import { messageErreur } from "../erreurs";
+import { fr } from "../fr";
 
-/** Paramètres : dossier de sortie (lu et modifié via le moteur) et licence (lecture seule ici). */
+/** Paramètres : dossier de sortie (lu et modifié via le moteur) et licence (avec la résiliation). */
 export default function Parametres({
   sortie,
+  personnalise,
   licence,
+  formule,
   info,
   transport,
   changerSortie,
+  reinitialiserSortie,
   ouvrirSortie,
-  notifier,
+  resilier,
   bandeau,
 }: {
   sortie: string | null;
+  /** dossier de sortie choisi par l'utilisateur (sinon : Bureau\HelpVA par défaut) */
+  personnalise: boolean;
   licence: StatutLicence | null;
+  /** « Abonnement mensuel »… (calculé par App, qui connaît aussi le mode développement) */
+  formule: string;
   info: InfoMoteur | null;
   transport: string;
   changerSortie: () => void;
+  /** retour au dossier par défaut (Bureau\HelpVA) */
+  reinitialiserSortie: () => void;
   ouvrirSortie: () => void;
-  notifier: (titre: string, texte: string) => void;
+  /** supprime la licence de ce PC ; l'écran d'activation prend alors le relais */
+  resilier: () => Promise<void>;
   bandeau: ReactNode;
 }) {
   const [version, setVersion] = useState(__APP_VERSION__);
   useEffect(() => {
     versionApp().then(setVersion);
   }, []);
+
+  const [confirmer, setConfirmer] = useState(false);
+  const [resiliation, setResiliation] = useState(false);
+  const [erreurResiliation, setErreurResiliation] = useState<string | null>(null);
+
+  const ouvrirConfirmation = () => {
+    setErreurResiliation(null);
+    setConfirmer(true);
+  };
+  const confirmerResiliation = async () => {
+    if (resiliation) return;
+    setResiliation(true);
+    setErreurResiliation(null);
+    try {
+      await resilier(); // réussite : l'app passe à l'écran d'activation, cet écran disparaît
+    } catch (e) {
+      setErreurResiliation(messageErreur(e));
+      setResiliation(false);
+    }
+  };
+
+  const aVie = licence?.ok && (licence.type === "vie" || !licence.expire_le);
+  const debut = dateLongue(licence?.debut_le);
   const fin = dateLongue(licence?.expire_le);
+
   return (
     <div className="entree mx-auto max-w-[760px] px-6 pb-10 pt-9 @min-[700px]:px-10">
       {bandeau}
@@ -43,12 +80,14 @@ export default function Parametres({
           </PastilleIcone>
           <div className="min-w-0 flex-1">
             <p className="text-16 font-semibold">Dossier de sortie</p>
-            <p className="text-13 text-fg-2">Emplacement où vos fichiers préparés sont enregistrés.</p>
+            <p className="text-13 text-fg-2">
+              Emplacement où vos fichiers préparés sont enregistrés{personnalise ? "." : " (par défaut : Bureau)."}
+            </p>
             <p className="selectable mt-3 truncate rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-12" title={sortie ?? undefined}>
               {sortie ?? "Chargement…"}
             </p>
             <div className="mt-3 flex gap-2">
-              <Bouton taille="sm" variante="primaire" onClick={changerSortie}>
+              <Bouton id="bouton-changer-sortie" taille="sm" variante="primaire" onClick={changerSortie}>
                 <PencilSimple className="h-4 w-4" />
                 Changer…
               </Bouton>
@@ -56,6 +95,19 @@ export default function Parametres({
                 <ArrowSquareOut className="h-4 w-4" />
                 Ouvrir
               </Bouton>
+              {personnalise && (
+                <Bouton
+                  taille="sm"
+                  variante="fantome"
+                  onClick={() => {
+                    document.getElementById("bouton-changer-sortie")?.focus();
+                    reinitialiserSortie();
+                  }}
+                >
+                  <ArrowCounterClockwise className="h-4 w-4" />
+                  Réinitialiser (Bureau)
+                </Bouton>
+              )}
             </div>
           </div>
         </div>
@@ -68,24 +120,27 @@ export default function Parametres({
           </PastilleIcone>
           <div className="min-w-0 flex-1">
             <p className="text-16 font-semibold">Licence &amp; abonnement</p>
-            <dl className="mt-3 grid grid-cols-[160px_1fr] gap-y-2 text-13">
+            <dl className="mt-3 grid grid-cols-[170px_1fr] gap-y-2 text-13">
               <dt className="text-fg-3">Détenteur</dt>
-              <dd className="font-medium">{nomLicence(licence) ?? "—"}</dd>
+              <dd id="parametres-detenteur" className="font-medium">
+                {nomLicence(licence) ?? "—"}
+              </dd>
               <dt className="text-fg-3">Formule</dt>
-              <dd>{libelleFormule(licence)}</dd>
-              {fin && (
+              <dd id="parametres-formule">{aVie ? "Licence à vie — sans expiration" : formule}</dd>
+              {!aVie && debut && (
                 <>
-                  <dt className="text-fg-3">Fin de l'abonnement</dt>
+                  <dt className="text-fg-3">Début de l'abonnement</dt>
+                  <dd className="tabular">{debut}</dd>
+                </>
+              )}
+              {!aVie && fin && (
+                <>
+                  <dt className="text-fg-3">{licence?.type === "essai" ? "Fin de l'essai" : "Fin de l'abonnement"}</dt>
                   <dd className="tabular">{fin}</dd>
                 </>
               )}
             </dl>
-            <Bouton
-              taille="sm"
-              variante="danger"
-              className="mt-4"
-              onClick={() => notifier("Licence", "Pas encore disponible dans la nouvelle interface : utilisez l'application actuelle.")}
-            >
+            <Bouton taille="sm" variante="danger" className="mt-4" onClick={ouvrirConfirmation}>
               Résilier / changer de licence
             </Bouton>
           </div>
@@ -99,6 +154,45 @@ export default function Parametres({
           {info ? `moteur ${info.version} (Python ${info.python}, ${transport})` : `moteur : ${transport}`}
         </p>
       </div>
+
+      <Dialogue
+        ouvert={confirmer}
+        fermer={() => setConfirmer(false)}
+        occupe={resiliation}
+        ton="danger"
+        icone={<WarningCircle weight="duotone" className="h-6 w-6" />}
+        titre="Résilier la licence de ce PC ?"
+        actions={
+          <>
+            <Bouton data-autofocus onClick={resiliation ? undefined : () => setConfirmer(false)} aria-disabled={resiliation || undefined}>
+              Annuler
+            </Bouton>
+            <Bouton variante="alerte" onClick={confirmerResiliation}
+              aria-disabled={resiliation || undefined}
+            >
+              {resiliation ? (
+                <>
+                  <Rouage />
+                  Résiliation…
+                </>
+              ) : (
+                "Résilier la licence"
+              )}
+            </Bouton>
+          </>
+        }
+      >
+        <p>{fr("La licence sera supprimée de ce PC et HelpVA reviendra à l'écran d'activation.")}</p>
+        <p className="mt-3 rounded-xl border border-danger/20 bg-danger/[0.06] px-3.5 py-2.5 text-13 text-fg">
+          {fr("Votre code d'activation a déjà servi : il faudra un NOUVEAU code fourni par le vendeur pour réactiver HelpVA.")}
+        </p>
+        {erreurResiliation && (
+          <p role="alert" className="mt-3 flex items-start gap-1.5 text-13 text-danger">
+            <WarningCircle weight="fill" className="mt-px h-4 w-4 shrink-0" aria-hidden="true" />
+            {fr(erreurResiliation)}
+          </p>
+        )}
+      </Dialogue>
     </div>
   );
 }

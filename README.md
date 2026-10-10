@@ -136,7 +136,9 @@ Fichiers :
 ## Structure du projet
 
 ```
-app_ctk.py              Interface (pages, navigation, popups)
+desktop/                NOUVELLE interface (Tauri v2 + React), en cours de migration : voir desktop/README.md
+engine/                 Moteur Python sans interface (sidecar de la nouvelle interface) : voir engine/README.md
+app_ctk.py              Interface actuelle (pages, navigation, popups)
 agent/
 ├── unicite.py          Métadonnées + conversion d'images
 ├── conversion.py       Conversion vidéo en MP4 (ffmpeg)

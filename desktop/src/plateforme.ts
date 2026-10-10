@@ -58,6 +58,20 @@ export async function avantFermeture(nettoyer: () => Promise<void>): Promise<() 
 }
 
 /**
+ * Ouvre un lien (Telegram du vendeur…) dans le navigateur de l'utilisateur.
+ * Dans Tauri, la fenêtre de l'app n'est PAS un navigateur : un simple lien s'ouvrirait dedans.
+ * Le plugin « opener » le confie au navigateur par défaut (permission opener:default = http/https).
+ */
+export async function ouvrirLien(url: string): Promise<void> {
+  if (!DANS_TAURI) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+}
+
+/**
  * Une app de bureau n'a pas le menu clic droit du navigateur (Précédent, Actualiser, Imprimer…).
  * On le garde seulement sur les textes sélectionnables (chemins, journal) pour pouvoir copier.
  */

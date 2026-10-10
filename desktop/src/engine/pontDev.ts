@@ -94,6 +94,8 @@ export class TransportPontDev implements Transport {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-HelpVA-Token": this.jeton },
         body: JSON.stringify(req),
+        // La demande part même si la page se ferme (annulation envoyée au rechargement).
+        keepalive: true,
       });
     } catch {
       throw new ErreurMoteur("MOTEUR_ARRETE", "Pont de dev injoignable.");

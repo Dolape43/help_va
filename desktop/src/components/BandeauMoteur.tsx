@@ -3,8 +3,8 @@ import type { EtatConnexion } from "../engine/useMoteur";
 import { Bouton } from "./ui";
 
 /**
- * Bandeau « Moteur non connecté » : on ne laisse JAMAIS croire qu'une conversion simulée
- * est réelle. Affiché en haut des écrans tant que le vrai moteur Python n'est pas joignable.
+ * Bandeau « Moteur non connecté » : affiché en haut des écrans tant que le moteur Python
+ * n'est pas joignable (aucune action ne peut alors aboutir), avec un bouton « Réessayer ».
  */
 export default function BandeauMoteur({
   connexion,
@@ -25,12 +25,12 @@ export default function BandeauMoteur({
       <PlugsConnected weight="duotone" className="h-5 w-5 shrink-0 text-danger" />
       <div className="min-w-[200px] flex-1">
         <p className="text-14 font-semibold">
-          {import.meta.env.DEV ? "Moteur non connecté — mode démonstration" : "Le moteur de HelpVA n'a pas démarré"}
+          {import.meta.env.DEV ? "Moteur Python non connecté" : "Le moteur de HelpVA n'a pas démarré"}
         </p>
         <p className="truncate text-12 text-fg-2" title={raison ?? undefined}>
           {import.meta.env.DEV ? (
             <>
-              Lancez le pont : <code className="selectable font-mono">python engine/dev_bridge.py --sans-licence</code>
+              Lancez <code className="selectable font-mono">npm run dev:moteur</code> (pont + interface), puis « Réessayer ».
             </>
           ) : (
             "Cliquez sur « Réessayer ». Si le problème continue, réinstallez HelpVA."

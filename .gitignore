@@ -38,3 +38,6 @@ tools/appimagetool-x86_64.AppImage
 engine/.dev_token
 # Données de TEST du moteur lancé par le pont de dev (paramètres, licence, « Bureau »)
 engine/.donnees_dev/
+
+# Réglages locaux de l’assistant de code (aperçu du navigateur)
+.claude/

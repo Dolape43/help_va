@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle, FolderOpen, Info, StopCircle, WarningCircle, X } from "@phosphor-icons/react";
 
 export type Toast = {
@@ -93,7 +93,19 @@ function UnToast({ t, fermer }: { t: Toast; fermer: (id: number) => void }) {
   );
 }
 
-export default function Toasts({ toasts, fermer }: { toasts: Toast[]; fermer: (id: number) => void }) {
+/**
+ * La pile en bas à droite. `persistants` (rappels de licence, « Hors-ligne ») restent tout en bas,
+ * au plus près du coin ; les notifications passagères s'empilent au-dessus.
+ */
+export default function Toasts({
+  toasts,
+  fermer,
+  persistants,
+}: {
+  toasts: Toast[];
+  fermer: (id: number) => void;
+  persistants?: ReactNode;
+}) {
   return (
     <div className="pointer-events-none fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2.5">
       {toasts.map((t) => (
@@ -101,6 +113,7 @@ export default function Toasts({ toasts, fermer }: { toasts: Toast[]; fermer: (i
           <UnToast t={t} fermer={fermer} />
         </div>
       ))}
+      {persistants}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { ArrowLeft } from "@phosphor-icons/react";
 import { Bouton, TitrePage } from "./ui";
-import type { MODULES } from "../modules";
+import type { ModuleDef } from "../modules";
 
 /** En-tête commun aux écrans de module : fil d'Ariane + icône 3D + titre + phrase d'explication. */
 export default function EnteteModule({
@@ -8,7 +8,7 @@ export default function EnteteModule({
   sousTitre,
   retour,
 }: {
-  mod: (typeof MODULES)[number];
+  mod: ModuleDef;
   sousTitre: string;
   retour: () => void;
 }) {

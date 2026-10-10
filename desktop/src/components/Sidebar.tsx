@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { GearSix, House, Moon, Sun } from "@phosphor-icons/react";
+import { useEffect, useState, type ReactNode } from "react";
+import { GearSix, House } from "@phosphor-icons/react";
+import SelecteurTheme from "./SelecteurTheme";
 import logo from "../assets/logo.png";
 import { MODULES, type CleModule } from "../modules";
-import type { Page, Theme } from "../App";
+import type { Activite, Page, Theme } from "../App";
 import { versionApp } from "../plateforme";
 import type { EtatConnexion } from "../engine/useMoteur";
 import { initiales } from "../licence";
@@ -45,10 +46,11 @@ export default function Sidebar({
   aller,
   theme,
   setTheme,
-  pctMp4,
+  activite,
   nom,
   formule,
   licenceOk,
+  horsLigne,
   connexion,
   transport,
   raison,
@@ -57,13 +59,15 @@ export default function Sidebar({
   aller: (p: Page) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
-  /** pourcentage de la conversion en cours (null si rien ne tourne) */
-  pctMp4: number | null;
+  /** module qui travaille et son pourcentage (null si rien ne tourne) */
+  activite: Activite;
   /** nom du détenteur de la licence (null = inconnu) */
   nom: string | null;
   formule: string;
   /** null = vérification en cours */
   licenceOk: boolean | null;
+  /** licence valide, mais le serveur n'a pas pu la confirmer (toléré 3 jours) */
+  horsLigne: boolean;
   connexion: EtatConnexion;
   /** « pont de dev », « sidecar »… */
   transport: string;
@@ -73,17 +77,6 @@ export default function Sidebar({
   useEffect(() => {
     versionApp().then(setVersion);
   }, []);
-
-  // Sélecteur de thème = un groupe radio : UN seul arrêt de Tab (sur le choix actif),
-  // puis les flèches changent de choix (comportement standard attendu au clavier).
-  const radios = useRef<Record<Theme, HTMLButtonElement | null>>({ light: null, dark: null });
-  const flecheTheme = (e: KeyboardEvent) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
-    e.preventDefault();
-    const autre: Theme = theme === "light" ? "dark" : "light";
-    setTheme(autre);
-    radios.current[autre]?.focus();
-  };
 
   const moduleActif: CleModule | null = typeof page === "object" ? page.module : null;
   const ico = (actif: boolean) => `h-[18px] w-[18px] ${actif ? "text-brand-text" : "text-fg-3 group-hover:text-fg-2"}`;
@@ -123,10 +116,10 @@ export default function Sidebar({
             onClick={() => aller({ module: m.cle })}
             icone={<img src={m.icone} alt="" className="h-[18px] w-[18px] object-contain" />}
             badge={
-              m.cle === "mp4" && pctMp4 !== null ? (
+              activite?.module === m.cle ? (
                 <span className="tabular flex shrink-0 items-center gap-1 rounded-full bg-brand-soft px-1.5 py-px text-11 font-medium text-brand-text">
                   <span className="point-actif h-1.5 w-1.5 rounded-full bg-brand" aria-hidden="true" />
-                  {pctMp4}&nbsp;%
+                  {activite.pct}&nbsp;%
                 </span>
               ) : undefined
             }
@@ -153,10 +146,17 @@ export default function Sidebar({
           </span>
           <span className="flex items-center gap-1.5 text-12 text-fg-3">
             <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${licenceOk === null ? "bg-fg-3" : licenceOk ? "bg-success" : "bg-danger"}`}
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                licenceOk === null ? "bg-fg-3" : !licenceOk ? "bg-danger" : horsLigne ? "bg-warning" : "bg-success"
+              }`}
               aria-hidden="true"
             />
-            <span id="sidebar-formule" className="truncate">
+            {/* Hors-ligne : point orange + info-bulle ici ; le texte « Hors-ligne » est en bas à droite. */}
+            <span
+              id="sidebar-formule"
+              className="truncate"
+              title={horsLigne ? "Hors-ligne : HelpVA réessaie de confirmer votre licence toutes les 5 minutes." : undefined}
+            >
               {formule}
             </span>
           </span>
@@ -174,18 +174,26 @@ export default function Sidebar({
               connexion === "connecte"
                 ? `Moteur Python connecté (${transport})`
                 : connexion === "connexion"
-                  ? "Connexion au moteur…"
-                  : `Moteur non connecté : ${raison ?? "inconnu"}`
+                    ? "Connexion au moteur…"
+                    : `Moteur non connecté : ${raison ?? "inconnu"}`
             }
             className="flex items-center gap-1 text-11 text-fg-3"
           >
             <span
               aria-hidden="true"
               className={`h-1.5 w-1.5 rounded-full ${
-                connexion === "connecte" ? "bg-success" : connexion === "connexion" ? "point-actif bg-fg-3" : "bg-danger"
+                connexion === "connecte"
+                  ? "bg-success"
+                  : connexion === "connexion"
+                      ? "point-actif bg-fg-3"
+                      : "bg-danger"
               }`}
             />
-            {connexion === "connecte" ? "Moteur" : connexion === "connexion" ? "…" : import.meta.env.DEV ? "Démo" : "Arrêté"}
+            {connexion === "connecte"
+              ? "Moteur"
+              : connexion === "connexion"
+                  ? "…"
+                  : "Arrêté"}
           </span>
           {import.meta.env.DEV && (
             <span
@@ -196,38 +204,7 @@ export default function Sidebar({
             </span>
           )}
         </div>
-        <div
-          role="radiogroup"
-          aria-label="Thème"
-          className="relative flex rounded-lg border border-line bg-fg/[0.04] p-0.5"
-        >
-          <span
-            aria-hidden="true"
-            className={`absolute top-0.5 h-6 w-6 rounded-md bg-surface shadow-[0_0_0_1px_var(--line),0_1px_2px_rgba(0,0,0,0.12)] transition-transform duration-200 ease-out ${
-              theme === "dark" ? "translate-x-6" : "translate-x-0"
-            }`}
-          />
-          {(["light", "dark"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="radio"
-              aria-checked={theme === t}
-              ref={(el) => {
-                radios.current[t] = el;
-              }}
-              tabIndex={theme === t ? 0 : -1}
-              onKeyDown={flecheTheme}
-              aria-label={t === "light" ? "Thème clair" : "Thème sombre"}
-              onClick={() => setTheme(t)}
-              className={`relative z-10 grid h-6 w-6 place-items-center rounded-md transition-colors duration-150 ${
-                theme === t ? "text-fg" : "text-fg-3 hover:text-fg-2"
-              }`}
-            >
-              {t === "light" ? <Sun weight="bold" className="h-3.5 w-3.5" /> : <Moon weight="bold" className="h-3.5 w-3.5" />}
-            </button>
-          ))}
-        </div>
+        <SelecteurTheme theme={theme} setTheme={setTheme} />
       </div>
     </aside>
   );

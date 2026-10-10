@@ -7,6 +7,7 @@
 //   attente : délai en ms avant la capture
 //   survol  : sélecteur CSS d'un élément à survoler avant la capture (facultatif)
 //   mouvement : true pour NE PAS émuler « mouvement réduit » (par défaut, on l'émule : captures stables)
+//   url     : adresse propre à cette capture (facultatif ; sinon <url>), ex. "http://localhost:1420/?scenario=expire&capture"
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -75,7 +76,7 @@ for (const c of plan) {
     features: [{ name: "prefers-reduced-motion", value: c.mouvement ? "no-preference" : "reduce" }],
   });
   const charge = une("Page.loadEventFired");
-  await cmd("Page.navigate", { url });
+  await cmd("Page.navigate", { url: c.url ?? url });
   await charge;
   await evalJs("document.fonts.ready.then(() => true)");
   await sleep(150);

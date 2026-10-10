@@ -2,6 +2,7 @@ import { ArrowRight, ArrowSquareOut, FolderSimple, Lightbulb, PencilSimple, Shie
 import { Bouton, Carte, PastilleIcone, Surtitre, TitrePage } from "../components/ui";
 import { MODULES, type CleModule } from "../modules";
 import type { ReactNode } from "react";
+import type { Activite } from "../App";
 import { fr } from "../fr";
 
 const dateDuJour = () => {
@@ -16,6 +17,7 @@ export default function Accueil({
   sortie,
   nom,
   formule,
+  activite,
   bandeau,
 }: {
   ouvrirModule: (cle: CleModule) => void;
@@ -27,6 +29,8 @@ export default function Accueil({
   nom: string | null;
   /** « Abonnement mensuel », « Licence non activée »… */
   formule: string;
+  /** le module qui travaille en ce moment (pastille « En cours · 43 % » sur sa carte) */
+  activite: Activite;
   bandeau: ReactNode;
 }) {
   const nomDossier = sortie ? sortie.split(/[\\/]/).filter(Boolean).pop() ?? sortie : "…";
@@ -105,7 +109,14 @@ export default function Accueil({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-16 font-semibold tracking-[-0.01em]">{m.titre}</span>
-              <span className="mt-0.5 line-clamp-2 text-13 text-fg-2">{m.texte}</span>
+              {activite?.module === m.cle ? (
+                <span className="tabular mt-1 inline-flex items-center gap-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-12 font-medium text-brand-text">
+                  <span className="point-actif h-1.5 w-1.5 rounded-full bg-brand" aria-hidden="true" />
+                  {fr(`En cours · ${activite.pct} %`)}
+                </span>
+              ) : (
+                <span className="mt-0.5 line-clamp-2 text-13 text-fg-2">{m.texte}</span>
+              )}
             </span>
             <span className="fleche grid h-8 w-8 shrink-0 place-items-center rounded-full bg-fg/[0.05] text-fg-3">
               <ArrowRight weight="bold" className="h-4 w-4" />
