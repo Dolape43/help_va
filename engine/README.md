@@ -23,7 +23,9 @@ marcher en parallèle, sur le même `agent/`, tant que la nouvelle n'a pas tout.
 | `dev_bridge.py` | **Dev seulement** : rend le moteur joignable depuis le navigateur (HTTP + SSE) |
 | `tests/test_protocole.py` | Tests (bibliothèque standard) qui lancent le vrai moteur |
 
-`agent/` **n'a pas été modifié**.
+`agent/` n'a presque pas été modifié : seulement `agent/comptes.py` (nouveau, les comptes du
+module Ranger) et un paramètre **optionnel** `calendrier` dans `agent/ranger.ranger()`. L'ancienne
+app ne s'en sert pas : pour elle, rien ne change.
 
 ---
 
@@ -121,9 +123,10 @@ conversion en cours est refusé : sinon la conversion aurait deux événements f
   (6 s Supabase + 3 × 6 s HTTPS + 3 × 5 s NTP pour lire la vraie date) : elle ne bloque donc
   jamais `preparer`, `parametres_lire`… Plusieurs `licence_statut` simultanés (« Réessayer »
   cliqué 3 fois) partagent **une seule** vérification.
-- `parametres.json` / `calendrier_utilisateur.json` : lectures et écritures du moteur passent par
-  un verrou, et le moteur écrit **d'un coup** (fichier `.tmp` puis `os.replace`) : une lecture ne
-  voit jamais un fichier à moitié écrit (sinon : valeurs par défaut, donc une autre sortie).
+- `parametres.json` / `calendrier_utilisateur.json` / `comptes_ranger.json` : lectures et écritures
+  du moteur passent par un verrou, et le moteur écrit **d'un coup** (fichier `.tmp` puis
+  `os.replace`) : une lecture ne voit jamais un fichier à moitié écrit (sinon : valeurs par défaut,
+  donc une autre sortie, ou tous les comptes perdus).
 - **Licence et courses** : une « génération » change à chaque résiliation / activation. Un
   `licence_statut` lent, lancé avant une résiliation, ne peut plus rallumer `licence_ok` après.
 - **Licence** : une tâche longue est refusée (`LICENCE_REQUISE`) tant que `licence_statut`
@@ -152,7 +155,7 @@ fd 1, sous-processus qui écrit et qui lit).
 - Si `pret.protocole` ≠ celui de l'interface : erreur fatale « Réinstallez HelpVA ».
 - **`quitter`** : annule la tâche longue, attend au plus `delai_s`, répond, puis s'arrête.
   Les commandes **critiques** en cours (`licence_activer`, `licence_resilier`, `parametres_ecrire`,
-  `calendrier_sauver`) ont droit à **30 s** : coupée au milieu, une activation pourrait consommer
+  `calendrier_sauver`, `comptes_sauver`) ont droit à **30 s** : coupée au milieu, une activation pourrait consommer
   le code sans écrire `licence.key`. Côté Tauri, on attend donc la fin du moteur (40 s maximum,
   fenêtre déjà cachée) avant de quitter.
 - **Fin de l'entrée (EOF)** : l'interface est fermée ou a planté → même arrêt, sans réponse.
@@ -171,18 +174,18 @@ fd 1, sous-processus qui écrit et qui lit).
 | `JSON_INVALIDE` | ligne illisible (son id s'il se lit au début de la ligne, sinon `id: null`) |
 | `TROP_GROS` | ligne de plus de 16 Mo (idem) |
 | `COMMANDE_INCONNUE` | `cmd` inconnue |
-| `ARGUMENTS_INVALIDES` | `details.champ` dit lequel (`id` absent → `id: null`) |
+| `ARGUMENTS_INVALIDES` | `details.champ` dit lequel (`id` absent → `id: null`). Liste de comptes (`comptes_sauver`, `ranger_*` avec `comptes`) : le message **nomme** le compte fautif (« @marie : … », ou « Compte n°2 : … » si c'est son nom qui pose problème) et `details.compte` = son id |
 | `ID_DUPLIQUE` | `id` déjà en cours → **`id: null`**, l'id fautif dans `details.id` (sinon le client croirait que sa requête en cours a échoué) |
 | `OCCUPE` | tâche longue déjà active (`details.tache`) |
 | `ARRET_EN_COURS` | requête reçue après `quitter` |
 | `LICENCE_REQUISE` | tâche longue sans licence valide |
-| `SOURCE_INTROUVABLE` | dossier/fichier absent (`details.chemins`, `details.types` pour ranger) |
+| `SOURCE_INTROUVABLE` | dossier/fichier absent (`details.chemins` ; pour ranger : `details.types` et `details.compte` = id du compte concerné) |
 | `SOURCE_VIDE` | aucune vidéo / image utile (vérifié **avant** d'appeler `agent/`) |
-| `SOURCE_DANS_SORTIE` | la source est la sortie ou dedans (sinon `rmtree` la détruirait) |
+| `SOURCE_DANS_SORTIE` | la source est la sortie ou dedans (sinon `rmtree` la détruirait ; pour ranger : `details.types`, `details.compte`) |
 | `SORTIE_EXISTE` | la sortie existe et `remplacer` n'est pas **ce chemin-là** (`details.sortie` = le chemin à confirmer) |
 | `SORTIE_VERROUILLEE` | un fichier est ouvert dans la sortie à remplacer (visionneuse, Explorateur…) : **rien n'a été effacé** (`details.sortie`) |
 | `CHEMIN_TROP_LONG` | chemin trop long pour Windows sans « LongPathsEnabled » (dossier ≥ 248, fichier ≥ 260 caractères ; `details.chemins`) |
-| `CALENDRIER_INVALIDE` | `ranger_lancer` : le calendrier enregistré a un nom de dossier impossible (`CON`, `NUL`…), vérifié **avant** de toucher la sortie |
+| `CALENDRIER_INVALIDE` | `ranger_lancer` : le calendrier enregistré, ou celui d'un compte (`details.compte`), a un nom de dossier impossible (`CON`, `NUL`…), vérifié **avant** de toucher la sortie |
 | `SORTIE_INACCESSIBLE` | impossible de créer le dossier de sortie |
 | `FFMPEG_INTROUVABLE` | `imageio_ffmpeg` absent ou cassé |
 | `CHEMIN_REFUSE` | `ouvrir_dans_explorateur` sur autre chose qu'un dossier |
@@ -217,14 +220,76 @@ Une annulation reçue avant ce moment ne supprime **rien** (`result` avec `arret
 | `calendrier_lire` | R | — | `{calendrier, semaines, compte{type:n}, creneaux, personnalise}` |
 | `calendrier_defaut` | R | — | le calendrier d'origine (bouton « Réinitialiser ») |
 | `calendrier_sauver` | R | `{calendrier}` (validé : les noms deviennent des dossiers) | `{…, message}` |
-| `ranger_analyser` | R | `{sources:{type:dossier}, types?}` | `{types{…}, actifs, sortie, existe, manquants, source_dans_sortie, doublons, incomplet, calendrier_erreur, pret, message_confirmation}` |
+| `comptes_lire` | R | — | `{comptes: [{id, nom, sources, calendrier, vue}], max: 50}` (voir « Ranger : plusieurs comptes ») |
+| `comptes_sauver` | R | `{comptes: [{id, nom, sources, calendrier}]}` (la liste COMPLÈTE, tout est vérifié avant d'écrire) | comme `comptes_lire` + `message: "Enregistré."` |
+| `ranger_analyser` | R | `{comptes?: [...], sources?:{type:dossier}, types?}` | `{types{…}, actifs, sortie, existe, manquants, source_dans_sortie, doublons, incomplet, calendrier_erreur, pret, message_confirmation, comptes[…], partages[…]}` |
 | `conversion_mp4` | L | `{source}` | `{traites, echecs, arrete, dossiers, sortie, duree_s, bilan}` → `<sortie>/media (mp4)` (rien n'est supprimé, comme avant) |
 | `conversion_images` | L | `{source, format:"jpg"\|"png" (défaut jpg), remplacer?: chemin}` | idem → `images (jpg)` / `images (png)` |
 | `metadonnees` | L | `{source, renommer?=true, remplacer?: chemin}` | idem → `<nom> (métadonnées changées)` ou `media (métadonnées changées)` |
-| `ranger_lancer` | L | `{sources, types?, aleatoire?=true, remplacer?: chemin}` | résultat de `ranger()` + `sortie, duree_s, bilan` → `ranger` |
+| `ranger_lancer` | L | `{comptes?, sources?, types?, aleatoire?=true, remplacer?: chemin}` | résultat de `ranger()` (totaux) + `sortie, duree_s, bilan, comptes[…]` → `ranger` |
 
 Valeurs par défaut (comme les cases de l'ancienne app) : `renommer = true` (« recommandé »),
 `aleatoire = true`, `format = "jpg"`.
+
+### Ranger : plusieurs comptes
+Chaque compte a **ses propres dossiers sources** et **son calendrier**. Fichier
+`comptes_ranger.json` (dans `%APPDATA%\HelpVA`, écrit par `agent/comptes.py`) :
+```json
+{"version": 1, "comptes": [
+  {"id": "c1", "nom": "Compte 1", "sources": {"reel": "C:\\…", "story": "C:\\…"}, "calendrier": null}
+]}
+```
+- `calendrier: null` = le calendrier d'origine (`agent.calendrier.CALENDRIER`). `comptes_sauver`
+  enregistre `null` un calendrier identique à celui d'origine. `vue` = le résumé du calendrier
+  **effectif** `{calendrier, semaines, compte, creneaux, personnalise}` (`personnalise` = non `null`).
+- **1re ouverture** (fichier absent) : un seul compte « Compte 1 », sans dossiers, dont le
+  calendrier est celui déjà enregistré (`calendrier_utilisateur.json`), sinon `null`. Rien n'est
+  écrit avant le premier `comptes_sauver`. Fichier **illisible** (JSON cassé…) : il est d'abord
+  **mis de côté** (`comptes_ranger.illisible-AAAAMMJJ-HHMMSS.json`, jamais écrasé), puis même
+  départ. Fichier qu'on ne peut pas ouvrir (verrouillé) : `comptes_lire` échoue, sans repli. Un id
+  lu que le moteur refuserait (vide, en double, espaces au bord, plus de 64 caractères) est remplacé.
+- `comptes_sauver` vérifie **tout** : 1 à 50 comptes, ids uniques (un id absent ou vide est créé :
+  `c1`, `c2`…), noms de 1 à 40 caractères (espaces de bord retirés) valables comme **nom de dossier
+  Windows** (noms réservés CON, NUL, COM0-9, LPT0-9, COM¹…, CONIN$… refusés, comme `~` suivi d'un
+  chiffre : « COMPTE~1 » est le nom court du dossier « Compte 1 ») et uniques **sans tenir compte de
+  la casse**, `sources` = `{type: chemin absolu}` (vide = pas encore choisi), calendrier `null` ou
+  valide. Un calendrier **déjà enregistré** (identique à celui d'un compte du fichier, ou repris de
+  `calendrier_utilisateur.json`) est gardé tel quel, même invalide : il ne bloque pas un changement
+  de nom ou de dossier ; le rangement, lui, reste refusé (`calendrier_erreur`, `CALENDRIER_INVALIDE`).
+  Un seul compte fautif → rien n'est enregistré ; `details.compte` = son id, `null` s'il n'en a pas.
+- `ranger_analyser` / `ranger_lancer` :
+  - **avec `comptes`** : dossiers et calendriers pris **dans les args** (ce que l'interface affiche),
+    jamais dans le fichier ;
+  - **sans `comptes`** (ancien mode) : un compte implicite (`id: "c1"`) avec `sources` et le
+    calendrier enregistré, exactement comme avant.
+- Les types cochés (`types`, sinon `ranger_types` des paramètres) sont **communs** à tous les comptes.
+  Types actifs d'un compte = cochés **et** présents dans **son** calendrier. Un compte sans type actif
+  est **ignoré** (signalé dans le message, `aucun_type: true` dans le résultat).
+- Sortie : toujours `<dossier de sortie>/ranger`, remplacé **en entier** (une seule fois) :
+  - **1 compte** : arborescence d'avant `ranger/semaine-XX/jour-Y/<ordre>_<heure>_<type>/` + `ranger/surplus/…` ;
+  - **2 comptes ou plus** : `ranger/<nom du compte>/semaine-XX/…` et `ranger/<nom du compte>/surplus/…`.
+- Bloquant (`pret: false`, puis erreur au lancement, **avant** de toucher la sortie) : aucun type actif
+  dans aucun compte, un type actif sans dossier valide, un dossier source **dans** `ranger` (même dans
+  le sous-dossier d'un autre compte), un calendrier invalide. **Avertissement seulement** : `partages`
+  = dossiers utilisés par au moins 2 comptes pour la même sorte de média (mêmes médias rangés
+  plusieurs fois) ; `doublons` = même dossier pour deux types d'images **dans** un compte.
+- Réponse de `ranger_analyser` : les champs d'avant sont les **totaux** (`types` additionnés sur les
+  comptes où le type est actif, sur tous s'il ne l'est nulle part, avec
+  `dossier`/`dossier_valide` du compte s'il n'y en a qu'un, `dossier: null` sinon ; `actifs`,
+  `manquants`, `source_dans_sortie` = union ; `calendrier_erreur` = la 1re, préfixée du nom du compte
+  s'il y en a plusieurs), plus :
+  - `comptes: [{id, nom, sortie, types, actifs, manquants, source_dans_sortie, doublons, incomplet, calendrier_erreur, creneaux}]` (`sortie` = `ranger/<nom>`, ou `ranger` s'il n'y a qu'un compte ; `creneaux` = créneaux à remplir des types actifs) ;
+  - `partages: [{dossier, comptes: [{id, nom, type}]}]`.
+- `ranger_lancer` range compte par compte. Avec 2 comptes ou plus, chaque texte de progression
+  commence par « Compte 2/3 — @marie » (rang parmi les comptes **rangés**), `details.compte =
+  {index, total, id, nom}`, et la `fraction` est **globale** (sur les créneaux de tous les comptes).
+  L'annulation est respectée dans un compte et entre deux comptes (les suivants ne commencent pas).
+  Résultat : totaux d'avant (`creneaux`, `types` = union, `besoins/fournis/places/manques/incomplets/
+  surplus/ignores` additionnés) + `comptes: [{id, nom, sortie, types, besoins, fournis, places,
+  manques, incomplets, surplus, ignores, creneaux, arrete, aucun_type}]` ; le `bilan.message` a un
+  bloc par compte quand il y en a plusieurs.
+- `preparer` avec `commande: "ranger_lancer"` accepte les mêmes args (avec ou sans `comptes`) et
+  annonce le dossier `ranger` entier.
 
 Déroulé type d'un bouton « Convertir les images » :
 1. `preparer` → si `remplacement` est vrai, l'interface demande « Remplacer ? » en montrant `sortie` ;
@@ -302,9 +367,12 @@ aller-retour, **vraie conversion MP4** (progression texte + fraction, fichiers H
 stdout jamais corrompu, licence requise, images / métadonnées / rangement, **remplacement lié au
 chemin confirmé** (refus si autre chemin, `SORTIE_VERROUILLEE` si un fichier est ouvert, repli
 USB → même chemin annoncé et remplacé), annulation juste après le lancement (rien supprimé),
-noms réservés du calendrier, `quitter`, **`quitter` puis EOF immédiat pendant une conversion**,
-EOF, Job Windows, signature de `progression.texte`, et le pont de dev (jeton, CORS, SSE, données
-de test). Durée : environ 1 minute.
+noms réservés du calendrier, **comptes du Ranger** (migration depuis `calendrier_utilisateur.json`,
+persistance, refus qui nomment le compte, noms en double sans tenir compte de la casse, analyse et
+rangement à 2-3 comptes dans `ranger/<nom>/…`, 1 compte = arborescence d'avant, `partages`,
+`details.compte` des erreurs, annulation pendant le 1er compte), `quitter`, **`quitter` puis EOF
+immédiat pendant une conversion**, EOF, Job Windows, signature de `progression.texte`, et le pont
+de dev (jeton, CORS, SSE, données de test). Durée : environ 1 minute.
 
 Variables d'environnement **de développement** (ignorées dans l'exe PyInstaller) :
 - `HELPVA_MOTEUR_SANS_LICENCE=1` : autorise les tâches longues sans licence ;

@@ -41,6 +41,8 @@ export class MoteurIndisponible implements Moteur {
   calendrierLire() { return this.erreur(); }
   calendrierDefaut() { return this.erreur(); }
   calendrierSauver() { return this.erreur(); }
+  comptesLire() { return this.erreur(); }
+  comptesSauver() { return this.erreur(); }
   rangerAnalyser() { return this.erreur(); }
   rangerLancer() { return this.tache(); }
   surLogLibre(_f: ((ev: EvLog) => void) | null): void {}

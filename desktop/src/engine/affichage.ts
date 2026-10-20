@@ -5,7 +5,7 @@
  * de la PRÉSENTATION : quelle ligne est un titre de dossier, laquelle porte un chemin, etc.
  * Fonctions pures, sans React : faciles à relire et à tester.
  */
-import type { ElementProgression, EvLog, EvProgress, GroupeProgression, NiveauLog } from "./protocole";
+import type { CompteProgression, ElementProgression, EvLog, EvProgress, GroupeProgression, NiveauLog } from "./protocole";
 
 export type LigneJournal = {
   niveau: NiveauLog | "dossier" | "fichier";
@@ -19,6 +19,8 @@ export type Progression = {
   fraction: number;
   groupe: GroupeProgression | null;
   element: ElementProgression | null;
+  /** Ranger avec plusieurs comptes : le compte en cours (null sinon) */
+  compte: CompteProgression | null;
   /** texte exact du moteur (secours si `details` est absent) */
   texte: string;
   /** vidéos terminées / total (total connu grâce à « preparer ») */
@@ -58,20 +60,28 @@ export function progressionDepuis(ev: EvProgress, total: number | null): Progres
     fraction,
     groupe: ev.details?.groupe ?? null,
     element: ev.details?.element ?? null,
+    compte: ev.details?.compte ?? null,
     texte: ev.texte,
     faites,
     total,
   };
 }
 
-/** Les 2 lignes de la carte de progression, au format EXACT de l'ancienne app (noms complets). */
+/**
+ * Les 2 lignes de la carte de progression, au format EXACT de l'ancienne app (noms complets).
+ * Ranger avec plusieurs comptes : le moteur ajoute au texte une 1re ligne « Compte 2/3 — @marie » ;
+ * le compte passe alors DEVANT la ligne 1 (« @marie (2/3) · Semaine 1/3 — Jour 2 »), sinon on ne
+ * saurait pas quel compte est en cours (le « Créneau 5/87 » de la ligne 2 compte ceux de CE compte).
+ */
 export function lignesProgression(p: Progression): [string, string] {
-  const lignes = p.texte.split("\n");
+  const c = p.compte;
+  const lignes = p.texte.split("\n").slice(c ? 1 : 0);
   const g = p.groupe;
   const e = p.element;
-  const l1 = g ? `${g.mot} ${g.index}/${g.total}${g.nom ? ` — ${g.nom}` : ""}` : !e && lignes.length > 1 ? lignes[0] : "";
+  const base = g ? `${g.mot} ${g.index}/${g.total}${g.nom ? ` — ${g.nom}` : ""}` : !e && lignes.length > 1 ? lignes[0] : "";
+  const l1 = c ? `${c.nom} (${c.index}/${c.total})${base ? ` · ${base}` : ""}` : base;
   const l2 = e
     ? `${e.mot} ${e.index}/${e.total}${e.nom ? ` · ${e.nom}` : ""}${e.pct !== null ? ` — ${e.pct} %` : ""}`
-    : lignes[lignes.length - 1];
+    : (lignes[lignes.length - 1] ?? "");
   return [l1, l2];
 }

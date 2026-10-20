@@ -140,6 +140,30 @@ export type VueCalendrier = {
 
 export type SourcesRanger = Partial<Record<TypePost, string>>;
 
+/** Nombre maximal de comptes (agent/comptes.py > MAX_COMPTES ; le moteur le renvoie aussi dans `max`). */
+export const MAX_COMPTES = 50;
+
+/**
+ * Un compte Instagram du Ranger : SES dossiers sources et SON calendrier (comptes_ranger.json).
+ * Les types cochés (paramètre ranger_types) restent communs à tous les comptes.
+ */
+export type CompteRanger = {
+  /** stable, créé par l'interface (« c1 », « c7 ») ; le moteur en crée un s'il est absent ou vide */
+  id: string;
+  /** « Compte 1 », « @marie »… : devient le nom du sous-dossier du compte dans « ranger » */
+  nom: string;
+  /** {type: dossier absolu} */
+  sources: SourcesRanger;
+  /** null = le calendrier d'origine */
+  calendrier: Calendrier | null;
+};
+
+/** Un compte tel que le moteur le renvoie : avec le résumé de son calendrier EFFECTIF. */
+export type VueCompte = CompteRanger & { vue: VueCalendrier };
+
+/** Réponse de comptes_lire et comptes_sauver. */
+export type VueComptes = { comptes: VueCompte[]; max: number; message?: string };
+
 export type AnalyseTypeRanger = {
   libelle: string;
   est_video: boolean;
@@ -170,14 +194,57 @@ export type AnalyseRanger = {
   calendrier_erreur: string | null;
   pret: boolean;
   message_confirmation: string;
+  /** le détail de chaque compte (un seul en ancien mode) */
+  comptes: AnalyseCompteRanger[];
+  /** dossiers utilisés par au moins 2 comptes : mêmes médias rangés plusieurs fois (avertissement) */
+  partages: PartageRanger[];
 };
 
+/** L'analyse d'UN compte (mêmes champs que la tête de AnalyseRanger, pour ce compte seulement). */
+export type AnalyseCompteRanger = {
+  id: string;
+  nom: string;
+  /** …\ranger\<nom>, ou …\ranger s'il n'y a qu'un seul compte */
+  sortie: string;
+  types: Record<TypePost, AnalyseTypeRanger>;
+  actifs: TypePost[];
+  manquants: TypePost[];
+  source_dans_sortie: TypePost[];
+  /** paires de types d'images de CE compte qui utilisent le même dossier */
+  doublons: [TypePost, TypePost][];
+  incomplet: boolean;
+  calendrier_erreur: string | null;
+  /** créneaux à remplir (types actifs de ce compte) */
+  creneaux: number;
+};
+
+export type PartageRanger = { dossier: string; comptes: { id: string; nom: string; type: TypePost }[] };
+
 export type ArgsRanger = {
-  sources: SourcesRanger;
+  /** mode multi-comptes : sources et calendriers pris ICI (pas dans le fichier) */
+  comptes?: CompteRanger[];
+  /** ancien mode (un seul compte implicite, calendrier global) */
+  sources?: SourcesRanger;
   /** types à ranger (sinon : ceux cochés dans les paramètres) */
   types?: TypePost[];
   aleatoire?: boolean;
   remplacer?: string;
+};
+
+/** Le bilan d'UN compte après ranger_lancer. */
+export type ResultatCompteRanger = {
+  id: string;
+  nom: string;
+  sortie: string;
+  types: TypePost[];
+  besoins?: Partial<Record<TypePost, number>>;
+  fournis?: Partial<Record<TypePost, number>>;
+  places?: Partial<Record<TypePost, number>>;
+  manques?: Partial<Record<TypePost, number>>;
+  incomplets?: Partial<Record<TypePost, number>>;
+  surplus?: Partial<Record<TypePost, number>>;
+  creneaux: number;
+  arrete: boolean;
 };
 
 export type ResultatRanger = {
@@ -192,6 +259,8 @@ export type ResultatRanger = {
   sortie: string;
   duree_s: number;
   bilan: Bilan;
+  /** mode multi-comptes : le bilan de chaque compte (les champs de tête sont les sommes) */
+  comptes?: ResultatCompteRanger[];
 };
 
 /* ---------- Fenêtres de choix ---------- */
@@ -236,6 +305,11 @@ export interface Moteur {
   calendrierLire(): Promise<VueCalendrier>;
   calendrierDefaut(): Promise<VueCalendrier>;
   calendrierSauver(calendrier: Calendrier): Promise<VueCalendrier>;
+
+  /** Les comptes du Ranger (dossiers et calendrier de chacun). */
+  comptesLire(): Promise<VueComptes>;
+  /** Enregistre la liste COMPLÈTE des comptes (tout est vérifié avant d'écrire). */
+  comptesSauver(comptes: CompteRanger[]): Promise<VueComptes>;
 
   /** Tout ce qu'il faut savoir avant de ranger (dossiers trouvés, manques, « Remplacer ? »). */
   rangerAnalyser(args: Omit<ArgsRanger, "aleatoire" | "remplacer">): Promise<AnalyseRanger>;
@@ -342,6 +416,13 @@ export class MoteurReel implements Moteur {
   }
   calendrierSauver(calendrier: Calendrier) {
     return this.client.appeler<VueCalendrier>("calendrier_sauver", { calendrier });
+  }
+
+  comptesLire() {
+    return this.client.appeler<VueComptes>("comptes_lire");
+  }
+  comptesSauver(comptes: CompteRanger[]) {
+    return this.client.appeler<VueComptes>("comptes_sauver", { comptes });
   }
 
   rangerAnalyser(args: Omit<ArgsRanger, "aleatoire" | "remplacer">) {

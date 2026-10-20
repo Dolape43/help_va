@@ -316,7 +316,9 @@ export default function App() {
   /* ---------- Crochets de DÉVELOPPEMENT (captures d'écran, tests automatiques) ----------
      Dans la console :  __demo("theme", "light")  ·  __demo("page", "images")
                         __helpvaTest.source("images", { type: "dossier", chemin: "C:\\…" })  (sans fenêtre de choix)
-                        __helpvaTest.rangerDossier("reel", "C:\\…")  (dossier d'un type de post, Ranger)
+                        __helpvaTest.rangerDossier("reel", "C:\\…", "c2")  (dossier d'un type de post, Ranger ;
+                                                                             sans id : le compte affiché)
+                        __helpvaTest.rangerComptes(3)  (nombre de comptes du Ranger)
      Absents de l'app livrée (import.meta.env.DEV vaut false au build). */
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -326,7 +328,8 @@ export default function App() {
         source: (cle: "mp4" | "images" | "metadonnees", s: Source) => Promise<void>;
         connexion: () => string;
         activer: (code: string) => Promise<unknown>;
-        rangerDossier: (type: TypePost, chemin: string) => void;
+        rangerDossier: (type: TypePost, chemin: string, compteId?: string) => Promise<void>;
+        rangerComptes: (n: number) => Promise<void>;
       };
     };
     w.__demo = (scenario, arg) => {
@@ -340,7 +343,15 @@ export default function App() {
       source: (cle, s) => ({ mp4, images, metadonnees: meta })[cle].utiliserSource(s),
       connexion: () => m.connexion,
       activer: lic.activer,
-      rangerDossier: ranger.definirDossier,
+      rangerDossier: (type, chemin, compteId) => {
+        const id = compteId ?? ranger.compteActif;
+        return id ? ranger.definirDossier(id, type, chemin) : Promise.reject(new Error("Comptes du Ranger pas encore chargés."));
+      },
+      // Comme avant : les comptes retirés le sont SANS fenêtre de confirmation (tests automatiques).
+      rangerComptes: async (n) => {
+        const d = await ranger.definirNombre(n);
+        if (d) await ranger.definirNombre(d.cible, d.retires.map((c) => c.id));
+      },
     };
     return () => {
       delete w.__demo;

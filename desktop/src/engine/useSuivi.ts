@@ -54,8 +54,9 @@ export function useSuivi<R extends { arrete: boolean }>() {
         onProgress: (ev) => {
           const p = progressionDepuis(ev, opts.total);
           // Nouveau dossier (ou nouveau jour du calendrier) → une ligne de titre dans le journal.
+          // Le compte fait partie de la clé : « Semaine 1/3 — Jour 1 » revient pour chaque compte.
           if (p.groupe) {
-            const cle = `${p.groupe.mot}${p.groupe.index}/${p.groupe.total}|${p.groupe.nom ?? ""}`;
+            const cle = `${p.compte?.id ?? ""}|${p.groupe.mot}${p.groupe.index}/${p.groupe.total}|${p.groupe.nom ?? ""}`;
             if (cle !== dernierGroupe) {
               dernierGroupe = cle;
               ajouter(ligneDossier(p.groupe));

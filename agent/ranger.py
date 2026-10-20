@@ -104,7 +104,8 @@ def _copier(source: str, dossier_dest: str):
 
 
 def ranger(sources: dict, dossier_sortie: str, types_actifs=None,
-           aleatoire: bool = True, progress=None, doit_arreter=None) -> dict:
+           aleatoire: bool = True, progress=None, doit_arreter=None,
+           calendrier: dict = None) -> dict:
     """Range les médias selon le calendrier, type par type.
 
     sources      : {type: dossier} — un dossier source par type de post.
@@ -113,10 +114,13 @@ def ranger(sources: dict, dossier_sortie: str, types_actifs=None,
                    gardent TOUJOURS l'ordre 1, 2, 3… (photos qui se suivent).
     progress(texte, fraction): avancement, ex. « Semaine 1/3 — Jour 2 » +
                    « Créneau 5/87 · 1_10h00_reel », et la fraction 0 → 1.
+    calendrier   : le calendrier à suivre (celui d'UN compte, module multi-comptes) ;
+                   None -> le calendrier enregistré, comme avant (ancienne app).
     """
     choisis = TYPES if types_actifs is None else types_actifs
     actifs = [t for t in TYPES if t in choisis]
-    calendrier = charger_calendrier()
+    if calendrier is None:
+        calendrier = charger_calendrier()
     besoins = compter(calendrier)
 
     medias, ignores = {}, {}

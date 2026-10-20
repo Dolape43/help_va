@@ -28,6 +28,8 @@ export type Requete = {
 export type GroupeProgression = { mot: string; index: number; total: number; nom: string | null };
 /** « Vidéo 1/4 · clip_07.mov — 43 % » : l'élément en cours. */
 export type ElementProgression = { mot: string; index: number; total: number; nom: string | null; pct: number | null };
+/** Ranger avec plusieurs comptes : le compte en cours (rang parmi les comptes rangés, nom COMPLET). */
+export type CompteProgression = { index: number; total: number; id: string; nom: string };
 
 export type EvPret = {
   id: null;
@@ -47,7 +49,7 @@ export type EvProgress = {
   fraction: number | null;
   /** le texte EXACT de l'ancienne app (2 lignes séparées par \n) */
   texte: string;
-  details: { groupe: GroupeProgression | null; element: ElementProgression } | null;
+  details: { groupe: GroupeProgression | null; element: ElementProgression; compte?: CompteProgression | null } | null;
 };
 
 export type NiveauLog = "info" | "succes" | "arret" | "avertissement" | "erreur";

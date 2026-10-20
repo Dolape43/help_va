@@ -22,6 +22,7 @@ import functools
 import inspect
 import json
 import os
+import re
 import shutil
 import sys
 import threading
@@ -778,8 +779,10 @@ _INTERDITS = set('<>:"/\\|?*')
 # Noms RÉSERVÉS par Windows (même suivis d'une extension : « CON.txt ») : impossible de
 # créer un dossier qui porte ce nom. Accepté ici, le calendrier s'enregistrerait, puis
 # chaque rangement planterait APRÈS avoir supprimé l'ancienne sortie.
-_RESERVES = ({"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)}
-             | {f"LPT{i}" for i in range(1, 10)})
+# Liste de la doc Microsoft : COM0 à COM9 et LPT0 à LPT9, AUSSI avec les chiffres en exposant
+# (COM¹, LPT²… : Windows 10 les refuse), et CONIN$ / CONOUT$ (la console).
+_RESERVES = ({"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+             | {f"{p}{i}" for p in ("COM", "LPT") for i in "0123456789¹²³"})
 
 
 def _nom_valide(nom) -> bool:
@@ -814,11 +817,20 @@ def _valider_calendrier(cal) -> dict:
     return propre
 
 
-def _vue_calendrier(cal: dict) -> dict:
+def _compter(cal) -> dict:
+    """rangement.compter(), sans planter sur un calendrier mal formé (fichier modifié à la
+    main) : 0 créneau, et _calendrier_utilisable() dit pourquoi au moment de ranger."""
     from agent import ranger as rangement
-    n = rangement.compter(cal)
-    return {"calendrier": cal, "semaines": len(cal), "compte": n,
-            "creneaux": sum(n.values())}
+    try:
+        return rangement.compter(cal)
+    except (AttributeError, TypeError):
+        return {t: 0 for t in rangement.TYPES}
+
+
+def _vue_calendrier(cal: dict) -> dict:
+    n = _compter(cal)
+    return {"calendrier": cal, "semaines": len(cal) if isinstance(cal, dict) else 0,
+            "compte": n, "creneaux": sum(n.values())}
 
 
 def _calendrier_utilisable(cal) -> str:
@@ -860,21 +872,201 @@ def calendrier_sauver(ctx, args):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Comptes du module Ranger (chacun SES dossiers et SON calendrier)
+# ═══════════════════════════════════════════════════════════════════════════
+def _calendrier_origine() -> dict:
+    from agent import calendrier
+    return copy.deepcopy(calendrier.CALENDRIER)
+
+
+def _libelle_min(t: str) -> str:
+    """« Réels » -> « réels », « Stories CTA » -> « stories CTA » (dans une phrase)."""
+    from agent.ranger import LIBELLES
+    return LIBELLES[t][0].lower() + LIBELLES[t][1:]
+
+
+def _invalide_compte(compte_id, message: str):
+    """Refus qui NOMME le compte fautif dans le message (« Compte 2 : … »).
+    details.compte = son id (null s'il n'en a pas encore) : l'interface le sélectionne."""
+    e = _invalide("comptes", message)
+    e.details["compte"] = compte_id
+    return e
+
+
+def _valider_comptes(liste, calendriers_stricts: bool = True, calendriers_connus=()) -> list:
+    """Vérifie TOUTE la liste des comptes -> [{id, nom, sources, calendrier}].
+
+    Les noms deviennent des NOMS DE DOSSIERS (ranger/<nom>/…) : mêmes règles que le
+    calendrier (_nom_valide), et uniques SANS tenir compte de la casse (pour Windows,
+    « Marie » et « marie » sont le même dossier).
+    calendriers_stricts :
+      - True (comptes_sauver) : un calendrier NOUVEAU ou MODIFIÉ invalide est refusé ; un
+        calendrier identique à celui d'origine est enregistré null (= « Calendrier d'origine ») ;
+      - False (ranger_*) : le calendrier est gardé tel quel, et _comptes_ranger le
+        signale compte par compte (calendrier_erreur), comme le calendrier enregistré.
+    calendriers_connus : les calendriers DÉJÀ enregistrés (comptes_ranger.json, ou celui repris
+    de calendrier_utilisateur.json). Ils sont gardés tels quels, même invalides : un calendrier
+    hérité de l'ancienne app (heure « 12h15 » suivie d'une espace…) ne doit pas bloquer un
+    changement de nom ou de dossier, ni « + » (qui copie le calendrier du compte 1). Le
+    rangement, lui, reste refusé (calendrier_erreur, CALENDRIER_INVALIDE) tant qu'il n'est pas
+    corrigé dans l'éditeur."""
+    from agent.comptes import MAX_COMPTES
+    from agent.ranger import TYPES
+    if not isinstance(liste, list) or not liste:
+        raise _invalide("comptes", "Il faut au moins 1 compte.")
+    if len(liste) > MAX_COMPTES:
+        raise _invalide("comptes", f"{MAX_COMPTES} comptes au maximum ({len(liste)} reçus).")
+
+    # 1er passage : les ids déjà choisis par l'interface (uniques), pour en créer
+    # d'autres sans collision aux comptes qui n'en ont pas.
+    ids = set()
+    for i, c in enumerate(liste, start=1):
+        if not isinstance(c, dict):
+            raise _invalide_compte(None, f"Compte n°{i} : format invalide (objet attendu).")
+        cid = c.get("id")
+        if cid is None or cid == "":
+            continue
+        if not isinstance(cid, str) or len(cid) > 64 or cid.strip() != cid:
+            raise _invalide_compte(None, f"Compte n°{i} : identifiant invalide : {cid!r}")
+        if cid in ids:
+            raise _invalide_compte(cid, f"Compte n°{i} : l'identifiant « {cid} » est déjà "
+                                        "utilisé par un autre compte.")
+        ids.add(cid)
+
+    origine = _calendrier_origine() if calendriers_stricts else None
+    propres, noms = [], {}
+    for i, c in enumerate(liste, start=1):
+        # L'id choisi par l'interface (None s'il n'en a pas) : c'est lui que nomment les refus
+        # (details.compte), jamais un id inventé ici, que l'interface ne connaîtrait pas.
+        cid = c.get("id") or None
+
+        # Nom : tant qu'il n'est pas valide, on désigne le compte par sa POSITION.
+        nom = c.get("nom")
+        if not isinstance(nom, str) or not nom.strip():
+            raise _invalide_compte(cid, f"Compte n°{i} : donnez un nom au compte.")
+        nom = nom.strip()
+        if len(nom) > 40:
+            raise _invalide_compte(cid, f"Compte n°{i} : nom trop long ({len(nom)} caractères, "
+                                        "40 au maximum).")
+        if not _nom_valide(nom):
+            raise _invalide_compte(cid, f"Compte n°{i} : « {nom} » ne peut pas servir de nom de "
+                                        "dossier Windows. Évitez les caractères < > : \" / \\ | ? *, "
+                                        "le point à la fin et les noms réservés (CON, NUL, COM1…).")
+        # « COMPTE~1 » est le NOM COURT que Windows donne au dossier « Compte 1 » : deux comptes
+        # rangeraient alors leurs médias dans le même dossier, sans aucune erreur.
+        if re.search(r"~\d", nom):
+            raise _invalide_compte(cid, f"Compte n°{i} : « {nom} » ressemble à un nom court de "
+                                        "Windows (comme COMPTE~1), qui peut désigner le dossier "
+                                        "d'un autre compte. Évitez le signe ~ suivi d'un chiffre.")
+        cle = nom.casefold()
+        if cle in noms:
+            raise _invalide_compte(cid, f"Compte n°{i} : le nom « {nom} » est déjà utilisé par "
+                                        f"« {noms[cle]} ». Chaque compte doit avoir un nom "
+                                        "différent (majuscules et minuscules comptent pareil).")
+        noms[cle] = nom
+
+        # Dossiers sources : {type: chemin absolu}, vide = pas encore choisi.
+        sources = c.get("sources")
+        if sources is None:
+            sources = {}
+        if not isinstance(sources, dict):
+            raise _invalide_compte(cid, f"{nom} : « sources » doit être {{type: dossier}}.")
+        propres_src = {}
+        for t, d in sources.items():
+            if t not in TYPES:
+                raise _invalide_compte(cid, f"{nom} : type inconnu : {t}")
+            if d is None or d == "":
+                continue
+            if not isinstance(d, str) or not est_absolu(d):
+                raise _invalide_compte(cid, f"{nom} : le dossier des {_libelle_min(t)} doit être "
+                                            f"un chemin ABSOLU (avec le lecteur) : {d}")
+            propres_src[t] = d
+
+        # Calendrier : null = celui d'origine.
+        cal = c.get("calendrier")
+        if cal is not None and calendriers_stricts:
+            if cal not in calendriers_connus:
+                try:
+                    cal = _valider_calendrier(cal)
+                except ErreurCommande as e:
+                    raise _invalide_compte(cid, f"{nom} : {e.message}")
+            if cal == origine:
+                cal = None
+
+        # Compte vérifié : on lui crée un id s'il n'en a pas (c1, c2… sans collision).
+        if cid is None:
+            n = 1
+            while f"c{n}" in ids:
+                n += 1
+            cid = f"c{n}"
+            ids.add(cid)
+        propres.append({"id": cid, "nom": nom, "sources": propres_src, "calendrier": cal})
+    return propres
+
+
+def _vue_compte(compte: dict) -> dict:
+    """Un compte + le résumé de son calendrier EFFECTIF (celui d'origine s'il vaut null)."""
+    cal = compte.get("calendrier")
+    vue = _vue_calendrier(cal if cal is not None else _calendrier_origine())
+    vue["personnalise"] = cal is not None
+    out = dict(compte)
+    out["vue"] = vue
+    return out
+
+
+def _vue_comptes(comptes: list, message: str = None) -> dict:
+    from agent.comptes import MAX_COMPTES
+    out = {"comptes": [_vue_compte(c) for c in comptes], "max": MAX_COMPTES}
+    if message:
+        out["message"] = message
+    return out
+
+
+@commande("comptes_lire")
+def comptes_lire(ctx, args):
+    """Les comptes enregistrés (1re fois : « Compte 1 », avec le calendrier déjà enregistré)."""
+    from agent import comptes
+    with VERROU_DONNEES:
+        liste = comptes.charger_comptes()
+    return _vue_comptes(liste)
+
+
+@commande("comptes_sauver", critique=True)
+def comptes_sauver(ctx, args):
+    """args = {"comptes": [...]} : la liste COMPLÈTE, vérifiée en entier avant d'écrire
+    (un seul compte fautif -> rien n'est enregistré)."""
+    from agent import comptes
+    with VERROU_DONNEES:
+        # Lire -> vérifier -> écrire sous le même verrou : les calendriers « connus » sont bien
+        # ceux du fichier qu'on remplace (voir _valider_comptes).
+        connus = [c["calendrier"] for c in comptes.charger_comptes() if c["calendrier"] is not None]
+        liste = _valider_comptes(args.get("comptes"), calendriers_connus=connus)
+        # Écrit d'un coup (.tmp puis os.replace), comme _ecrire_json_atomique.
+        comptes.sauver_comptes(liste)
+    return _vue_comptes(liste, "Enregistré.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Ranger les médias
 # ═══════════════════════════════════════════════════════════════════════════
-def _types_actifs(args: dict, n: dict) -> list:
-    """Types à ranger : args["types"] si fourni, sinon ceux cochés dans les
-    paramètres ET présents dans le calendrier (comme _types_ranger_actifs)."""
+def _types_coches(args: dict) -> list:
+    """Types demandés : args["types"] si fourni, sinon ceux cochés dans les
+    paramètres (comme _types_ranger_actifs). COMMUNS à tous les comptes."""
     from agent.ranger import TYPES
     demandes = args.get("types")
     if demandes is not None:
         if not isinstance(demandes, list) or any(t not in TYPES for t in demandes):
             raise _invalide("types", f"« types » doit être une liste parmi {list(TYPES)}.")
-        return [t for t in TYPES if t in demandes and n[t] > 0]
+        return [t for t in TYPES if t in demandes]
     choix = _charger_parametres().get("ranger_types")
     if not isinstance(choix, dict):
         choix = {}
-    return [t for t in TYPES if bool(choix.get(t, True)) and n[t] > 0]
+    return [t for t in TYPES if bool(choix.get(t, True))]
+
+
+def _types_actifs(coches: list, n: dict) -> list:
+    """Types à ranger pour UN compte : cochés ET présents dans SON calendrier."""
+    return [t for t in coches if n[t] > 0]
 
 
 def _sources_ranger(args: dict) -> dict:
@@ -892,19 +1084,46 @@ def _sources_ranger(args: dict) -> dict:
     return propres
 
 
-@commande("ranger_analyser")
-def ranger_analyser(ctx, args):
-    """Tout ce que l'ancienne app calculait AVANT sa fenêtre « Confirmer le rangement »."""
+def _comptes_ranger(args: dict) -> list:
+    """Les comptes à ranger, chacun avec son calendrier EFFECTIF :
+    [{id, nom, sources, calendrier, calendrier_erreur, n}] (n = créneaux par type).
+
+    - args["comptes"] fourni -> mode multi-comptes : dossiers et calendriers pris DANS
+      les args (ce que l'interface affiche), jamais dans comptes_ranger.json ;
+    - sinon -> ancien mode : UN compte implicite, args["sources"] + le calendrier
+      enregistré (calendrier_utilisateur.json), comme avant les comptes."""
+    if args.get("comptes") is not None:
+        comptes = _valider_comptes(args["comptes"], calendriers_stricts=False)
+        for c in comptes:
+            if c["calendrier"] is None:
+                c["calendrier"] = _calendrier_origine()
+    else:
+        comptes = [{"id": "c1", "nom": "Compte 1", "sources": _sources_ranger(args),
+                    "calendrier": _charger_calendrier()}]
+    for c in comptes:
+        c["calendrier_erreur"] = _calendrier_utilisable(c["calendrier"])
+        c["n"] = _compter(c["calendrier"])
+    return comptes
+
+
+def _sortie_compte(sortie: str, compte: dict, plusieurs: bool) -> str:
+    """1 seul compte : « ranger » (arborescence d'avant) ; sinon « ranger/<nom du compte> »."""
+    return os.path.join(sortie, compte["nom"]) if plusieurs else sortie
+
+
+def _prefixe(compte: dict, plusieurs: bool) -> str:
+    """« @marie : » devant un message, seulement quand il y a plusieurs comptes."""
+    return f"{compte['nom']} : " if plusieurs else ""
+
+
+def _analyser_compte(compte: dict, coches: list, sortie: str, sortie_compte: str) -> dict:
+    """L'analyse d'UN compte (le calcul de l'ancienne app avant « Confirmer le rangement »).
+
+    `sortie` = le dossier « ranger » ENTIER : c'est lui qui sera remplacé, une source
+    placée dedans (même dans le sous-dossier d'un autre compte) serait détruite."""
     from agent import ranger as rangement
-    sources = _sources_ranger(args)
-    cal = _charger_calendrier()
-    erreur_calendrier = _calendrier_utilisable(cal)
-    n = rangement.compter(cal)
-    actifs = _types_actifs(args, n)
-    # EXACTEMENT le même calcul que ranger_lancer (avec le repli sur le Bureau si le
-    # dossier perso est inaccessible) : le chemin annoncé dans « Remplacer ? » est
-    # celui qui sera vraiment remplacé.
-    sortie = os.path.join(dossier_sortie(), "ranger")
+    n, sources = compte["n"], compte["sources"]
+    actifs = _types_actifs(coches, n)
     types, lignes, manquants, dans_sortie, vus, doublons = {}, [], [], [], {}, []
     incomplet = False
     for t in rangement.TYPES:
@@ -938,87 +1157,278 @@ def ranger_analyser(ctx, args):
             txt += f"  ⚠️ il en manque {requis - k}"
             incomplet = True
         lignes.append(txt)
+    return {"id": compte["id"], "nom": compte["nom"], "sortie": sortie_compte, "types": types,
+            "actifs": actifs, "manquants": manquants, "source_dans_sortie": dans_sortie,
+            "doublons": doublons, "incomplet": incomplet,
+            "calendrier_erreur": compte["calendrier_erreur"],
+            "creneaux": sum(n[t] for t in actifs), "lignes": lignes}
+
+
+def _partages(comptes: list, analyses: list) -> list:
+    """Dossiers utilisés par AU MOINS 2 comptes : les mêmes médias seront rangés plusieurs
+    fois (avertissement, pas un refus). On regroupe par dossier ET par sorte de média :
+    le même dossier pour les réels d'un compte (vidéos) et les stories d'un autre
+    (images) ne range jamais deux fois le même fichier."""
+    from agent import ranger as rangement
+    groupes = {}
+    for c, a in zip(comptes, analyses):
+        for t in a["actifs"]:
+            if not a["types"][t]["dossier_valide"]:
+                continue
+            d = c["sources"][t]
+            g = groupes.setdefault((_norm(d), rangement.est_video(t)), {"dossier": d, "comptes": []})
+            g["comptes"].append({"id": c["id"], "nom": c["nom"], "type": t})
+    return [g for g in groupes.values() if len({u["id"] for u in g["comptes"]}) > 1]
+
+
+def _total_types(analyses: list) -> dict:
+    """Champ de tête « types » : la somme sur tous les comptes (même forme qu'avant)."""
+    from agent import ranger as rangement
+    if len(analyses) == 1:
+        return analyses[0]["types"]
+    total = {}
+    for t in rangement.TYPES:
+        parts = [a["types"][t] for a in analyses]
+        concernes = [a["types"][t] for a in analyses if t in a["actifs"]] or parts
+        tt = dict(parts[0])
+        for cle in ("creneaux", "requis", "trouves", "ignores", "manque"):
+            # Seulement les comptes qui ont besoin de ce type : le dossier d'un compte qui ne
+            # s'en sert pas ne doit pas faire croire qu'il y a assez de médias (trouves ≥ requis).
+            tt[cle] = sum(p[cle] for p in concernes)
+        # Un dossier PAR compte : pas de dossier commun à afficher (voir « comptes »).
+        tt.update({"actif": any(p["actif"] for p in parts), "dossier": None,
+                   "dossier_valide": all(p["dossier_valide"] for p in concernes)})
+        total[t] = tt
+    return total
+
+
+@commande("ranger_analyser")
+def ranger_analyser(ctx, args):
+    """Tout ce que l'ancienne app calculait AVANT sa fenêtre « Confirmer le rangement »,
+    compte par compte (champ « comptes »), et le total dans les champs d'avant."""
+    from agent import ranger as rangement
+    comptes = _comptes_ranger(args)
+    coches = _types_coches(args)
+    # EXACTEMENT le même calcul que ranger_lancer (avec le repli sur le Bureau si le
+    # dossier perso est inaccessible) : le chemin annoncé dans « Remplacer ? » est
+    # celui qui sera vraiment remplacé.
+    sortie = os.path.join(dossier_sortie(), "ranger")
+    plusieurs = len(comptes) > 1
+    analyses = [_analyser_compte(c, coches, sortie, _sortie_compte(sortie, c, plusieurs))
+                for c in comptes]
+    partages = _partages(comptes, analyses)
+
+    def union(cle):
+        return [t for t in rangement.TYPES if any(t in a[cle] for a in analyses)]
+
+    actifs, manquants, dans_sortie = union("actifs"), union("manquants"), union("source_dans_sortie")
+    doublons = []
+    for a in analyses:
+        doublons += [p for p in a["doublons"] if p not in doublons]
+    incomplet = any(a["incomplet"] for a in analyses)
+    erreurs = [_prefixe(c, plusieurs) + c["calendrier_erreur"]
+               for c in comptes if c["calendrier_erreur"]]
     existe = os.path.exists(sortie)
-    msg = "À ranger :\n" + "\n".join(lignes) + f"\n\nDestination :\n{sortie}\n"
+
+    if plusieurs:
+        blocs = []
+        for a in analyses:
+            if a["actifs"]:
+                blocs.append("\n".join([f"{a['nom']} → {os.path.join('ranger', a['nom'])}"]
+                                       + a["lignes"]))
+            else:
+                blocs.append(f"{a['nom']} : aucun type coché dans son calendrier (ignoré).")
+        msg = "À ranger :\n\n" + "\n\n".join(blocs) + "\n"
+        if partages:
+            msg += ("\n⚠️ Même dossier pour plusieurs comptes (mêmes médias rangés plusieurs "
+                    "fois) :\n" + "\n".join(
+                        f"• {g['dossier']} : " + ", ".join(
+                            f"{u['nom']} ({rangement.LIBELLES[u['type']]})" for u in g["comptes"])
+                        for g in partages) + "\n")
+        msg += f"\nDestination :\n{sortie}\n"
+    else:
+        msg = "À ranger :\n" + "\n".join(analyses[0]["lignes"]) + f"\n\nDestination :\n{sortie}\n"
     if incomplet:
         msg += "\n⚠️ Certains créneaux resteront incomplets.\n"
     if existe:
         msg += "\n⚠️ Ce dossier existe déjà et sera REMPLACÉ.\n"
-    return {"types": types, "actifs": actifs, "sortie": sortie, "existe": existe,
+    for a in analyses:
+        del a["lignes"]
+    return {"types": _total_types(analyses), "actifs": actifs, "sortie": sortie, "existe": existe,
             "manquants": manquants, "source_dans_sortie": dans_sortie,
             "doublons": doublons, "incomplet": incomplet,
-            "calendrier_erreur": erreur_calendrier,
-            "pret": (bool(actifs) and not manquants and not dans_sortie
-                     and erreur_calendrier is None),
-            "message_confirmation": msg + "\nContinuer ?"}
+            "calendrier_erreur": erreurs[0] if erreurs else None,
+            "pret": bool(actifs) and not manquants and not dans_sortie and not erreurs,
+            "message_confirmation": msg + "\nContinuer ?",
+            "comptes": analyses, "partages": partages}
+
+
+def _lignes_bilan(res: dict):
+    """Lignes « • Réels : 8/10 vidéo(s)  ⚠️ il en manque 2 » d'un résultat de ranger()
+    (copie de App._controle("fini_ranger")) -> (lignes, alerte)."""
+    from agent import ranger as rangement
+    lignes, alerte = [], False
+    for t in res.get("types", []):
+        unite = "vidéo(s)" if rangement.est_video(t) else "image(s)"
+        requis = res["besoins"][t] * rangement.medias_par_creneau(t)
+        ligne = f"• {rangement.LIBELLES[t]} : {res['places'][t]}/{requis} {unite}"
+        if res["manques"].get(t):
+            ligne += f"  ⚠️ il en manque {res['manques'][t]}"
+            alerte = True
+        lignes.append(ligne)
+    return lignes, alerte
+
+
+def _progression_compte(ctx, i: int, n: int, compte: dict, avant: int, creneaux: int,
+                        total: int):
+    """progress() d'UN compte quand il y en a plusieurs : 1re ligne « Compte 2/3 — @marie »,
+    puis les lignes d'agent/ (Semaine/Jour/Créneau). La fraction devient GLOBALE (sur les
+    créneaux de TOUS les comptes) : la barre ne repart pas à 0 à chaque compte.
+    details.compte porte le nom COMPLET (c'est l'interface qui raccourcit)."""
+    from agent import progression
+
+    def progress(texte, fraction=None):
+        t = TexteProgression(f"Compte {i}/{n} — {progression.court(compte['nom'], 26)}\n{texte}")
+        details = getattr(texte, "details", None)
+        t.details = dict(details) if isinstance(details, dict) else {"groupe": None, "element": None}
+        t.details["compte"] = {"index": i, "total": n, "id": compte["id"], "nom": compte["nom"]}
+        if fraction is not None:
+            fraction = (avant + fraction * creneaux) / max(1, total)
+        ctx.progress(t, fraction)
+    return progress
+
+
+def _somme_par_type(resultats: list, cle: str) -> dict:
+    """{type: n} additionnés sur tous les comptes (besoins, places, surplus…)."""
+    from agent import ranger as rangement
+    total = {}
+    for r in resultats:
+        for t, v in (r.get(cle) or {}).items():
+            total[t] = total.get(t, 0) + v
+    return {t: total[t] for t in rangement.TYPES if t in total}
 
 
 @commande("ranger_lancer", LONGUE)
 def ranger_lancer(ctx, args):
-    """Copie de App._lancer_ranger + message « fini_ranger »."""
+    """Copie de App._lancer_ranger + message « fini_ranger », compte par compte."""
     from agent import ranger as rangement
-    sources = _sources_ranger(args)
+    comptes = _comptes_ranger(args)
     aleatoire = _booleen(args, "aleatoire", True)
     confirme = _confirmation(args)
-    cal = _charger_calendrier()
-    erreur_calendrier = _calendrier_utilisable(cal)
-    if erreur_calendrier:
-        # Vérifié AVANT de toucher à l'ancienne sortie (sinon : sortie supprimée, puis plantage).
-        raise ErreurCommande("CALENDRIER_INVALIDE", erreur_calendrier)
-    n = rangement.compter(cal)
-    actifs = _types_actifs(args, n)
-    if not actifs:
-        raise _invalide("types", "Cochez au moins un type de post (étape 1).")
-    manquants = [t for t in actifs if not (sources.get(t) and os.path.isdir(sources[t]))]
-    if manquants:
-        raise ErreurCommande("SOURCE_INTROUVABLE", "Choisissez un dossier pour :\n\n" + "\n".join(
-            f"• {rangement.LIBELLES[t]}" for t in manquants),
-            {"types": manquants, "chemins": [sources.get(t) for t in manquants]})
+    plusieurs = len(comptes) > 1
+    # Tout est vérifié AVANT de toucher à l'ancienne sortie, pour TOUS les comptes
+    # (sinon : sortie supprimée, puis plantage au 2e compte).
+    for c in comptes:
+        if c["calendrier_erreur"]:
+            raise ErreurCommande("CALENDRIER_INVALIDE",
+                                 _prefixe(c, plusieurs) + c["calendrier_erreur"],
+                                 {"compte": c["id"]})
+    coches = _types_coches(args)
+    for c in comptes:
+        c["actifs"] = _types_actifs(coches, c["n"])
+    if not any(c["actifs"] for c in comptes):
+        raise _invalide("types", "Cochez au moins un type de post (étape 1)." if not plusieurs
+                        else "Aucun compte n'a de créneau pour les types cochés : cochez au moins "
+                             "un type présent dans le calendrier d'un compte (étape 1).")
+    for c in comptes:
+        src = c["sources"]
+        manquants = [t for t in c["actifs"] if not (src.get(t) and os.path.isdir(src[t]))]
+        if manquants:
+            titre = (f"Choisissez les dossiers de « {c['nom']} » pour :" if plusieurs
+                     else "Choisissez un dossier pour :")
+            raise ErreurCommande("SOURCE_INTROUVABLE", titre + "\n\n" + "\n".join(
+                f"• {rangement.LIBELLES[t]}" for t in manquants),
+                {"types": manquants, "chemins": [src.get(t) for t in manquants],
+                 "compte": c["id"]})
     sortie = os.path.join(dossier_sortie(), "ranger")
-    for t in actifs:
-        if est_dans(sources[t], sortie):
-            nom = rangement.LIBELLES[t][0].lower() + rangement.LIBELLES[t][1:]
-            raise ErreurCommande("SOURCE_DANS_SORTIE",
-                                 f"Le dossier des {nom} est dans le dossier de sortie, qui va être "
-                                 "remplacé. Choisissez un autre dossier.",
-                                 {"sortie": sortie, "chemins": [sources[t]], "types": [t]})
+    for c in comptes:
+        for t in c["actifs"]:
+            if est_dans(c["sources"][t], sortie):
+                raise ErreurCommande("SOURCE_DANS_SORTIE",
+                                     f"{_prefixe(c, plusieurs)}Le dossier des {_libelle_min(t)} "
+                                     "est dans le dossier de sortie, qui va être remplacé. "
+                                     "Choisissez un autre dossier.",
+                                     {"sortie": sortie, "chemins": [c["sources"][t]], "types": [t],
+                                      "compte": c["id"]})
     if ctx.doit_arreter():
         # Annulé juste après le clic : on ne supprime RIEN.
         return {"arrete": True, "creneaux": 0, "types": [], "sortie": sortie, "duree_s": 0.0,
+                "comptes": [],
                 "bilan": {"titre": "Ranger", "erreur": True,
                           "message": "Rangement arrêté.\n\nRien n'a été modifié."}}
-    _remplacer_sortie(sortie, confirme)
+    _remplacer_sortie(sortie, confirme)      # UNE fois, le dossier « ranger » entier
     debut = time.monotonic()
-    try:
-        res = rangement.ranger({t: sources[t] for t in actifs}, sortie, actifs,
-                               aleatoire=aleatoire, progress=ctx.progress,
-                               doit_arreter=ctx.doit_arreter)
-    except Exception as e:
-        raise _echec("Ranger", e)
 
-    # Message de fin : copie de App._controle("fini_ranger").
-    if res.get("arrete"):
-        bilan = {"titre": "Ranger", "erreur": True,
-                 "message": f"Rangement arrêté.\n\n{res.get('creneaux', 0)} "
-                            f"créneau(x) déjà rangé(s) dans :\n{sortie}"}
+    a_ranger = [c for c in comptes if c["actifs"]]
+    creneaux = {c["id"]: sum(c["n"][t] for t in c["actifs"]) for c in a_ranger}
+    total = sum(creneaux.values())
+    resultats, avant, k, arrete = [], 0, 0, False
+    for c in comptes:
+        base = {"id": c["id"], "nom": c["nom"], "sortie": _sortie_compte(sortie, c, plusieurs)}
+        vide = dict(base, types=[], besoins={}, fournis={}, places={}, manques={},
+                    incomplets={}, surplus={}, ignores={}, creneaux=0)
+        if not c["actifs"]:
+            print(f"⏭ {c['nom']} : ignoré (aucun type coché dans son calendrier).", flush=True)
+            resultats.append(dict(vide, arrete=False, aucun_type=True))
+            continue
+        if arrete or ctx.doit_arreter():
+            # Annulé ENTRE deux comptes : les suivants ne sont pas commencés.
+            arrete = True
+            resultats.append(dict(vide, arrete=True, aucun_type=False))
+            continue
+        k += 1
+        progress = ctx.progress            # 1 seul compte : progression identique à avant
+        if plusieurs:
+            print(f"\nCompte {k}/{len(a_ranger)} — {c['nom']}", flush=True)
+            progress = _progression_compte(ctx, k, len(a_ranger), c, avant, creneaux[c["id"]],
+                                           total)
+        try:
+            res = rangement.ranger({t: c["sources"][t] for t in c["actifs"]}, base["sortie"],
+                                   c["actifs"], aleatoire=aleatoire, progress=progress,
+                                   doit_arreter=ctx.doit_arreter, calendrier=c["calendrier"])
+        except Exception as e:
+            raise _echec("Ranger", e)
+        avant += creneaux[c["id"]]
+        arrete = bool(res.get("arrete"))
+        r = dict(base)
+        r.update(res)
+        r["aucun_type"] = False
+        resultats.append(r)
+
+    # Champs de tête : même forme qu'avant (1 compte : le résultat de ranger() tel quel).
+    if plusieurs:
+        out = {"types": [t for t in rangement.TYPES if any(t in r["types"] for r in resultats)]}
+        for cle in ("besoins", "fournis", "places", "manques", "incomplets", "surplus", "ignores"):
+            out[cle] = _somme_par_type(resultats, cle)
+        out.update({"creneaux": sum(r["creneaux"] for r in resultats), "arrete": arrete})
     else:
-        lignes, alerte = [], False
-        for t in res.get("types", []):
-            unite = "vidéo(s)" if rangement.est_video(t) else "image(s)"
-            requis = res["besoins"][t] * rangement.medias_par_creneau(t)
-            ligne = f"• {rangement.LIBELLES[t]} : {res['places'][t]}/{requis} {unite}"
-            if res["manques"].get(t):
-                ligne += f"  ⚠️ il en manque {res['manques'][t]}"
-                alerte = True
-            lignes.append(ligne)
-        txt = "Médias rangés !\n\n" + "\n".join(lignes) + f"\n\nDossier :\n{sortie}"
-        en_trop = sum(res.get("surplus", {}).values())
+        out = {cle: v for cle, v in resultats[0].items()
+               if cle not in ("id", "nom", "sortie", "aucun_type")}
+
+    # Message de fin : copie de App._controle("fini_ranger"), un bloc par compte s'il y en a 2+.
+    if out["arrete"]:
+        txt = f"Rangement arrêté.\n\n{out['creneaux']} créneau(x) déjà rangé(s) dans :\n{sortie}"
+        if plusieurs:
+            txt += "\n\n" + "\n".join(f"• {r['nom']} : {r['creneaux']} créneau(x)"
+                                      for r in resultats if not r["aucun_type"])
+        bilan = {"titre": "Ranger", "erreur": True, "message": txt}
+    else:
+        blocs, alerte = [], False
+        for r in resultats:
+            if r["aucun_type"]:
+                blocs.append(f"{r['nom']} : ignoré (aucun type coché dans son calendrier).")
+                continue
+            lignes, manque = _lignes_bilan(r)
+            alerte = alerte or manque
+            blocs.append("\n".join(([f"{r['nom']} :"] if plusieurs else []) + lignes))
+        txt = "Médias rangés !\n\n" + "\n\n".join(blocs) + f"\n\nDossier :\n{sortie}"
+        en_trop = sum(out.get("surplus", {}).values())
         if en_trop:
-            txt += f"\n\n📦 {en_trop} média(s) en trop → dossier « surplus »."
+            txt += (f"\n\n📦 {en_trop} média(s) en trop → dossiers « surplus » des comptes."
+                    if plusieurs else f"\n\n📦 {en_trop} média(s) en trop → dossier « surplus ».")
         bilan = {"titre": "Ranger", "message": txt, "erreur": alerte}
-    out = dict(res)
     out.update({"sortie": sortie, "duree_s": round(time.monotonic() - debut, 1),
-                "bilan": bilan})
+                "bilan": bilan, "comptes": resultats})
     return out
 
 

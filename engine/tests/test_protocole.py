@@ -215,19 +215,30 @@ class TestProtocole(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     # ----------------------------------------------------------------- outils
-    def env(self, sans_licence: bool = True) -> dict:
+    def env(self, sans_licence: bool = True, appdata: str = None, home: str = None) -> dict:
+        appdata, home = appdata or self.appdata, home or self.home
         env = dict(os.environ)
-        env.update({"APPDATA": self.appdata, "USERPROFILE": self.home, "HOME": self.home,
-                    "XDG_DATA_HOME": self.appdata, "HELPVA_MOTEUR_TESTS": "1"})
+        env.update({"APPDATA": appdata, "USERPROFILE": home, "HOME": home,
+                    "XDG_DATA_HOME": appdata, "HELPVA_MOTEUR_TESTS": "1"})
         env.pop("HELPVA_MOTEUR_SANS_LICENCE", None)
         if sans_licence:
             env["HELPVA_MOTEUR_SANS_LICENCE"] = "1"
         return env
 
-    def moteur(self, sans_licence: bool = True) -> ClientMoteur:
-        c = ClientMoteur(self.env(sans_licence), cwd=self.tmp)
+    def moteur(self, sans_licence: bool = True, appdata: str = None,
+               home: str = None) -> ClientMoteur:
+        c = ClientMoteur(self.env(sans_licence, appdata, home), cwd=self.tmp)
         self.addCleanup(self._verifier_et_fermer, c)
         return c
+
+    def profil_isole(self, nom: str):
+        """APPDATA et profil NEUFS (toujours dans le dossier temporaire) : les comptes du
+        Ranger d'un test ne dépendent ni de l'ordre des tests ni des autres tests."""
+        appdata = os.path.join(self.tmp, nom, "Données appli")
+        home = os.path.join(self.tmp, nom, "Profil")
+        os.makedirs(appdata)
+        os.makedirs(os.path.join(home, "Desktop"))
+        return appdata, home
 
     def _verifier_et_fermer(self, c: ClientMoteur):
         c.fermer()
@@ -685,6 +696,472 @@ class TestProtocole(unittest.TestCase):
             "sources": sources, "types": ["story", "reel"], "remplacer": p["sortie"]}, 120))
         self.assertEqual(d["sortie"], repli)
         self.assertFalse(os.path.exists(temoin))
+
+    # ----------------------------------------------------------------- comptes du Ranger
+    def test_comptes_migration_et_persistance(self):
+        appdata, home = self.profil_isole("Profil comptes")
+        donnees = os.path.join(appdata, "HelpVA")
+        os.makedirs(donnees)
+        cal = {"semaine-01": {"jour-1": [{"heure": "12h00", "type": "story"}]}}
+        with open(os.path.join(donnees, "calendrier_utilisateur.json"), "w", encoding="utf-8") as f:
+            json.dump(cal, f)
+        fichier = os.path.join(donnees, "comptes_ranger.json")
+        c = self.moteur(appdata=appdata, home=home)
+
+        # 1re ouverture : « Compte 1 » reprend le calendrier déjà enregistré, sans rien écrire.
+        v = self.assertResultat(c.appeler("comptes_lire"))
+        self.assertEqual(v["max"], 50)
+        self.assertEqual(len(v["comptes"]), 1)
+        c1 = v["comptes"][0]
+        self.assertEqual((c1["id"], c1["nom"], c1["sources"]), ("c1", "Compte 1", {}))
+        self.assertEqual(c1["calendrier"], cal)
+        self.assertTrue(c1["vue"]["personnalise"])
+        self.assertEqual((c1["vue"]["semaines"], c1["vue"]["creneaux"]), (1, 1))
+        self.assertEqual(c1["vue"]["compte"]["story"], 1)
+        self.assertFalse(os.path.exists(fichier))
+
+        # Enregistrer : calendrier identique à l'origine -> null, id absent -> créé,
+        # espaces de bord retirés, dossier vide = pas encore choisi.
+        origine = self.assertResultat(c.appeler("calendrier_defaut"))["calendrier"]
+        cal2 = {"semaine-01": {"jour-1": [{"heure": "10h00", "type": "story"}],
+                               "jour-2": [{"heure": "11h00", "type": "reel"}]}}
+        comptes = [{"id": "c1", "nom": "Compte 1", "sources": {"story": self.images, "reel": ""},
+                    "calendrier": origine},
+                   {"nom": "  @marie ☀  ", "sources": {}, "calendrier": cal2}]
+        s = self.assertResultat(c.appeler("comptes_sauver", {"comptes": comptes}))
+        self.assertEqual(s["message"], "Enregistré.")
+        a, b = s["comptes"]
+        self.assertIsNone(a["calendrier"])
+        self.assertFalse(a["vue"]["personnalise"])
+        self.assertEqual(a["vue"]["calendrier"], origine)
+        self.assertEqual(a["vue"]["semaines"], len(origine))
+        self.assertEqual(a["sources"], {"story": self.images})
+        self.assertEqual((b["id"], b["nom"]), ("c2", "@marie ☀"))
+        self.assertEqual(b["calendrier"], cal2)
+        self.assertTrue(b["vue"]["personnalise"])
+        self.assertEqual(b["vue"]["creneaux"], 2)
+        # Le fichier : format documenté, écrit d'un coup (aucun .tmp ne traîne).
+        with open(fichier, encoding="utf-8") as f:
+            ecrit = json.load(f)
+        self.assertEqual(ecrit["version"], 1)
+        self.assertEqual([x["id"] for x in ecrit["comptes"]], ["c1", "c2"])
+        self.assertIsNone(ecrit["comptes"][0]["calendrier"])
+        self.assertEqual([n for n in os.listdir(donnees) if n.endswith(".tmp")], [])
+
+        # Persistance : un AUTRE moteur relit la même chose ; le calendrier global n'a pas bougé.
+        c2 = self.moteur(appdata=appdata, home=home)
+        v = self.assertResultat(c2.appeler("comptes_lire"))
+        self.assertEqual([(x["id"], x["nom"]) for x in v["comptes"]],
+                         [("c1", "Compte 1"), ("c2", "@marie ☀")])
+        self.assertEqual(v["comptes"][1]["calendrier"], cal2)
+        self.assertEqual(self.assertResultat(c2.appeler("calendrier_lire"))["calendrier"], cal)
+        # Fichier modifié à la main (id en double) : chaque compte garde un id unique.
+        ecrit["comptes"][1]["id"] = "c1"
+        with open(fichier, "w", encoding="utf-8") as f:
+            json.dump(ecrit, f)
+        v = self.assertResultat(c2.appeler("comptes_lire"))
+        self.assertEqual(len({x["id"] for x in v["comptes"]}), 2)
+        # Ids que le moteur refuserait (espace au bord, plus de 64 caractères) : remplacés à la
+        # lecture, sinon chaque comptes_sauver de la liste lue échouerait.
+        ecrit["comptes"][0]["id"], ecrit["comptes"][1]["id"] = "c1 ", "x" * 70
+        with open(fichier, "w", encoding="utf-8") as f:
+            json.dump(ecrit, f)
+        v = self.assertResultat(c2.appeler("comptes_lire"))
+        self.assertEqual([x["id"] for x in v["comptes"]], ["c1", "c2"])
+        self.assertResultat(c2.appeler("comptes_sauver", {"comptes": [
+            {k: x[k] for k in ("id", "nom", "sources", "calendrier")} for x in v["comptes"]]}))
+        # Fichier illisible : MIS DE CÔTÉ (pas écrasé au prochain enregistrement), puis retour à
+        # la migration (« Compte 1 »), sans planter.
+        with open(fichier, "w", encoding="utf-8") as f:
+            f.write("{pas du json")
+        v = self.assertResultat(c2.appeler("comptes_lire"))
+        self.assertEqual([x["nom"] for x in v["comptes"]], ["Compte 1"])
+        self.assertEqual(v["comptes"][0]["calendrier"], cal)
+        self.assertFalse(os.path.exists(fichier))
+        copies = [n for n in os.listdir(donnees) if n.startswith("comptes_ranger.illisible-")]
+        self.assertEqual(len(copies), 1, os.listdir(donnees))
+        with open(os.path.join(donnees, copies[0]), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "{pas du json")
+
+        # Aucun calendrier enregistré nulle part -> calendrier null (= celui d'origine).
+        # (En dev, emplacement copierait calendrier_utilisateur.json de la racine du dépôt :
+        #  on pointe l'ancien emplacement vers un dossier vide.)
+        appdata2, _home2 = self.profil_isole("Profil comptes vierge")
+        ancien = os.path.join(self.tmp, "Profil comptes vierge", "ancien emplacement")
+        os.makedirs(ancien)
+        code = ("import sys, json; sys.path.insert(0, %r)\n"
+                "from agent import emplacement, comptes\n"
+                "emplacement.dossier_exe = lambda: %r\n"
+                "print(json.dumps(comptes.charger_comptes()))\n"
+                ) % (os.path.dirname(DOSSIER_ENGINE), ancien)
+        r = subprocess.run([sys.executable, "-c", code], env=self.env(appdata=appdata2),
+                           cwd=self.tmp, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+        self.assertEqual(json.loads(r.stdout.decode("utf-8").strip().splitlines()[-1]),
+                         [{"id": "c1", "nom": "Compte 1", "sources": {}, "calendrier": None}])
+        self.assertFalse(os.path.exists(os.path.join(appdata2, "HelpVA", "comptes_ranger.json")))
+
+    def test_comptes_sauver_refuse_et_nomme_le_compte(self):
+        appdata, home = self.profil_isole("Profil validation comptes")
+        c = self.moteur(appdata=appdata, home=home)
+        bon = {"id": "c1", "nom": "Compte 1", "sources": {}, "calendrier": None}
+        self.assertResultat(c.appeler("comptes_sauver", {"comptes": [bon]}))
+
+        def refus(comptes, *morceaux, compte="?"):
+            e = self.assertErreur(c.appeler("comptes_sauver", {"comptes": comptes}),
+                                  "ARGUMENTS_INVALIDES")
+            for m in morceaux:
+                self.assertIn(m, e["message"])
+            if compte != "?":
+                self.assertEqual(e["details"]["compte"], compte, e)
+            return e
+
+        refus([], "au moins 1 compte")
+        refus("Compte 1", "au moins 1 compte")
+        refus([dict(bon, id=f"c{i}", nom=f"Compte {i}") for i in range(1, 52)],
+              "50 comptes au maximum")
+        # Noms en double SANS tenir compte de la casse (même dossier pour Windows).
+        refus([bon, {"id": "c2", "nom": "compte 1"}], "Compte n°2", "déjà utilisé", compte="c2")
+        # Noms impossibles comme nom de dossier Windows, vides, trop longs.
+        for nom in ("CON", "nul.txt", "a/b", "deux:points", "fin.", "   ", "x" * 41, 12,
+                    # réservés aussi (Windows 10 refuse les exposants ; COM0/LPT0 : doc Microsoft)
+                    "COM¹", "lpt³", "CONIN$", "conout$.txt", "COM0", "LPT0"):
+            refus([bon, {"id": "c2", "nom": nom}], "Compte n°2", compte="c2")
+        # « COMPTE~1 » = le nom court du dossier « Compte 1 » : les deux comptes partageraient
+        # le même dossier de sortie.
+        refus([bon, {"id": "c2", "nom": "COMPTE~1"}], "Compte n°2", "nom court", compte="c2")
+        refus([bon, dict(bon, nom="Autre")], "Compte n°2", "identifiant", compte="c1")
+        # Compte SANS id refusé : details.compte = null (pas un id inventé que l'interface ignore).
+        refus([bon, {"nom": "a/b"}], "Compte n°2", compte=None)
+        # Dossiers : le message NOMME le compte fautif.
+        refus([bon, {"id": "c2", "nom": "@marie", "sources": {"reel": "relatif"}}],
+              "@marie : ", "réels", "ABSOLU", compte="c2")
+        refus([bon, {"id": "c2", "nom": "@marie", "sources": {"tiktok": self.images}}],
+              "@marie : ", "tiktok", compte="c2")
+        # Calendrier invalide d'un compte (heure qui sortirait du dossier, nom réservé, vide).
+        for mauvais, morceau in (
+                ({"semaine-01": {"jour-1": [{"heure": "..\\x", "type": "reel"}]}}, "Créneau invalide"),
+                ({"semaine-01": {"CON": [{"heure": "12h00", "type": "reel"}]}}, "CON"),
+                ({}, "au moins 1 semaine")):
+            refus([bon, {"id": "c2", "nom": "@marie", "calendrier": mauvais}],
+                  "@marie : ", morceau, compte="c2")
+        # Aucun de ces refus n'a rien écrit.
+        v = self.assertResultat(c.appeler("comptes_lire"))
+        self.assertEqual([x["nom"] for x in v["comptes"]], ["Compte 1"])
+        # 50 comptes : accepté (et « CONSEIL » est un nom permis).
+        cinquante = [dict(bon, id=f"c{i}", nom=f"Compte {i}") for i in range(1, 51)]
+        cinquante[1]["nom"] = "CONSEIL"
+        v = self.assertResultat(c.appeler("comptes_sauver", {"comptes": cinquante}))
+        self.assertEqual(len(v["comptes"]), 50)
+        self.assertEqual(v["comptes"][1]["nom"], "CONSEIL")
+
+    def test_comptes_calendrier_herite_invalide(self):
+        """Calendrier écrit par l'ANCIENNE app, que le moteur refuserait aujourd'hui : il ne bloque
+        ni le choix d'un dossier, ni « + », ni un renommage. Seul le rangement est refusé."""
+        appdata, home = self.profil_isole("Profil calendrier hérité")
+        donnees = os.path.join(appdata, "HelpVA")
+        os.makedirs(donnees)
+        herite = {"semaine-01": {"jour-1": [{"heure": "12h15 ", "type": "story"}],
+                                 "CON": [{"heure": "13h00", "type": "story"}]}}
+        with open(os.path.join(donnees, "calendrier_utilisateur.json"), "w", encoding="utf-8") as f:
+            json.dump(herite, f)
+        c = self.moteur(appdata=appdata, home=home)
+        self.assertEqual(self.assertResultat(c.appeler("comptes_lire"))["comptes"][0]["calendrier"],
+                         herite)
+        # Choisir un dossier, « + » (copie du calendrier du compte 1), renommer : acceptés.
+        liste = [{"id": "c1", "nom": "Compte 1", "sources": {"story": self.images},
+                  "calendrier": herite}]
+        v = self.assertResultat(c.appeler("comptes_sauver", {"comptes": liste}))
+        self.assertEqual(v["comptes"][0]["calendrier"], herite)
+        liste.append({"id": "c2", "nom": "Compte 2", "sources": {}, "calendrier": herite})
+        self.assertResultat(c.appeler("comptes_sauver", {"comptes": liste}))
+        liste[1]["nom"] = "@marie"
+        v = self.assertResultat(c.appeler("comptes_sauver", {"comptes": liste}))
+        self.assertEqual([x["nom"] for x in v["comptes"]], ["Compte 1", "@marie"])
+        # Le rangement, lui, reste refusé tant que le calendrier n'est pas corrigé.
+        a = self.assertResultat(c.appeler("ranger_analyser", {"comptes": liste, "types": ["story"]}))
+        self.assertFalse(a["pret"])
+        self.assertIn("12h15 ", a["comptes"][0]["calendrier_erreur"])
+        # Un calendrier MODIFIÉ est vérifié en entier : encore invalide -> refusé, rien d'écrit.
+        modifie = json.loads(json.dumps(herite))
+        modifie["semaine-01"]["jour-1"].append({"heure": "18h00", "type": "reel"})
+        e = self.assertErreur(c.appeler("comptes_sauver", {"comptes": [
+            liste[0], dict(liste[1], calendrier=modifie)]}), "ARGUMENTS_INVALIDES")
+        self.assertTrue(e["message"].startswith("@marie : "), e["message"])
+        self.assertEqual(e["details"]["compte"], "c2")
+        # Corrigé dans l'éditeur : accepté.
+        corrige = {"semaine-01": {"jour-1": [{"heure": "12h15", "type": "story"}]}}
+        v = self.assertResultat(c.appeler("comptes_sauver", {"comptes": [
+            liste[0], dict(liste[1], calendrier=corrige)]}))
+        self.assertEqual(v["comptes"][1]["calendrier"], corrige)
+
+    def test_ranger_plusieurs_comptes(self):
+        appdata, home = self.profil_isole("Profil multi-comptes")
+        c = self.moteur(appdata=appdata, home=home)
+        base = self.nouvelle_sortie(c, "Sortie multi-comptes é")
+        sortie = os.path.join(base, "ranger")
+        images_marie = os.path.join(self.tmp, "Profil multi-comptes", "Images de Marie é")
+        os.makedirs(images_marie)
+        for i in (1, 2, 3):
+            shutil.copy2(os.path.join(self.images, f"{i} photo ☀.png"),
+                         os.path.join(images_marie, f"{i} marie.png"))
+        cal1 = {"semaine-01": {"jour-1": [{"heure": "12h00", "type": "story"},
+                                          {"heure": "19h00", "type": "reel"}]}}
+        cal2 = {"semaine-01": {"jour-1": [{"heure": "10h00", "type": "story"}]},
+                "semaine-02": {"jour-2": [{"heure": "11h00", "type": "story"}]}}
+        cal3 = {"semaine-01": {"jour-1": [{"heure": "09h00", "type": "carousel"}]}}
+        comptes = [
+            {"id": "c1", "nom": "Compte 1", "sources": {"story": self.images, "reel": self.videos},
+             "calendrier": cal1},
+            {"id": "c7", "nom": "@marie", "sources": {"story": self.images}, "calendrier": cal2},
+            {"id": "c3", "nom": "Sans type", "sources": {}, "calendrier": cal3},
+        ]
+        types = ["story", "reel"]
+
+        # Même dossier d'images pour deux comptes : AVERTISSEMENT, pas un refus.
+        a = self.assertResultat(c.appeler("ranger_analyser", {"comptes": comptes, "types": types}))
+        self.assertTrue(a["pret"], a)
+        self.assertEqual(len(a["partages"]), 1)
+        self.assertEqual(os.path.normcase(a["partages"][0]["dossier"]), os.path.normcase(self.images))
+        self.assertEqual([(u["id"], u["nom"], u["type"]) for u in a["partages"][0]["comptes"]],
+                         [("c1", "Compte 1", "story"), ("c7", "@marie", "story")])
+        self.assertIn("Même dossier pour plusieurs comptes", a["message_confirmation"])
+
+        # Avec ses propres images : plus de partage.
+        comptes[1]["sources"] = {"story": images_marie}
+        a = self.assertResultat(c.appeler("ranger_analyser", {"comptes": comptes, "types": types}))
+        self.assertTrue(a["pret"])
+        self.assertEqual(a["partages"], [])
+        self.assertEqual(a["sortie"], sortie)
+        self.assertEqual([x["sortie"] for x in a["comptes"]],
+                         [os.path.join(sortie, n) for n in ("Compte 1", "@marie", "Sans type")])
+        # Types actifs d'un compte = types cochés ∩ types de SON calendrier.
+        self.assertEqual([x["actifs"] for x in a["comptes"]], [["reel", "story"], ["story"], []])
+        self.assertEqual([x["creneaux"] for x in a["comptes"]], [2, 2, 0])
+        self.assertEqual(a["actifs"], ["reel", "story"])
+        # Champs de tête = somme des comptes.
+        self.assertEqual(a["types"]["story"]["creneaux"], 3)
+        self.assertEqual(a["types"]["story"]["requis"], 3)
+        self.assertEqual(a["types"]["story"]["trouves"], 6)
+        self.assertEqual(a["types"]["carousel"]["creneaux"], 1)
+        self.assertFalse(a["types"]["carousel"]["actif"])
+        self.assertIsNone(a["types"]["story"]["dossier"])
+        self.assertTrue(a["types"]["story"]["dossier_valide"])
+        self.assertEqual(a["comptes"][1]["types"]["story"]["dossier"], images_marie)
+        msg = a["message_confirmation"]
+        self.assertIn(f"@marie → {os.path.join('ranger', '@marie')}\n• Stories : 3 image(s) pour 2 "
+                      "requise(s)", msg)
+        self.assertIn("Sans type : aucun type coché dans son calendrier (ignoré).", msg)
+
+        rid = c.envoyer("ranger_lancer", {"comptes": comptes, "types": types, "aleatoire": False})
+        d = self.assertResultat(c.fin(rid, 120))
+        self.assertFalse(d["arrete"])
+        self.assertEqual(d["sortie"], sortie)
+        self.assertEqual(d["creneaux"], 4)
+        self.assertEqual(d["types"], ["reel", "story"])
+        self.assertEqual(d["besoins"], {"reel": 1, "story": 3})
+        self.assertEqual(d["places"], {"reel": 1, "story": 3})
+        self.assertEqual(d["surplus"], {"reel": 0, "story": 3})
+        self.assertEqual([(x["id"], x["nom"], x["creneaux"], x["aucun_type"]) for x in d["comptes"]],
+                         [("c1", "Compte 1", 2, False), ("c7", "@marie", 2, False),
+                          ("c3", "Sans type", 0, True)])
+        self.assertEqual(d["comptes"][1]["sortie"], os.path.join(sortie, "@marie"))
+        # Arborescence : ranger/<nom du compte>/semaine-XX/jour-Y/<créneau>/ + surplus par compte.
+        j1 = os.path.join(sortie, "Compte 1", "semaine-01", "jour-1")
+        self.assertTrue(os.path.isfile(os.path.join(j1, "1_12h00_story", "1 photo ☀.png")))
+        self.assertTrue(os.path.isfile(os.path.join(j1, "2_19h00_reel", "clip é 01.avi")))
+        self.assertTrue(os.path.isfile(os.path.join(sortie, "Compte 1", "surplus", "Stories",
+                                                    "2 photo ☀.png")))
+        m = os.path.join(sortie, "@marie")
+        self.assertTrue(os.path.isfile(os.path.join(m, "semaine-01", "jour-1", "1_10h00_story",
+                                                    "1 marie.png")))
+        self.assertTrue(os.path.isfile(os.path.join(m, "semaine-02", "jour-2", "1_11h00_story",
+                                                    "2 marie.png")))
+        self.assertTrue(os.path.isfile(os.path.join(m, "surplus", "Stories", "3 marie.png")))
+        # Rien d'autre à la racine ; le compte ignoré n'a pas de dossier.
+        self.assertEqual(sorted(os.listdir(sortie)), ["@marie", "Compte 1"])
+
+        # Progression : 1re ligne = le compte, fraction GLOBALE qui ne recule jamais.
+        prog = c.de(rid, "progress")
+        textes = [p["texte"] for p in prog]
+        self.assertTrue(any(t.startswith("Compte 1/2 — Compte 1\nSemaine 1/1") for t in textes), textes)
+        self.assertTrue(any(t.startswith("Compte 2/2 — @marie\nSemaine 2/2") for t in textes), textes)
+        fractions = [p["fraction"] for p in prog if p["fraction"] is not None]
+        self.assertEqual(fractions, sorted(fractions))
+        self.assertEqual(fractions[-1], 1.0)
+        self.assertTrue(any(p["details"]["compte"] == {"index": 2, "total": 2, "id": "c7",
+                                                       "nom": "@marie"} for p in prog))
+        # Bilan : un bloc par compte.
+        msg = d["bilan"]["message"]
+        self.assertTrue(msg.startswith("Médias rangés !\n\nCompte 1 :\n• Réels : 1/1 vidéo(s)\n"
+                                       "• Stories : 1/1 image(s)\n\n@marie :\n• Stories : 2/2 "
+                                       "image(s)\n\nSans type : ignoré"), msg)
+        self.assertIn("📦 3 média(s) en trop", msg)
+        self.assertFalse(d["bilan"]["erreur"])
+
+        # preparer annonce le dossier « ranger » ENTIER ; relancer avec ce chemin le remplace.
+        p = self.assertResultat(c.appeler("preparer", {"commande": "ranger_lancer",
+                                                       "args": {"comptes": comptes, "types": types}}))
+        self.assertEqual(p["sortie"], sortie)
+        self.assertTrue(p["remplacement"])
+        self.assertEqual(len(p["analyse"]["comptes"]), 3)
+        self.assertErreur(c.appeler("ranger_lancer", {"comptes": comptes, "types": types}),
+                          "SORTIE_EXISTE")
+        temoin = os.path.join(sortie, "témoin.txt")
+        open(temoin, "w").close()
+        d = self.assertResultat(c.appeler("ranger_lancer", {
+            "comptes": comptes, "types": types, "remplacer": p["sortie"]}, 120))
+        self.assertEqual(d["creneaux"], 4)
+        self.assertFalse(os.path.exists(temoin))
+
+    def test_ranger_un_seul_compte_arborescence_inchangee(self):
+        appdata, home = self.profil_isole("Profil un compte")
+        c = self.moteur(appdata=appdata, home=home)
+        base = self.nouvelle_sortie(c, "Sortie un compte")
+        sortie = os.path.join(base, "ranger")
+        cal = {"semaine-01": {"jour-1": [{"heure": "12h00", "type": "story"}]}}
+        comptes = [{"id": "c1", "nom": "@solo", "sources": {"story": self.images}, "calendrier": cal}]
+        a = self.assertResultat(c.appeler("ranger_analyser", {"comptes": comptes,
+                                                              "types": ["story"]}))
+        self.assertTrue(a["pret"])
+        self.assertEqual(a["comptes"][0]["sortie"], sortie)
+        self.assertEqual(a["types"]["story"]["dossier"], self.images)
+        self.assertTrue(a["types"]["story"]["dossier_valide"])
+        self.assertTrue(a["message_confirmation"].startswith(
+            "À ranger :\n• Stories : 3 image(s) pour 1 requise(s)\n\nDestination :"), a)
+        rid = c.envoyer("ranger_lancer", {"comptes": comptes, "types": ["story"],
+                                          "aleatoire": False})
+        d = self.assertResultat(c.fin(rid, 120))
+        # Arborescence d'AVANT : pas de sous-dossier au nom du compte.
+        self.assertTrue(os.path.isfile(os.path.join(sortie, "semaine-01", "jour-1", "1_12h00_story",
+                                                    "1 photo ☀.png")))
+        self.assertTrue(os.path.isdir(os.path.join(sortie, "surplus", "Stories")))
+        self.assertFalse(os.path.exists(os.path.join(sortie, "@solo")))
+        self.assertEqual((d["sortie"], d["creneaux"], d["surplus"]), (sortie, 1, {"story": 2}))
+        self.assertEqual((d["comptes"][0]["id"], d["comptes"][0]["sortie"]), ("c1", sortie))
+        self.assertEqual(d["bilan"]["message"],
+                         "Médias rangés !\n\n• Stories : 1/1 image(s)\n\nDossier :\n" + sortie
+                         + "\n\n📦 2 média(s) en trop → dossier « surplus ».")
+        self.assertFalse(any(p["texte"].startswith("Compte") for p in c.de(rid, "progress")))
+        # Calendrier null = celui d'origine.
+        a = self.assertResultat(c.appeler("ranger_analyser", {
+            "comptes": [dict(comptes[0], calendrier=None)], "types": ["story"]}))
+        origine = self.assertResultat(c.appeler("calendrier_defaut"))
+        self.assertEqual(a["comptes"][0]["creneaux"], origine["compte"]["story"])
+        # Ancien mode (sans « comptes ») : la réponse a aussi ses champs « comptes » / « partages ».
+        a = self.assertResultat(c.appeler("ranger_analyser", {"sources": {"story": self.images},
+                                                              "types": ["story"]}))
+        self.assertEqual([(x["id"], x["sortie"]) for x in a["comptes"]], [("c1", sortie)])
+        self.assertEqual(a["partages"], [])
+
+    def test_ranger_plusieurs_comptes_erreurs(self):
+        appdata, home = self.profil_isole("Profil erreurs comptes")
+        c = self.moteur(appdata=appdata, home=home)
+        base = self.nouvelle_sortie(c, "Sortie erreurs comptes")
+        sortie = os.path.join(base, "ranger")
+        os.makedirs(os.path.join(sortie, "Compte 1"))
+        temoin = os.path.join(sortie, "Compte 1", "ancien.txt")
+        open(temoin, "w").close()
+        cal = {"semaine-01": {"jour-1": [{"heure": "12h00", "type": "story"}]}}
+        bon = {"id": "c1", "nom": "Compte 1", "sources": {"story": self.images}, "calendrier": cal}
+
+        def args(**second):
+            autre = dict({"id": "c2", "nom": "@marie", "sources": {}, "calendrier": cal}, **second)
+            return {"comptes": [bon, autre], "types": ["story"], "remplacer": sortie}
+
+        # Dossier manquant (absent ou pas choisi) pour le 2e compte.
+        a = self.assertResultat(c.appeler("ranger_analyser", args()))
+        self.assertFalse(a["pret"])
+        self.assertEqual(a["manquants"], ["story"])
+        self.assertEqual([x["manquants"] for x in a["comptes"]], [[], ["story"]])
+        e = self.assertErreur(c.appeler("ranger_lancer", args()), "SOURCE_INTROUVABLE")
+        self.assertEqual((e["details"]["compte"], e["details"]["types"]), ("c2", ["story"]))
+        self.assertIn("« @marie »", e["message"])
+        absent = os.path.join(self.tmp, "absent é")
+        e = self.assertErreur(c.appeler("ranger_lancer", args(sources={"story": absent})),
+                              "SOURCE_INTROUVABLE")
+        self.assertEqual((e["details"]["compte"], e["details"]["chemins"]), ("c2", [absent]))
+
+        # Source DANS la sortie (même dans le dossier d'un AUTRE compte) : le remplacement la détruirait.
+        dans = os.path.join(sortie, "Compte 1")
+        a = self.assertResultat(c.appeler("ranger_analyser", args(sources={"story": dans})))
+        self.assertFalse(a["pret"])
+        self.assertEqual(a["comptes"][1]["source_dans_sortie"], ["story"])
+        e = self.assertErreur(c.appeler("ranger_lancer", args(sources={"story": dans})),
+                              "SOURCE_DANS_SORTIE")
+        self.assertEqual((e["details"]["compte"], e["details"]["types"]), ("c2", ["story"]))
+        self.assertTrue(e["message"].startswith("@marie : "), e["message"])
+
+        # Calendrier invalide d'un compte : signalé par l'analyse, refusé AVANT la sortie.
+        mauvais = {"semaine-01": {"CON": [{"heure": "12h00", "type": "story"}]}}
+        a = self.assertResultat(c.appeler("ranger_analyser", args(
+            sources={"story": self.images}, calendrier=mauvais)))
+        self.assertFalse(a["pret"])
+        self.assertIsNone(a["comptes"][0]["calendrier_erreur"])
+        self.assertIn("CON", a["comptes"][1]["calendrier_erreur"])
+        self.assertTrue(a["calendrier_erreur"].startswith("@marie : "))
+        e = self.assertErreur(c.appeler("ranger_lancer", args(
+            sources={"story": self.images}, calendrier=mauvais)), "CALENDRIER_INVALIDE")
+        self.assertEqual(e["details"]["compte"], "c2")
+
+        # Aucun type actif dans aucun compte.
+        a = self.assertResultat(c.appeler("ranger_analyser", dict(
+            args(sources={"story": self.images}), types=["carousel"])))
+        self.assertFalse(a["pret"])
+        self.assertEqual(a["actifs"], [])
+        e = self.assertErreur(c.appeler("ranger_lancer", dict(
+            args(sources={"story": self.images}), types=["carousel"])), "ARGUMENTS_INVALIDES")
+        self.assertEqual(e["details"]["champ"], "types")
+
+        # Champs de tête : seulement les comptes qui ont besoin du type. Les stories de « @marie »
+        # (calendrier sans story) ne doivent pas faire croire que « Compte 1 » a ses images.
+        reels = {"semaine-01": {"jour-1": [{"heure": "12h00", "type": "reel"}]}}
+        a = self.assertResultat(c.appeler("ranger_analyser", {"types": ["story"], "comptes": [
+            dict(bon, sources={"story": self.vide}),
+            {"id": "c2", "nom": "@marie", "sources": {"story": self.images}, "calendrier": reels}]}))
+        self.assertEqual({k: a["types"]["story"][k] for k in ("requis", "trouves", "manque")},
+                         {"requis": 1, "trouves": 0, "manque": 1})
+
+        # Liste de comptes invalide (noms en double) : refus clair, dès l'analyse.
+        e = self.assertErreur(c.appeler("ranger_analyser", {"comptes": [
+            bon, dict(bon, id="c2", nom="COMPTE 1")]}), "ARGUMENTS_INVALIDES")
+        self.assertEqual(e["details"]["compte"], "c2")
+        # L'ancienne sortie n'a jamais été touchée.
+        self.assertTrue(os.path.exists(temoin))
+
+    def test_ranger_plusieurs_comptes_annulation(self):
+        appdata, home = self.profil_isole("Profil annulation comptes")
+        c = self.moteur(appdata=appdata, home=home)
+        base = self.nouvelle_sortie(c, "Sortie annulation comptes")
+        sortie = os.path.join(base, "ranger")
+        os.makedirs(sortie)
+        open(os.path.join(sortie, "ancien.txt"), "w").close()
+        # 3000 créneaux pour le 1er compte : assez long pour annuler PENDANT son rangement.
+        gros = {"semaine-01": {f"jour-{j}": [{"heure": f"h{k:03d}", "type": "story"}
+                                             for k in range(300)] for j in range(1, 11)}}
+        petit = {"semaine-01": {"jour-1": [{"heure": "12h00", "type": "story"}]}}
+        comptes = [{"id": "c1", "nom": "Gros compte", "sources": {"story": self.images},
+                    "calendrier": gros},
+                   {"id": "c2", "nom": "Petit compte", "sources": {"story": self.images},
+                    "calendrier": petit}]
+        rid = c.envoyer("ranger_lancer", {"comptes": comptes, "types": ["story"],
+                                          "remplacer": sortie})
+        c.attendre(lambda e: e.get("id") == rid and e.get("type") == "progress", 30)
+        r = self.assertResultat(c.appeler("annuler", {"cible": rid}, 10))
+        self.assertEqual(r["etat"], "annulation_demandee")
+        d = self.assertResultat(c.fin(rid, 60))
+        self.assertTrue(d["arrete"])
+        self.assertLess(d["creneaux"], 3001)
+        # Arrêté DANS le 1er compte ; le 2e n'a jamais commencé (arrêt respecté entre comptes).
+        self.assertEqual([(x["id"], x["arrete"]) for x in d["comptes"]],
+                         [("c1", True), ("c2", True)])
+        self.assertEqual(d["comptes"][1]["creneaux"], 0)
+        self.assertFalse(os.path.exists(os.path.join(sortie, "Petit compte")))
+        self.assertTrue(d["bilan"]["message"].startswith("Rangement arrêté."), d["bilan"])
+        self.assertIn("• Gros compte : ", d["bilan"]["message"])
+        self.assertTrue(d["bilan"]["erreur"])
+        self.assertFalse(self.assertResultat(c.appeler("etat"))["occupe"])
 
     # ----------------------------------------------------------------- arrêt
     def test_quitter(self):

@@ -3,28 +3,16 @@ import { ArrowCounterClockwise, Copy, FloppyDisk, Plus, Trash, Warning, X } from
 import { Bouton, Icone3D, Rouage } from "../ui";
 import { ICONES_3D } from "../../icones3d";
 import Dialogue from "../Dialogue";
-import { TYPES_POST, type Calendrier, type Moteur, type TypePost, type VueCalendrier } from "../../engine/api";
+import { TYPES_POST, type Calendrier, type Moteur, type TypePost, type VueCalendrier, type VueCompte } from "../../engine/api";
+import { nomDossierValide } from "../../engine/useRanger";
 import { fr, pluriel } from "../../fr";
 
 /** Libellé d'UN créneau (agent/ranger.py > LIBELLE_CRENEAU). */
 const LIBELLE_CRENEAU: Record<TypePost, string> = { reel: "Réel", story: "Story", story_cta: "Story CTA", carousel: "Carrousel" };
 
-/* Même règle que le moteur (engine/commandes.py > _nom_valide) : ces textes deviennent des NOMS DE
+/* Même règle que le moteur (engine/commandes.py > _nom_valide) : les heures deviennent des NOMS DE
    DOSSIERS (semaine-01/jour-1/1_12h15_reel). On prévient ici, avant d'enregistrer. */
-const INTERDITS = /[<>:"/\\|?*\u0000-\u001f]/;
-const RESERVES = new Set(["CON", "PRN", "AUX", "NUL", ...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`), ...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`)]);
-export function heureValide(h: string): boolean {
-  return (
-    h.length > 0 &&
-    h.length <= 40 &&
-    h.trim() === h &&
-    h !== "." &&
-    h !== ".." &&
-    !h.endsWith(".") &&
-    !RESERVES.has(h.split(".")[0].trim().toUpperCase()) &&
-    !INTERDITS.test(h)
-  );
-}
+export const heureValide = nomDossierValide;
 
 const copie = (c: Calendrier): Calendrier => JSON.parse(JSON.stringify(c)) as Calendrier;
 const libelleSemaine = (nom: string) => {
@@ -49,60 +37,72 @@ const toutReels = (cal: Calendrier) => Object.values(cal).every((j) => Object.va
 type Confirmation = { titre: string; texte: string; action: string; danger?: boolean; faire: () => void } | null;
 
 /**
- * Éditeur du calendrier de posts (copie de app_ctk.py > ouvrir_editeur_calendrier) :
+ * Éditeur du calendrier de posts D'UN COMPTE (copie de app_ctk.py > ouvrir_editeur_calendrier) :
  * semaines (dupliquer, supprimer), créneaux de chaque jour (heure + type), « Vidéos uniquement »,
- * Réinitialiser, Enregistrer. Rien n'est enregistré avant « Enregistrer » ; fermer avec des
- * modifications en cours demande quoi faire.
+ * « Copier le calendrier de… » (un autre compte), Réinitialiser, Enregistrer. Rien n'est enregistré
+ * avant « Enregistrer » ; fermer avec des modifications en cours demande quoi faire.
+ * L'éditeur ne lit ni n'écrit lui-même : il part de `compte` et rend le résultat à `enregistrer`.
  */
 export default function EditeurCalendrier({
   ouvert,
   fermer,
   moteur,
+  compte,
+  autres,
   imagesParCarrousel,
-  surEnregistre,
+  enregistrer: enregistrerCalendrier,
   erreur,
 }: {
   ouvert: boolean;
   fermer: () => void;
+  /** seulement pour « Réinitialiser » (le calendrier d'origine) */
   moteur: Moteur;
+  /** le compte dont on modifie le calendrier (son calendrier enregistré = le point de départ) */
+  compte: VueCompte | null;
+  /** les autres comptes, pour « Copier le calendrier de… » */
+  autres: VueCompte[];
   imagesParCarrousel: number;
-  /** le calendrier enregistré (pour mettre la page Ranger à jour) et le message du moteur */
-  surEnregistre: (vue: VueCalendrier) => void;
+  /** enregistre le calendrier du compte ; une erreur laisse l'éditeur ouvert */
+  enregistrer: (cal: Calendrier) => Promise<VueCalendrier>;
   erreur: (titre: string, e: unknown) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const idTitre = useId();
+  const idCopie = useId();
   const [cal, setCal] = useState<Calendrier | null>(null);
   const [instantane, setInstantane] = useState("");
   const [courant, setCourant] = useState<string | null>(null);
   const [enregistrement, setEnregistrement] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** information neutre (pas une erreur), lue aussi par les lecteurs d'écran ; effacée au 1er changement */
+  const [note, setNote] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [quitter, setQuitter] = useState(false);
+  /** le compte choisi dans « Copier le calendrier de… » */
+  const [source, setSource] = useState("");
 
-  // Ouverture : on (re)lit le calendrier enregistré.
+  // Ouverture : on part du calendrier ENREGISTRÉ du compte (lu au moment d'ouvrir).
+  const compteRef = useRef(compte);
+  compteRef.current = compte;
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
     if (ouvert && !d.open) {
       d.showModal();
-      setCal(null);
+      const v = compteRef.current?.vue ?? null;
       setMessage(null);
-      moteur
-        .calendrierLire()
-        .then((v) => {
-          setCal(copie(v.calendrier));
-          setInstantane(JSON.stringify(v.calendrier));
-          setCourant(Object.keys(v.calendrier)[0] ?? null);
-        })
-        .catch((e) => {
-          erreur("Calendrier", e);
-          fermer();
-        });
+      setNote(null);
+      setSource("");
+      setCal(v ? copie(v.calendrier) : null);
+      setInstantane(v ? JSON.stringify(v.calendrier) : "");
+      setCourant(v ? (Object.keys(v.calendrier)[0] ?? null) : null);
     } else if (!ouvert && d.open) {
       d.close();
     }
-  }, [ouvert, moteur, erreur, fermer]);
+  }, [ouvert]);
+
+  // La note (« déjà identique… ») ne vaut que pour le calendrier affiché à ce moment-là.
+  useEffect(() => setNote(null), [cal]);
 
   const modifie = cal !== null && JSON.stringify(cal) !== instantane;
   const n = useMemo(() => (cal ? compter(cal) : null), [cal]);
@@ -198,6 +198,30 @@ export default function EditeurCalendrier({
     }
   };
 
+  /* « Copier le calendrier de… » : le calendrier d'un autre compte arrive dans l'éditeur, comme une
+     modification (rien n'est enregistré avant « Enregistrer »). */
+  const autreChoisi = autres.find((o) => o.id === source) ?? autres[0] ?? null;
+  const copierDe = () => {
+    const autre = autreChoisi;
+    if (!cal || !autre) return;
+    if (JSON.stringify(cal) === JSON.stringify(autre.vue.calendrier)) {
+      // Déjà le même calendrier : rien à copier, mais on le DIT (sinon le clic semble sans effet).
+      setMessage(null);
+      setNote(`Ce calendrier est déjà identique à celui de « ${autre.nom} ».`);
+      return;
+    }
+    setConfirmation({
+      titre: `Copier le calendrier de « ${autre.nom} » ?`,
+      texte: `Le calendrier affiché sera REMPLACÉ par une copie de celui de « ${autre.nom} » (rien n'est enregistré avant « Enregistrer »).`,
+      action: "Copier le calendrier",
+      faire: () => {
+        setCal(copie(autre.vue.calendrier));
+        setCourant(Object.keys(autre.vue.calendrier)[0] ?? null);
+        setMessage(null);
+      },
+    });
+  };
+
   const enregistrer = async (puisFermer = true) => {
     if (!cal || enregistrement) return;
     if (heuresInvalides) {
@@ -208,9 +232,8 @@ export default function EditeurCalendrier({
     }
     setEnregistrement(true);
     try {
-      const v = await moteur.calendrierSauver(cal);
+      const v = await enregistrerCalendrier(cal);
       setInstantane(JSON.stringify(v.calendrier));
-      surEnregistre(v);
       if (puisFermer) fermer();
     } catch (e) {
       erreur("Calendrier non enregistré", e);
@@ -258,8 +281,8 @@ export default function EditeurCalendrier({
         <div className="flex items-start gap-4 border-b border-line px-6 pb-4 pt-5">
           <Icone3D src={ICONES_3D.calendrier} taille={48} />
           <div className="min-w-0 flex-1">
-            <h2 id={idTitre} className="text-20 font-semibold">
-              Ajuster le calendrier
+            <h2 id={idTitre} className="truncate text-20 font-semibold" title={compte?.nom}>
+              {compte ? fr(`Calendrier de « ${compte.nom} »`) : "Calendrier"}
             </h2>
             <p className="text-13 text-fg-2">{fr("Autant de semaines que vous voulez : dupliquez ou supprimez-les.")}</p>
             {n && (
@@ -317,6 +340,33 @@ export default function EditeurCalendrier({
                     );
                   })}
                 </div>
+                {/* Choisir le compte, PUIS « Copier » : une simple flèche dans la liste ne remplace rien. */}
+                {autres.length > 0 && (
+                  <div className="ml-auto flex items-center gap-2">
+                    <label htmlFor={idCopie} className="text-13 font-medium">
+                      Copier le calendrier de
+                    </label>
+                    <select
+                      id={idCopie}
+                      value={autreChoisi?.id ?? ""}
+                      onChange={(e) => {
+                        setSource(e.target.value);
+                        setNote(null);
+                      }}
+                      className="h-8 max-w-[180px] rounded-lg border border-line-2 bg-surface px-2.5 text-13 outline-none focus:border-brand focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand"
+                    >
+                      {autres.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.nom}
+                        </option>
+                      ))}
+                    </select>
+                    <Bouton taille="sm" onClick={copierDe} disabled={!autreChoisi} aria-label={autreChoisi ? `Copier le calendrier de « ${autreChoisi.nom} »` : undefined}>
+                      <Copy className="h-4 w-4 text-fg-2" aria-hidden="true" />
+                      Copier
+                    </Bouton>
+                  </div>
+                )}
               </div>
               <div role="tablist" aria-label="Semaines" className="scroll-fin -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
                 {semaines.map((nom) => {
@@ -456,6 +506,8 @@ export default function EditeurCalendrier({
                 <Warning weight="fill" className="mt-[2px] h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 {fr(message)}
               </span>
+            ) : note ? (
+              fr(note)
             ) : modifie ? (
               "Modifications non enregistrées."
             ) : (
