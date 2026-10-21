@@ -88,7 +88,6 @@ export default function Accueil({
       {/* Modules */}
       <div className="mb-3 mt-9 flex items-end justify-between">
         <h2 className="text-16 font-semibold">Préparer le contenu</h2>
-        <span className="text-12 text-fg-3">4 modules</span>
       </div>
       <div className="grid grid-cols-1 gap-3.5 @min-[760px]:grid-cols-2">
         {MODULES.map((m, i) => (

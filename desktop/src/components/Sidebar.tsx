@@ -27,7 +27,7 @@ function Lien({
       aria-current={actif ? "page" : undefined}
       // Lien actif : on change la couleur et le fond, PAS la graisse (un texte plus gras est plus large
       // et « Changer les métadonnées » ne tiendrait plus).
-      className={`group flex h-9 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left text-14 transition-[background-color,color,box-shadow] duration-150 ${
+      className={`group flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-left text-14 transition-[background-color,color,box-shadow] duration-150 ${
         actif
           ? "bg-surface text-fg shadow-[0_0_0_1px_var(--line),0_1px_2px_rgba(0,0,0,0.06)]"
           : "text-fg-2 hover:bg-fg/[0.05] hover:text-fg"
@@ -91,7 +91,7 @@ export default function Sidebar({
           // Les modules s'ouvrent depuis l'Accueil : sur la page d'un module, « Accueil » reste actif.
           actif={page === "accueil" || typeof page === "object"}
           onClick={() => aller("accueil")}
-          icone={<img src={ICONES_3D.accueil} alt="" className="h-[18px] w-[18px] object-contain" />}
+          icone={<img src={ICONES_3D.accueil} alt="" className="h-6 w-6 object-contain" />}
           badge={
             activite ? (
               <span className="tabular flex shrink-0 items-center gap-1 rounded-full bg-brand-soft px-1.5 py-px text-11 font-medium text-brand-text">
@@ -106,7 +106,7 @@ export default function Sidebar({
         <Lien
           actif={page === "parametres"}
           onClick={() => aller("parametres")}
-          icone={<img src={ICONES_3D.parametres} alt="" className="h-[18px] w-[18px] object-contain" />}
+          icone={<img src={ICONES_3D.parametres} alt="" className="h-6 w-6 object-contain" />}
         >
           Paramètres
         </Lien>
