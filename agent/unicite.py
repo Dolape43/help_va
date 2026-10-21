@@ -341,14 +341,14 @@ def _nb_travailleurs() -> int:
     return max(1, min(n, 8))
 
 
-def _planifier(cible: str, sources: list, renommer: bool, ext: str) -> list:
+def _planifier(cible: str, sources: list, renommer: bool, ext: str, debut: int = 1) -> list:
     """Attribue À L'AVANCE un chemin de sortie unique à chaque source.
 
     Fait en séquentiel : garantit zéro collision de noms même quand le
     traitement est ensuite lancé en parallèle.
     """
     plans, pris = [], set()
-    for i, src in enumerate(sources, 1):
+    for i, src in enumerate(sources, debut):
         base = f"{i}{ext}" if renommer else os.path.splitext(os.path.basename(src))[0] + ext
         stem, e = os.path.splitext(base)
         nom, k = base, 2
@@ -512,7 +512,7 @@ def convertir_image_format(source: str, dossier_sortie: str, fmt: str = "jpg") -
 
 
 def _convertir_groupes(groupes: list, dossier_sortie: str, fmt: str, progress=None,
-                       doit_arreter=None) -> dict:
+                       doit_arreter=None, renommer: bool = False) -> dict:
     """Convertit des groupes [(nom_dossier, [images])] vers dossier_sortie (à plat).
 
     progress(texte, fraction) : « Dossier 2/3 — nom » + « Image 5/12 · photo.heic »,
@@ -532,7 +532,8 @@ def _convertir_groupes(groupes: list, dossier_sortie: str, fmt: str, progress=No
         rapport(0, len(imgs))
         # Noms attribués AVANT le traitement parallèle : aucune collision, y compris
         # avec les groupes précédents (déjà écrits sur le disque).
-        plans = _planifier(dossier_sortie, imgs, False, ext)
+        # renommer : 1, 2, 3… à la suite d'un groupe à l'autre (la sortie est à plat).
+        plans = _planifier(dossier_sortie, imgs, renommer, ext, debut=fait + 1)
         n, ech = _traiter_parallele(plans, lambda s, d: _convertir_vers(s, d, fmt),
                                     doit_arreter, None, "image(s)", rapport=rapport)
         n_ok += n
@@ -542,17 +543,17 @@ def _convertir_groupes(groupes: list, dossier_sortie: str, fmt: str, progress=No
 
 
 def convertir_images_fichiers(fichiers: list, dossier_sortie: str, fmt: str = "jpg",
-                              progress=None, doit_arreter=None) -> dict:
+                              progress=None, doit_arreter=None, renommer: bool = False) -> dict:
     """Convertit une liste d'images vers dossier_sortie (en parallèle).
 
     progress(texte, fraction) : avancement. Renvoie {"images": int, "echecs": [noms]}.
     """
     imgs = [f for f in fichiers if os.path.splitext(f)[1].lower() in EXT_IMAGES]
-    return _convertir_groupes([("", imgs)], dossier_sortie, fmt, progress, doit_arreter)
+    return _convertir_groupes([("", imgs)], dossier_sortie, fmt, progress, doit_arreter, renommer)
 
 
 def convertir_images_dossier(dossier: str, dossier_sortie: str, fmt: str = "jpg",
-                             progress=None, doit_arreter=None) -> dict:
+                             progress=None, doit_arreter=None, renommer: bool = False) -> dict:
     """Convertit toutes les images d'un dossier (et sous-dossiers) vers dossier_sortie.
 
     La progression annonce le sous-dossier en cours (« Dossier 2/3 — nom »)."""
@@ -567,4 +568,4 @@ def convertir_images_dossier(dossier: str, dossier_sortie: str, fmt: str = "jpg"
             groupes.append((os.path.basename(os.path.abspath(dossier)) if rel == "." else rel, imgs))
     if not groupes:
         raise RuntimeError("Aucune image trouvée dans ce dossier.")
-    return _convertir_groupes(groupes, dossier_sortie, fmt, progress, doit_arreter)
+    return _convertir_groupes(groupes, dossier_sortie, fmt, progress, doit_arreter, renommer)

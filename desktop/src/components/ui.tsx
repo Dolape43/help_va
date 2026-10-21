@@ -240,9 +240,9 @@ export function joindre(dossier: string, nom: string) {
 
 /**
  * Un petit bouton « Ouvrir le dossier du résultat » (le chemin complet en bulle au survol).
- * Grisé tant que le dossier est absent ou vide (rien n'a encore été produit) : sinon Windows
- * afficherait « Emplacement non disponible ». On revérifie quand le chemin change, quand `cle`
- * change (fin d'un traitement) et quand la fenêtre revient au premier plan.
+ * Affiché SEULEMENT quand le dossier contient au moins un élément : sinon il n'y a rien à
+ * ouvrir (et Windows afficherait « Emplacement non disponible »). On revérifie quand le chemin
+ * change, quand `cle` change (fin d'un traitement) et quand la fenêtre revient au premier plan.
  */
 export function LienDossier({
   chemin,
@@ -271,14 +271,9 @@ export function LienDossier({
       window.removeEventListener("focus", controler);
     };
   }, [chemin, cle, verifier]);
+  if (!existe) return null;
   return (
-    <Bouton
-      taille="sm"
-      className="mt-2"
-      onClick={ouvrir}
-      disabled={!existe}
-      title={existe ? chemin : "Rien pour l'instant : le dossier se remplit au premier lancement."}
-    >
+    <Bouton taille="sm" className="mt-2" onClick={ouvrir} title={chemin}>
       {libelle}
     </Bouton>
   );

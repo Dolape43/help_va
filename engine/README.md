@@ -224,8 +224,8 @@ Une annulation reçue avant ce moment ne supprime **rien** (`result` avec `arret
 | `comptes_lire` | R | — | `{comptes: [{id, nom, sources, calendrier, vue}], max: 50}` (voir « Ranger : plusieurs comptes ») |
 | `comptes_sauver` | R | `{comptes: [{id, nom, sources, calendrier}]}` (la liste COMPLÈTE, tout est vérifié avant d'écrire) | comme `comptes_lire` + `message: "Enregistré."` |
 | `ranger_analyser` | R | `{comptes?: [...], sources?:{type:dossier}, types?}` | `{types{…}, actifs, sortie, existe, manquants, source_dans_sortie, doublons, incomplet, calendrier_erreur, pret, message_confirmation, comptes[…], partages[…]}` |
-| `conversion_mp4` | L | `{source}` | `{traites, echecs, arrete, dossiers, sortie, duree_s, bilan}` → `<sortie>/media (mp4)` (rien n'est supprimé, comme avant) |
-| `conversion_images` | L | `{source, format:"jpg"\|"png" (défaut jpg), remplacer?: chemin}` | idem → `images (jpg)` / `images (png)` |
+| `conversion_mp4` | L | `{source, renommer?=false}` (1.mp4, 2.mp4… par dossier, à la suite de l'existant) | `{traites, echecs, arrete, dossiers, sortie, duree_s, bilan}` → `<sortie>/media (mp4)` (rien n'est supprimé, comme avant) |
+| `conversion_images` | L | `{source, format:"jpg"\|"png" (défaut jpg), renommer?=false (1, 2, 3… à la suite), remplacer?: chemin}` | idem → `images (jpg)` / `images (png)` |
 | `metadonnees` | L | `{source, renommer?=true, remplacer?: chemin}` | idem → `<nom> (métadonnées changées)` ou `media (métadonnées changées)` |
 | `ranger_lancer` | L | `{comptes?, sources?, types?, aleatoire?=true, remplacer?: chemin}` | résultat de `ranger()` (totaux) + `sortie, duree_s, bilan, comptes[…]` → `ranger` |
 

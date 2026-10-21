@@ -173,11 +173,14 @@ export default function App() {
   // Options gardées quand on change d'écran (comme les sources).
   const [formatImages, setFormatImages] = useState<FormatImage>("jpg");
   const [renommer, setRenommer] = useState(true);
+  // Conversions : noms d'origine gardés par défaut ; 1, 2, 3… si l'utilisateur coche la case.
+  const [renommerMp4, setRenommerMp4] = useState(false);
+  const [renommerImages, setRenommerImages] = useState(false);
 
   const mp4 = useTraitement({
     moteur,
     commande: "conversion_mp4",
-    options: {},
+    options: { renommer: renommerMp4 },
     titreDossier: "Choisir le dossier de vidéos",
     titreFichiers: "Choisir des vidéos",
     filtre: "videos",
@@ -188,7 +191,7 @@ export default function App() {
   const images = useTraitement({
     moteur,
     commande: "conversion_images",
-    options: { format: formatImages },
+    options: { format: formatImages, renommer: renommerImages },
     titreDossier: "Choisir le dossier d'images",
     titreFichiers: "Choisir des images",
     filtre: "images",
@@ -430,9 +433,9 @@ export default function App() {
       );
     switch (page.module) {
       case "mp4":
-        return <ConvertirMp4 t={mp4} occupeAilleurs={occupeAilleurs("mp4")} {...commun} />;
+        return <ConvertirMp4 t={mp4} renommer={renommerMp4} setRenommer={setRenommerMp4} occupeAilleurs={occupeAilleurs("mp4")} {...commun} />;
       case "images":
-        return <ConvertirImages t={images} format={formatImages} setFormat={setFormatImages} occupeAilleurs={occupeAilleurs("images")} {...commun} />;
+        return <ConvertirImages t={images} format={formatImages} setFormat={setFormatImages} renommer={renommerImages} setRenommer={setRenommerImages} occupeAilleurs={occupeAilleurs("images")} {...commun} />;
       case "metadonnees":
         return <Metadonnees t={meta} renommer={renommer} setRenommer={setRenommer} occupeAilleurs={occupeAilleurs("metadonnees")} {...commun} />;
       case "ranger":

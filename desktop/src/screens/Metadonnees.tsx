@@ -18,7 +18,6 @@ export default function Metadonnees({
   const config = useMemo<ConfigTraitement>(
     () => ({
       sousTitre: "Rendez chaque photo et vidéo unique, en 2 étapes simples.",
-      points: ["Photos et vidéos", "Changements invisibles à l'œil", "Arborescence conservée"],
       mot: "média",
       feminin: false,
       info: fr(

@@ -82,7 +82,7 @@ export type ArgsTraitement = {
   source: Source;
   /** conversion_images : "jpg" (défaut) ou "png" */
   format?: "jpg" | "png";
-  /** metadonnees : renommer 1, 2, 3… (défaut true, « recommandé ») */
+  /** renommer 1, 2, 3… (metadonnees : défaut true, « recommandé » ; conversions : défaut false) */
   renommer?: boolean;
   /** le chemin EXACT confirmé dans « Remplacer ? » (champ `sortie` de preparer), jamais true */
   remplacer?: string;

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import ModuleTraitement, { type ConfigTraitement } from "./ModuleTraitement";
 import type { PropsEcranTraitement } from "./ConvertirMp4";
-import { Segments } from "../components/ui";
+import { Case, Segments } from "../components/ui";
 import { moduleParCle } from "../modules";
 import { fr, pluriel } from "../fr";
 
@@ -14,8 +14,10 @@ const nomDossier = (chemin: string) => chemin.split(/[\\/]/).filter(Boolean).pop
 export default function ConvertirImages({
   format,
   setFormat,
+  renommer,
+  setRenommer,
   ...props
-}: PropsEcranTraitement & { format: FormatImage; setFormat: (f: FormatImage) => void }) {
+}: PropsEcranTraitement & { format: FormatImage; setFormat: (f: FormatImage) => void; renommer: boolean; setRenommer: (v: boolean) => void }) {
   const occupe = props.t.occupe;
   const config = useMemo<ConfigTraitement>(
     () => ({
@@ -39,7 +41,7 @@ export default function ConvertirImages({
       },
       options: {
         titre: "Format de sortie",
-        sousTitre: "Choisissez le format des images.",
+        sousTitre: "Choisissez le format des images, et leur nom.",
         contenu: (
           <>
             <Segments
@@ -56,6 +58,15 @@ export default function ConvertirImages({
             <p className="mt-2.5 text-12 text-fg-3">
               JPG = plus léger (recommandé pour Instagram) · PNG = sans perte, garde la transparence.
             </p>
+            <Case
+              className="mt-4"
+              coche={renommer}
+              onChange={setRenommer}
+              disabled={occupe}
+              aide={`Les images converties s'appellent 1.${format}, 2.${format}, 3.${format}…`}
+            >
+              Renommer les images (1, 2, 3…)
+            </Case>
           </>
         ),
       },
@@ -86,7 +97,7 @@ export default function ConvertirImages({
       },
       journalVide: "Le détail de chaque image s'affichera ici pendant la conversion.",
     }),
-    [format, setFormat, occupe],
+    [format, setFormat, renommer, setRenommer, occupe],
   );
   return <ModuleTraitement mod={moduleParCle("images")} config={config} {...props} />;
 }

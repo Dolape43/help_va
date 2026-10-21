@@ -151,13 +151,24 @@ def _videos(liste: list) -> list:
     return [f for f in liste if os.path.splitext(f)[1].lower() in EXT_VIDEOS]
 
 
+def _prochain_numero(cible: str, numero: int) -> int:
+    """Premier numéro ≥ numero dont « <numero>.mp4 » n'existe pas encore dans cible.
+
+    « media (mp4) » n'est jamais vidé : un rangement précédent y a peut-être déjà mis 1.mp4,
+    2.mp4… On continue à la suite au lieu de les écraser."""
+    while os.path.exists(os.path.join(cible, f"{numero}.mp4")):
+        numero += 1
+    return numero
+
+
 def _convertir_lot(videos: list, cible: str, etat: dict, progress=None, doit_arreter=None,
-                   dossier_i=None, dossier_n=None, nom_dossier=None):
+                   dossier_i=None, dossier_n=None, nom_dossier=None, renommer: bool = False):
     """Convertit une liste de vidéos dans `cible`. Met à jour etat (ok, echecs, fait, arrete).
 
     etat["total"] = nombre total de vidéos de l'opération (pour la barre globale)."""
     os.makedirs(cible, exist_ok=True)
     n = len(videos)
+    numero = 1
     for i, source in enumerate(videos, 1):
         if doit_arreter and doit_arreter():
             etat["arrete"] = True
@@ -183,7 +194,12 @@ def _convertir_lot(videos: list, cible: str, etat: dict, progress=None, doit_arr
                 continue
         except Exception:
             pass
-        dest = os.path.join(cible, os.path.splitext(base)[0] + ".mp4")
+        if renommer:
+            numero = _prochain_numero(cible, numero)
+            dest = os.path.join(cible, f"{numero}.mp4")
+            numero += 1
+        else:
+            dest = os.path.join(cible, os.path.splitext(base)[0] + ".mp4")
         try:
             convertir_mp4(source, dest, doit_arreter, annoncer)   # h264 (remux) ET hevc (ré-encode)
             etat["ok"] += 1
@@ -206,7 +222,8 @@ def _bilan(etat: dict) -> dict:
             "dossiers": etat.get("dossiers", 1)}
 
 
-def convertir_fichiers(fichiers: list, dossier_sortie: str, progress=None, doit_arreter=None) -> dict:
+def convertir_fichiers(fichiers: list, dossier_sortie: str, progress=None, doit_arreter=None,
+                       renommer: bool = False) -> dict:
     """Convertit une liste de vidéos en .mp4 H.264 dans dossier_sortie.
 
     IMPORTANT : même les fichiers DÉJÀ en .mp4 sont vérifiés (un .mp4 peut être
@@ -216,11 +233,12 @@ def convertir_fichiers(fichiers: list, dossier_sortie: str, progress=None, doit_
     """
     vids = _videos(fichiers)
     etat = {"ok": 0, "echecs": [], "fait": 0, "arrete": False, "total": len(vids)}
-    _convertir_lot(vids, dossier_sortie, etat, progress, doit_arreter)
+    _convertir_lot(vids, dossier_sortie, etat, progress, doit_arreter, renommer=renommer)
     return _bilan(etat)
 
 
-def convertir_dossier(dossier: str, dossier_sortie: str, progress=None, doit_arreter=None) -> dict:
+def convertir_dossier(dossier: str, dossier_sortie: str, progress=None, doit_arreter=None,
+                      renommer: bool = False) -> dict:
     """Convertit toutes les vidéos d'un dossier ET de ses sous-dossiers en .mp4.
 
     L'arborescence est conservée : <dossier>/Modèle A/clip.mov -> <sortie>/Modèle A/clip.mp4.
@@ -241,7 +259,7 @@ def convertir_dossier(dossier: str, dossier_sortie: str, progress=None, doit_arr
         rel = os.path.relpath(racine, dossier)
         nom = os.path.basename(os.path.abspath(dossier)) if rel == "." else rel
         cible = dossier_sortie if rel == "." else os.path.join(dossier_sortie, rel)
-        _convertir_lot(vids, cible, etat, progress, doit_arreter, i, len(groupes), nom)
+        _convertir_lot(vids, cible, etat, progress, doit_arreter, i, len(groupes), nom, renommer)
         if etat["arrete"]:
             break
     return _bilan(etat)

@@ -620,7 +620,9 @@ def preparer(ctx, args):
     out = {"commande": cible, "sortie": plan["sortie"], "existe": existe,
            "remplacement": existe and plan["supprime_sortie"], "nb_medias": plan["nb_medias"]}
     if cible == "conversion_mp4":
-        out["deja_presents"] = _mp4_deja_presents(plan) if existe else 0
+        # Renommées 1, 2, 3… : numérotées à la suite des fichiers existants, rien n'est remplacé.
+        renomme = _booleen(sous_args, "renommer", False)
+        out["deja_presents"] = _mp4_deja_presents(plan) if existe and not renomme else 0
     return out
 
 
@@ -1467,6 +1469,7 @@ def conversion_mp4(ctx, args):
     plan = _plan_conversion_mp4(args)
     _verifier_ffmpeg()
     sortie, dossier, fichiers = plan["sortie"], plan["dossier"], plan["fichiers"]
+    renommer = _booleen(args, "renommer", False)
     if ctx.doit_arreter():
         return _interrompu_avant("Conversion terminée", sortie, "vidéo(s) en .mp4")
     try:
@@ -1477,9 +1480,11 @@ def conversion_mp4(ctx, args):
     debut = time.monotonic()
     try:
         if fichiers:
-            res = conversion.convertir_fichiers(fichiers, sortie, ctx.progress, ctx.doit_arreter)
+            res = conversion.convertir_fichiers(fichiers, sortie, ctx.progress, ctx.doit_arreter,
+                                                renommer=renommer)
         else:
-            res = conversion.convertir_dossier(dossier, sortie, ctx.progress, ctx.doit_arreter)
+            res = conversion.convertir_dossier(dossier, sortie, ctx.progress, ctx.doit_arreter,
+                                               renommer=renommer)
     except Exception as e:
         raise _echec("Convertir en MP4", e)
     res["arrete"] = res.get("arrete") or ctx.doit_arreter()
@@ -1497,6 +1502,7 @@ def conversion_images(ctx, args):
     plan = _plan_conversion_images(args)
     confirme = _confirmation(args)
     sortie, dossier, fichiers, fmt = plan["sortie"], plan["dossier"], plan["fichiers"], plan["format"]
+    renommer = _booleen(args, "renommer", False)
     if ctx.doit_arreter():
         return _interrompu_avant("Images converties", sortie, f"image(s) en .{fmt}", {"format": fmt})
     _remplacer_sortie(sortie, confirme)
@@ -1504,10 +1510,10 @@ def conversion_images(ctx, args):
     try:
         if fichiers:
             res = unicite.convertir_images_fichiers(fichiers, sortie, fmt, progress=ctx.progress,
-                                                    doit_arreter=ctx.doit_arreter)
+                                                    doit_arreter=ctx.doit_arreter, renommer=renommer)
         else:
             res = unicite.convertir_images_dossier(dossier, sortie, fmt, progress=ctx.progress,
-                                                   doit_arreter=ctx.doit_arreter)
+                                                   doit_arreter=ctx.doit_arreter, renommer=renommer)
     except Exception as e:
         raise _echec("Convertir les images", e)
     res["arrete"] = ctx.doit_arreter()

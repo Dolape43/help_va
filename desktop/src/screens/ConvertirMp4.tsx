@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+import { Case } from "../components/ui";
 import ModuleTraitement, { type ConfigTraitement } from "./ModuleTraitement";
 import { moduleParCle } from "../modules";
 import type { Traitement } from "../engine/useTraitement";
@@ -19,7 +20,6 @@ const s = (n: number) => (n > 1 ? "s" : "");
 /** Convertir en MP4 : mêmes textes que l'ancienne app (app_ctk.py > _page_convertir). */
 const CONFIG: ConfigTraitement = {
   sousTitre: "Transforme vos vidéos (.mov, .avi, .mkv…) en .mp4.",
-  points: ["Rapide quand c'est possible", "Compatible partout (H.264)", "Originaux intacts"],
   mot: "vidéo",
   feminin: true,
   info: fr(
@@ -71,6 +71,26 @@ const CONFIG: ConfigTraitement = {
   journalVide: "Le détail de chaque vidéo s'affichera ici pendant la conversion.",
 };
 
-export default function ConvertirMp4(props: PropsEcranTraitement) {
-  return <ModuleTraitement mod={moduleParCle("mp4")} config={CONFIG} {...props} />;
+export default function ConvertirMp4({
+  renommer,
+  setRenommer,
+  ...props
+}: PropsEcranTraitement & { renommer: boolean; setRenommer: (v: boolean) => void }) {
+  const occupe = props.t.occupe;
+  const config = useMemo<ConfigTraitement>(
+    () => ({
+      ...CONFIG,
+      options: {
+        titre: "Options",
+        sousTitre: "Un réglage, c'est tout.",
+        contenu: (
+          <Case coche={renommer} onChange={setRenommer} disabled={occupe} aide="Les vidéos converties s'appellent 1.mp4, 2.mp4, 3.mp4…">
+            Renommer les vidéos (1, 2, 3…)
+          </Case>
+        ),
+      },
+    }),
+    [renommer, setRenommer, occupe],
+  );
+  return <ModuleTraitement mod={moduleParCle("mp4")} config={config} {...props} />;
 }
