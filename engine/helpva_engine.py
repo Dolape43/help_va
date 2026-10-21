@@ -412,6 +412,9 @@ class Moteur:
     # ----------------------------------------------------------- boucle principale
     def boucle(self) -> None:
         self.emettre(self.evenement_pret())
+        # Compteurs d'activité restés en attente (hors-ligne la dernière fois) : envoyés
+        # quelques secondes après le démarrage, en arrière-plan. Sans licence : rien ne part.
+        commandes.lancer_envoi_activite(delai_s=5.0)
         while True:
             try:
                 ligne = self._lire_ligne()

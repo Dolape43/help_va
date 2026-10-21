@@ -216,7 +216,8 @@ Une annulation reçue avant ce moment ne supprime **rien** (`result` avec `arret
 | `licence_activer` | N | `{code}` | `{ok, message, statut}` (`ok:false` = refus, pas une erreur) |
 | `licence_resilier` | R | — | `{ok}` |
 | `parametres_lire` | R | — | `{parametres, dossier_sortie, dossier_sortie_defaut, personnalise}` |
-| `parametres_ecrire` | R | `{valeurs:{theme?, dossier_sortie?, ranger_types?, deja_demarre?}}` | comme `parametres_lire` |
+| `parametres_ecrire` | R | `{valeurs:{theme?, dossier_sortie?, ranger_types?, deja_demarre?, format_images?, renommer_images?, renommer_mp4?, renommer_metadonnees?, ranger_aleatoire?, fin_ouvrir_dossier?, fin_notification?}}` (voir « Paramètres » ci-dessous) | comme `parametres_lire` |
+| `activite_lire` | R | — | `{aujourd_hui, semaine, mois, total, depuis, partage}` (voir « Compteur d'activité » ci-dessous) |
 | `dossier_sortie` | R | — | `{chemin, defaut, personnalise}` (le dossier est créé, comme avant) |
 | `calendrier_lire` | R | — | `{calendrier, semaines, compte{type:n}, creneaux, personnalise}` |
 | `calendrier_defaut` | R | — | le calendrier d'origine (bouton « Réinitialiser ») |
@@ -231,6 +232,50 @@ Une annulation reçue avant ce moment ne supprime **rien** (`result` avec `arret
 
 Valeurs par défaut (comme les cases de l'ancienne app) : `renommer = true` (« recommandé »),
 `aleatoire = true`, `format = "jpg"`.
+
+### Paramètres (`parametres.json`)
+| clé | valeurs | défaut | rôle |
+|---|---|---|---|
+| `theme` | `"light"` \| `"dark"` | `"light"` | thème de l'interface |
+| `dossier_sortie` | chemin absolu ou `""` | `""` (Bureau\HelpVA) | dossier de sortie |
+| `ranger_types` | `{type: bool}` | tous cochés | types de posts du Ranger |
+| `deja_demarre` | bool | absent | 1er démarrage déjà fait |
+| `format_images` | `"jpg"` \| `"png"` | `"jpg"` | choix par défaut du module Images |
+| `renommer_images` | bool | `false` | Images : « Renommer 1, 2, 3… » |
+| `renommer_mp4` | bool | `false` | MP4 : « Renommer 1, 2, 3… » |
+| `renommer_metadonnees` | bool | `true` | Métadonnées : « Renommer 1, 2, 3… » |
+| `ranger_aleatoire` | bool | `true` | Ranger : « Répartir au hasard » |
+| `fin_ouvrir_dossier` | bool | `false` | fin de traitement : ouvrir le dossier du résultat |
+| `fin_notification` | bool | `true` | fin de traitement : notification (si HelpVA n'est pas au premier plan) |
+
+Les défauts sont dans `agent/parametres.py` (`_DEFAUT`) : `parametres_lire` renvoie toujours
+toutes les clés. Une mauvaise valeur → `ARGUMENTS_INVALIDES` avec `details.champ = "valeurs.<clé>"`.
+Ces choix ne changent PAS les défauts des commandes (`renommer`, `aleatoire`, `format`) :
+c'est l'interface qui les lit et les passe en arguments.
+
+### Compteur d'activité (`activite.json`, `agent/activite.py`)
+Chaque traitement terminé (même arrêté en cours de route) ajoute ce qui a **vraiment** été
+traité, au jour LOCAL du PC : `images` (`conversion_images`), `videos` (`conversion_mp4`),
+`metadonnees` (`metadonnees`), `ranges` (`ranger_lancer`, somme des `places` de tous les comptes).
+```json
+{"version": 1,
+ "jours":  {"2026-10-22": {"images": 12, "videos": 3, "metadonnees": 40, "ranges": 87}},
+ "envoye": {"2026-10-22": {"images": 12, "videos": 3, "metadonnees": 40, "ranges": 87}},
+ "anciens": {"images": 0, "videos": 0, "metadonnees": 0, "ranges": 0, "depuis": null}}
+```
+- 400 jours gardés au plus ; les jours purgés vont dans `anciens` (le total reste juste).
+  Fichier illisible : mis de côté (`activite.illisible-AAAAMMJJ-HHMMSS.json`), on repart de zéro.
+  Le compteur ne fait **jamais** échouer un traitement.
+- `activite_lire` → `aujourd_hui`, `semaine` (7 derniers jours, aujourd'hui compris), `mois`
+  (30 derniers jours), `total` : chacun `{images, videos, metadonnees, ranges, total}` ; `depuis`
+  = 1er jour compté (`"AAAA-MM-JJ"` ou `null`) ; `partage` = `true` si une licence est
+  enregistrée (les compteurs sont alors envoyés à l'agence).
+- **Envoi** : dans un fil d'arrière-plan, ~5 s après le démarrage puis après chaque traitement.
+  POST `<SUPABASE_URL>/functions/v1/admin` `{action: "activite", licence, jours: [{jour, images,
+  videos, metadonnees, ranges}]}` = les jours (30 derniers au plus) qui diffèrent de `envoye`
+  (valeurs **absolues** du jour) ; `{ok: true}` → `envoye` mis à jour. Timeout 8 s, aucune erreur
+  visible, jamais deux envois en même temps. **Sans licence enregistrée, rien ne part** (aucun
+  appel réseau : mode dev, tests).
 
 ### Ranger : plusieurs comptes
 Chaque compte a **ses propres dossiers sources** et **son calendrier**. Fichier
@@ -372,7 +417,9 @@ noms réservés du calendrier, **comptes du Ranger** (migration depuis `calendri
 persistance, refus qui nomment le compte, noms en double sans tenir compte de la casse, analyse et
 rangement à 2-3 comptes dans `ranger/<nom>/…`, 1 compte = arborescence d'avant, `partages`,
 `details.compte` des erreurs, annulation pendant le 1er compte), `quitter`, **`quitter` puis EOF
-immédiat pendant une conversion**, EOF, Job Windows, signature de `progression.texte`, et le pont
+immédiat pendant une conversion**, EOF, Job Windows, signature de `progression.texte`, nouveaux
+paramètres (défauts et refus), **compteur d'activité** (comptage après une conversion, `activite_lire`,
+purge, fichier illisible, envoi au serveur **simulé** : aucun appel sans licence), et le pont
 de dev (jeton, CORS, SSE, données de test). Durée : environ 1 minute.
 
 Variables d'environnement **de développement** (ignorées dans l'exe PyInstaller) :

@@ -72,6 +72,32 @@ export async function ouvrirLien(url: string): Promise<void> {
 }
 
 /**
+ * Notification système (Windows) : « HelpVA — Conversion terminée » quand un traitement finit
+ * pendant que l'utilisateur est dans une autre fenêtre.
+ * Dans Tauri : plugin officiel « notification » (permission notification:default).
+ * Dans le navigateur (pont de dev) : l'API Notification du navigateur.
+ * La permission est demandée au PREMIER usage seulement. Jamais d'erreur remontée : une
+ * notification manquée n'est pas grave (le toast et la carte de résultat sont là).
+ */
+export async function notifierSysteme(titre: string, texte: string): Promise<void> {
+  try {
+    if (DANS_TAURI) {
+      const { isPermissionGranted, requestPermission, sendNotification } = await import("@tauri-apps/plugin-notification");
+      let permis = await isPermissionGranted();
+      if (!permis) permis = (await requestPermission()) === "granted";
+      if (permis) sendNotification({ title: titre, body: texte });
+      return;
+    }
+    if (typeof Notification === "undefined") return;
+    let permission = Notification.permission;
+    if (permission === "default") permission = await Notification.requestPermission();
+    if (permission === "granted") new Notification(titre, { body: texte });
+  } catch {
+    /* notifications bloquées ou indisponibles : tant pis */
+  }
+}
+
+/**
  * Une app de bureau n'a pas le menu clic droit du navigateur (Précédent, Actualiser, Imprimer…).
  * On le garde seulement sur les textes sélectionnables (chemins, journal) pour pouvoir copier.
  */

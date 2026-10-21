@@ -141,6 +141,9 @@ export function useRanger(p: {
   ecrireParametres: (valeurs: Record<string, unknown>) => Promise<unknown>;
   erreur: (titre: string, e: unknown) => void;
   surFin: (res: ResultatRanger) => void;
+  /** « Répartir au hasard » : gardé par App (réglage retenu d'une fois sur l'autre, aussi dans Paramètres) */
+  aleatoire: boolean;
+  setAleatoire: (v: boolean) => void;
   /** le nom d'une AUTRE action en cours (le moteur n'en fait qu'une à la fois), ou null */
   occupeAilleurs: () => string | null;
 }) {
@@ -150,7 +153,7 @@ export function useRanger(p: {
   /** le compte affiché à l'étape 2 (celui qu'on a cliqué) */
   const [idChoisi, setIdChoisi] = useState<string | null>(null);
   const [onglet, setOnglet] = useState<TypePost | null>(null);
-  const [aleatoire, setAleatoire] = useState(true);
+  const { aleatoire, setAleatoire } = p;
   const [analyse, setAnalyse] = useState<AnalyseRanger | null>(null);
   const [analyseEnCours, setAnalyseEnCours] = useState(false);
   /** récapitulatif à confirmer avant de ranger, avec les comptes EXACTS qui ont été analysés */

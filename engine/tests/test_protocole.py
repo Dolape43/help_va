@@ -317,6 +317,30 @@ class TestProtocole(unittest.TestCase):
         self.assertFalse(lu["personnalise"])
         self.assertEqual(lu["dossier_sortie"], os.path.join(self.home, "Desktop", "HelpVA"))
 
+    def test_parametres_choix_par_defaut_et_fin(self):
+        appdata, home = self.profil_isole("Paramètres choix")
+        c = self.moteur(appdata=appdata, home=home)
+        p = self.assertResultat(c.appeler("parametres_lire"))["parametres"]
+        # Défauts : jpg, false, false, true, true, false, true.
+        self.assertEqual({k: p[k] for k in ("format_images", "renommer_images", "renommer_mp4",
+                                            "renommer_metadonnees", "ranger_aleatoire",
+                                            "fin_ouvrir_dossier", "fin_notification")},
+                         {"format_images": "jpg", "renommer_images": False, "renommer_mp4": False,
+                          "renommer_metadonnees": True, "ranger_aleatoire": True,
+                          "fin_ouvrir_dossier": False, "fin_notification": True})
+        valeurs = {"format_images": "png", "renommer_images": True, "renommer_mp4": True,
+                   "renommer_metadonnees": False, "ranger_aleatoire": False,
+                   "fin_ouvrir_dossier": True, "fin_notification": False}
+        self.assertResultat(c.appeler("parametres_ecrire", {"valeurs": valeurs}))
+        p = self.assertResultat(c.appeler("parametres_lire"))["parametres"]
+        self.assertEqual({k: p[k] for k in valeurs}, valeurs)
+        # Mauvais types -> refus clair, qui nomme le champ.
+        for cle, val in (("format_images", "gif"), ("format_images", True),
+                         ("renommer_mp4", "oui"), ("fin_notification", 1)):
+            e = self.assertErreur(c.appeler("parametres_ecrire", {"valeurs": {cle: val}}),
+                                  "ARGUMENTS_INVALIDES")
+            self.assertEqual(e["details"]["champ"], f"valeurs.{cle}")
+
     # ----------------------------------------------------------------- licence
     def test_licence_requise_sans_contournement(self):
         c = self.moteur(sans_licence=False)
@@ -596,6 +620,36 @@ class TestProtocole(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(os.path.join(sortie, "images"))),
                          ["1.jpg", "2.jpg", "3.jpg"])
         self.assertEqual(d["bilan"]["titre"], "Métadonnées changées")
+
+    # ----------------------------------------------------------------- compteur d'activité
+    def test_activite_comptee_apres_une_conversion(self):
+        from datetime import date
+        appdata, home = self.profil_isole("Activité")
+        c = self.moteur(appdata=appdata, home=home)
+        # Profil neuf : tout à zéro, rien n'est partagé (pas de licence -> aucun envoi).
+        d = self.assertResultat(c.appeler("activite_lire"))
+        zero = {"images": 0, "videos": 0, "metadonnees": 0, "ranges": 0, "total": 0}
+        for bloc in ("aujourd_hui", "semaine", "mois", "total"):
+            self.assertEqual(d[bloc], zero)
+        self.assertIsNone(d["depuis"])
+        self.assertFalse(d["partage"])
+        # Une vraie conversion de 3 images -> +3 « images » aujourd'hui (date LOCALE).
+        r = self.assertResultat(c.appeler("conversion_images", {
+            "source": {"type": "dossier", "chemin": self.images}, "format": "png"}, 120))
+        self.assertEqual(r["traites"], 3)
+        d = self.assertResultat(c.appeler("activite_lire"))
+        trois = {"images": 3, "videos": 0, "metadonnees": 0, "ranges": 0, "total": 3}
+        for bloc in ("aujourd_hui", "semaine", "mois", "total"):
+            self.assertEqual(d[bloc], trois, bloc)
+        aujourd_hui = date.today().isoformat()
+        self.assertEqual(d["depuis"], aujourd_hui)
+        self.assertFalse(d["partage"])
+        # Le fichier est dans le APPDATA TEMPORAIRE ; rien n'a été « envoyé ».
+        with open(os.path.join(appdata, "HelpVA", "activite.json"), encoding="utf-8") as f:
+            fichier = json.load(f)
+        self.assertEqual(fichier["jours"][aujourd_hui]["images"], 3)
+        self.assertEqual(fichier["envoye"], {})
+        self.assertFalse(os.path.exists(os.path.join(appdata, "HelpVA", "licence.key")))
 
     # ----------------------------------------------------------------- calendrier / ranger
     def test_calendrier_et_ranger(self):
@@ -1260,6 +1314,121 @@ class TestProtocole(unittest.TestCase):
         self.assertEqual(d["details2"]["groupe"], {"mot": "Dossier", "index": 1, "total": 1,
                                                    "nom": None})
         self.assertEqual(d["details2"]["element"]["nom"], "x.png")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  agent/activite.py directement (dans CE processus, réseau simulé)
+# ═══════════════════════════════════════════════════════════════════════════
+class TestActivite(unittest.TestCase):
+    """Le compteur et l'envoi, sans moteur. APPDATA pointe vers un dossier TEMPORAIRE et
+    l'ancien emplacement (à côté de l'exe) aussi : jamais les vraies données. `requests` est
+    remplacé par un faux module : on voit chaque appel réseau, aucun ne part vraiment."""
+
+    def setUp(self):
+        from unittest import mock
+        racine = os.path.dirname(DOSSIER_ENGINE)
+        if racine not in sys.path:
+            sys.path.insert(0, racine)
+        self.tmp = tempfile.mkdtemp(prefix="HelpVA activité é ")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        appdata = os.path.join(self.tmp, "appdata")
+        os.makedirs(appdata)
+        env = mock.patch.dict(os.environ, {"APPDATA": appdata, "XDG_DATA_HOME": appdata,
+                                           "USERPROFILE": self.tmp, "HOME": self.tmp})
+        env.start()
+        self.addCleanup(env.stop)
+        from agent import activite, emplacement
+        ancien = mock.patch.object(emplacement, "dossier_exe", lambda: self.tmp)
+        ancien.start()
+        self.addCleanup(ancien.stop)
+        self.activite = activite
+        self.dossier = emplacement.dossier_donnees()
+        self.assertTrue(self.dossier.startswith(appdata), self.dossier)
+        # Faux « requests » : enregistre les appels, répond {"ok": true}.
+        self.appels = []
+        test = self
+
+        class Reponse:
+            def json(self):
+                return {"ok": True}
+
+        class FauxRequests:
+            @staticmethod
+            def post(url, **kw):
+                test.appels.append((url, kw))
+                return Reponse()
+        faux = mock.patch.dict(sys.modules, {"requests": FauxRequests})
+        faux.start()
+        self.addCleanup(faux.stop)
+
+    def fichier(self):
+        with open(os.path.join(self.dossier, "activite.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_sans_licence_aucun_appel_reseau(self):
+        self.activite.ajouter("images", 4)
+        self.activite.ajouter("videos", 0)      # ignoré
+        self.activite.ajouter("videos", -3)     # ignoré
+        self.assertFalse(self.activite.envoyer())
+        self.assertEqual(self.appels, [])
+        self.assertFalse(self.activite.partage())
+        r = self.activite.resume()
+        self.assertEqual(r["aujourd_hui"], {"images": 4, "videos": 0, "metadonnees": 0,
+                                            "ranges": 0, "total": 4})
+
+    def test_envoi_avec_licence_seulement_ce_qui_a_change(self):
+        from datetime import date
+        with open(os.path.join(self.dossier, "licence.key"), "w", encoding="utf-8") as f:
+            f.write("LICENCE-DE-TEST.signature\n")
+        self.assertTrue(self.activite.partage())
+        self.activite.ajouter("metadonnees", 5)
+        self.activite.ajouter("ranges", 2)
+        self.assertTrue(self.activite.envoyer())
+        self.assertEqual(len(self.appels), 1)
+        url, kw = self.appels[0]
+        self.assertTrue(url.endswith("/functions/v1/admin"), url)
+        self.assertEqual(kw["timeout"], 8)
+        aujourd_hui = date.today().isoformat()
+        self.assertEqual(kw["json"], {"action": "activite", "licence": "LICENCE-DE-TEST.signature",
+                                      "jours": [{"jour": aujourd_hui, "images": 0, "videos": 0,
+                                                 "metadonnees": 5, "ranges": 2}]})
+        self.assertEqual(self.fichier()["envoye"][aujourd_hui]["metadonnees"], 5)
+        # Rien de nouveau : aucun appel.
+        self.assertTrue(self.activite.envoyer())
+        self.assertEqual(len(self.appels), 1)
+        # Nouveau traitement : le jour repart, avec ses valeurs ABSOLUES.
+        self.activite.ajouter("metadonnees", 1)
+        self.assertTrue(self.activite.envoyer())
+        self.assertEqual(self.appels[1][1]["json"]["jours"][0]["metadonnees"], 6)
+
+    def test_purge_des_vieux_jours_total_conserve(self):
+        from datetime import date, timedelta
+        vieux = (date.today() - timedelta(days=500)).isoformat()
+        recent = (date.today() - timedelta(days=3)).isoformat()
+        with open(os.path.join(self.dossier, "activite.json"), "w", encoding="utf-8") as f:
+            json.dump({"version": 1, "jours": {vieux: {"images": 10}, recent: {"videos": 2}},
+                       "envoye": {vieux: {"images": 10}}}, f)
+        self.activite.ajouter("images", 1)
+        d = self.fichier()
+        self.assertNotIn(vieux, d["jours"])
+        self.assertNotIn(vieux, d["envoye"])
+        self.assertIn(recent, d["jours"])
+        r = self.activite.resume()
+        self.assertEqual(r["total"]["images"], 11)          # le jour purgé compte encore
+        self.assertEqual(r["total"]["total"], 13)
+        self.assertEqual(r["semaine"]["total"], 3)          # 2 vidéos (J-3) + 1 image
+        self.assertEqual(r["depuis"], vieux)
+
+    def test_fichier_illisible_mis_de_cote(self):
+        with open(os.path.join(self.dossier, "activite.json"), "w", encoding="utf-8") as f:
+            f.write("{pas du json")
+        r = self.activite.resume()
+        self.assertEqual(r["total"]["total"], 0)
+        self.assertIsNone(r["depuis"])
+        mis_de_cote = [n for n in os.listdir(self.dossier) if n.startswith("activite.illisible-")]
+        self.assertEqual(len(mis_de_cote), 1)
+        self.activite.ajouter("images", 2)                  # on repart de zéro, sans planter
+        self.assertEqual(self.activite.resume()["total"]["images"], 2)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

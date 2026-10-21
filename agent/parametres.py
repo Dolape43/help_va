@@ -13,6 +13,15 @@ FICHIER = "parametres.json"
 _DEFAUT = {
     "theme": "light",        # "light" | "dark"
     "dossier_sortie": "",    # vide = dossier par défaut (Bureau\HelpVA)
+    # « Choix par défaut » : retenus d'une fois sur l'autre (nouvelle interface).
+    "format_images": "jpg",          # "jpg" | "png"
+    "renommer_images": False,        # Images : renommer 1, 2, 3…
+    "renommer_mp4": False,           # MP4 : renommer 1, 2, 3…
+    "renommer_metadonnees": True,    # Métadonnées : renommer 1, 2, 3… (recommandé)
+    "ranger_aleatoire": True,        # Ranger : répartir au hasard
+    # « Fin de traitement »
+    "fin_ouvrir_dossier": False,     # ouvrir automatiquement le dossier du résultat
+    "fin_notification": True,        # notification Windows (si HelpVA n'est pas au premier plan)
 }
 
 # Clés héritées des anciennes versions (automatisation, AdsPower, modèles) :

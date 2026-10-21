@@ -37,6 +37,7 @@ export class MoteurIndisponible implements Moteur {
   dossierExiste() { return Promise.resolve(false); }
   choisirDossier() { return this.erreur(); }
   choisirFichiers() { return this.erreur(); }
+  activiteLire() { return this.erreur(); }
   preparer() { return this.erreur(); }
   traiter() { return this.tache(); }
   calendrierLire() { return this.erreur(); }

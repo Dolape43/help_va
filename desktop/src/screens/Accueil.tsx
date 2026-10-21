@@ -4,12 +4,85 @@ import { ICONES_3D } from "../icones3d";
 import { MODULES, type CleModule } from "../modules";
 import type { ReactNode } from "react";
 import type { Activite } from "../App";
+import type { Compteurs, ResumeActivite } from "../engine/api";
+import { dateLongue } from "../licence";
 import { fr } from "../fr";
 
 const dateDuJour = () => {
   const d = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
   return d.charAt(0).toUpperCase() + d.slice(1);
 };
+
+/** 1234 → « 1 234 » (espace fine insécable : le nombre ne se coupe jamais en fin de ligne). */
+const nombre = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
+
+/** Les 4 compteurs, dans l'ordre des modules. */
+const REPARTITION: { cle: Exclude<keyof Compteurs, "total">; libelle: string }[] = [
+  { cle: "images", libelle: "Images" },
+  { cle: "videos", libelle: "Vidéos" },
+  { cle: "metadonnees", libelle: "Métadonnées" },
+  { cle: "ranges", libelle: "Rangés" },
+];
+
+/**
+ * « Votre activité » : combien de médias ont été traités sur ce PC (compteurs du moteur,
+ * commande activite_lire). Zéro activité : une phrase d'encouragement plutôt qu'une carte vide.
+ */
+function CarteActivite({ r }: { r: ResumeActivite }) {
+  const depuis = dateLongue(r.depuis);
+  // Répartition de la semaine (comme le grand chiffre) ; semaine vide : celle depuis le début.
+  const semaineVide = r.semaine.total === 0;
+  const detail = semaineVide ? r.total : r.semaine;
+  return (
+    <Carte className="mt-4 p-5">
+      <section aria-label="Votre activité">
+        <Surtitre accent>Votre activité</Surtitre>
+        {r.total.total === 0 ? (
+          <div className="mt-3 flex items-center gap-3">
+            <Tuile3D src={ICONES_3D.succes} taille={52} />
+            <p className="text-14 leading-relaxed text-fg-2">
+              {fr("Votre compteur démarre à votre premier traitement : chaque média converti, modifié ou rangé sera compté ici.")}
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 grid grid-cols-1 gap-5 @min-[640px]:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] @min-[640px]:items-end">
+              <div>
+                <p id="accueil-activite-semaine" className="tabular text-[44px] font-semibold leading-none tracking-[-0.02em]">
+                  {nombre(r.semaine.total)}
+                </p>
+                <p className="mt-1.5 text-13 text-fg-2">
+                  {r.semaine.total > 1 ? "médias traités" : "média traité"} cette semaine
+                </p>
+              </div>
+              <dl className="grid grid-cols-3 gap-3">
+                {[
+                  { libelle: "Aujourd'hui", valeur: r.aujourd_hui.total, titre: undefined },
+                  { libelle: "30 jours", valeur: r.mois.total, titre: undefined },
+                  { libelle: "Depuis le début", valeur: r.total.total, titre: depuis ? `Depuis le ${depuis}` : undefined },
+                ].map((x) => (
+                  <div key={x.libelle} className="rounded-xl border border-line bg-surface-2 px-3 py-2.5" title={x.titre}>
+                    <dt className="truncate text-12 text-fg-3">{x.libelle}</dt>
+                    <dd className="tabular mt-0.5 text-20 font-semibold">{nombre(x.valeur)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-13">
+              <span className="text-fg-3">{semaineVide ? "Depuis le début :" : "Cette semaine :"}</span>
+              {REPARTITION.map((x) => (
+                <span key={x.cle} className="tabular">
+                  <span className="text-fg-2">{x.libelle}</span> <span className="font-semibold">{nombre(detail[x.cle])}</span>
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+        {r.partage && <p className="mt-3 text-12 text-fg-3">Ces chiffres sont partagés avec votre agence.</p>}
+      </section>
+    </Carte>
+  );
+}
 
 export default function Accueil({
   ouvrirModule,
@@ -19,6 +92,7 @@ export default function Accueil({
   nom,
   formule,
   activite,
+  resumeActivite,
   bandeau,
 }: {
   ouvrirModule: (cle: CleModule) => void;
@@ -32,6 +106,8 @@ export default function Accueil({
   formule: string;
   /** le module qui travaille en ce moment (pastille « En cours · 43 % » sur sa carte) */
   activite: Activite;
+  /** compteurs d'activité de ce PC ; null = pas encore lus (ou moteur trop ancien) : pas de carte */
+  resumeActivite: ResumeActivite | null;
   bandeau: ReactNode;
 }) {
   const nomDossier = sortie ? sortie.split(/[\\/]/).filter(Boolean).pop() ?? sortie : "…";
@@ -84,6 +160,9 @@ export default function Accueil({
           </div>
         </Carte>
       </div>
+
+      {/* Activité (pleine largeur) */}
+      {resumeActivite && <CarteActivite r={resumeActivite} />}
 
       {/* Modules */}
       <div className="mb-3 mt-9 flex items-end justify-between">

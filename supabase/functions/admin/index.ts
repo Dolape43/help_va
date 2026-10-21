@@ -146,6 +146,111 @@ function genererCode(): string {
   return "HELP-" + s.slice(0, 4) + "-" + s.slice(4, 8) + "-" + s.slice(8, 12);
 }
 
+// ---------- compteur d'activité des VA (table activite, voir supabase/migrations) ----------
+const CATEGORIES = ["images", "videos", "metadonnees", "ranges"] as const;
+const MAX_COMPTEUR = 1_000_000;
+const MAX_JOURS = 31;
+
+async function dbLicenceParHash(cle_hash: string) {
+  const r = await fetch(
+    `${SUPA_URL}/rest/v1/licences?cle_hash=eq.${cle_hash}&select=id,statut`,
+    { headers: dbHeaders() });
+  if (!r.ok) throw new Error("db licence " + r.status);
+  const rows = await r.json();
+  return rows[0] || null;
+}
+async function dbUpsertActivite(rows: unknown[]) {
+  // UPSERT : une ligne par (licence, jour). L'app envoie des valeurs ABSOLUES :
+  // renvoyer le même jour remplace la ligne, il ne s'ajoute jamais en double.
+  const r = await fetch(`${SUPA_URL}/rest/v1/activite?on_conflict=licence_id,jour`, {
+    method: "POST",
+    headers: dbHeaders({ "Content-Type": "application/json",
+                         Prefer: "resolution=merge-duplicates,return=minimal" }),
+    body: JSON.stringify(rows),
+  });
+  if (!r.ok) throw new Error("db upsert activite " + r.status + " " + (await r.text()));
+}
+async function dbToutesActivites() {
+  // PostgREST renvoie 1 000 lignes au plus par requête : on lit page par page.
+  const lignes: any[] = [];
+  for (let debut = 0; ; debut += 1000) {
+    const r = await fetch(
+      `${SUPA_URL}/rest/v1/activite?select=licence_id,jour,images,videos,metadonnees,ranges` +
+      `&order=jour.asc,licence_id.asc&limit=1000&offset=${debut}`,
+      { headers: dbHeaders() });
+    if (!r.ok) throw new Error("db activite " + r.status);
+    const page = await r.json();
+    lignes.push(...page);
+    if (page.length < 1000) return lignes;
+  }
+}
+// "AAAA-MM-JJ" valide (le 31 février est refusé) -> la date (UTC, minuit), sinon null.
+function dateValide(j: unknown): Date | null {
+  if (typeof j !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(j)) return null;
+  const d = new Date(j + "T00:00:00Z");
+  return isNaN(d.getTime()) || isoDate(d) !== j ? null : d;
+}
+const compteurValide = (v: unknown) =>
+  typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= MAX_COMPTEUR;
+const plusJours = (d: Date, n: number) => new Date(d.getTime() + n * 86400000);
+
+// Jours envoyés par l'app -> lignes à enregistrer, ou un message d'erreur (texte).
+function validerJours(jours: unknown, licence_id: string): unknown[] | string {
+  if (!Array.isArray(jours)) return "« jours » doit être une liste.";
+  if (jours.length > MAX_JOURS) return `${MAX_JOURS} jours au maximum par envoi.`;
+  // Le PC du VA peut avoir un fuseau en avance sur UTC : on tolère 1 jour dans le futur.
+  const limite = plusJours(new Date(isoDate(new Date()) + "T00:00:00Z"), 1);
+  const parJour = new Map<string, Record<string, unknown>>();
+  for (const j of jours) {
+    if (!j || typeof j !== "object") return "Jour invalide.";
+    const d = dateValide((j as any).jour);
+    if (!d) return "Date invalide (format AAAA-MM-JJ attendu).";
+    if (d > limite) return "Date dans le futur : " + (j as any).jour;
+    const ligne: Record<string, unknown> = { licence_id, jour: (j as any).jour,
+                                             maj_le: new Date().toISOString() };
+    for (const c of CATEGORIES) {
+      const v = (j as any)[c] ?? 0;
+      if (!compteurValide(v)) return `Compteur « ${c} » invalide (entier de 0 à ${MAX_COMPTEUR}).`;
+      ligne[c] = v;
+    }
+    // Deux fois le même jour dans un envoi : Postgres refuserait l'UPSERT -> on garde le dernier.
+    parJour.set(ligne.jour as string, ligne);
+  }
+  return [...parJour.values()];
+}
+
+// Totaux par licence pour la console : aujourd'hui / 7 jours / 30 jours / total + dernier jour actif.
+// « aujourd'hui » = la date du NAVIGATEUR de l'admin (son fuseau), sinon celle d'UTC.
+function resumerActivite(licences: any[], lignes: any[], aujourdhui: Date) {
+  const vide = () => ({ images: 0, videos: 0, metadonnees: 0, ranges: 0, total: 0 });
+  const auj = isoDate(aujourdhui);
+  const debut7 = isoDate(plusJours(aujourdhui, -6));
+  const debut30 = isoDate(plusJours(aujourdhui, -29));
+  const parLicence = new Map<string, any>();
+  for (const l of licences) {
+    parLicence.set(l.id, {
+      id: l.id, nom_client: l.nom_client, empreinte: l.empreinte, type: l.type, statut: l.statut,
+      aujourd_hui: vide(), semaine: vide(), mois: vide(), total: vide(), dernier_jour: null,
+    });
+  }
+  for (const r of lignes) {
+    const a = parLicence.get(r.licence_id);
+    if (!a) continue;
+    const blocs = [a.total];
+    if (r.jour >= debut30 && r.jour <= auj) blocs.push(a.mois);
+    if (r.jour >= debut7 && r.jour <= auj) blocs.push(a.semaine);
+    if (r.jour === auj) blocs.push(a.aujourd_hui);
+    let somme = 0;
+    for (const c of CATEGORIES) somme += r[c] || 0;
+    for (const b of blocs) {
+      for (const c of CATEGORIES) b[c] += r[c] || 0;
+      b.total += somme;
+    }
+    if (somme > 0 && (!a.dernier_jour || r.jour > a.dernier_jour)) a.dernier_jour = r.jour;
+  }
+  return [...parLicence.values()];
+}
+
 const json = (o: unknown, s = 200) =>
   new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json", ...CORS } });
 
@@ -176,6 +281,20 @@ Deno.serve(async (req) => {
       });
       await dbMarquerCode(code, emp, licence_id);
       return json({ ok: true, licence, exp: (payload as any).exp || null });
+    }
+
+    // --- Action PUBLIQUE (app du client) : compteurs d'activité du VA ---
+    // L'app envoie le texte de SA licence : on le retrouve par son empreinte SHA-256
+    // (cle_hash, comme pour verifier_licence). Seule une licence ACTIVE peut écrire.
+    if (body.action === "activite") {
+      const licence = typeof body.licence === "string" ? body.licence.trim() : "";
+      if (!licence || licence.length > 4096) return json({ erreur: "Licence absente." }, 400);
+      const lic = await dbLicenceParHash(await sha256hex(licence));
+      if (!lic || lic.statut !== "actif") return json({ erreur: "Licence inconnue ou inactive." }, 403);
+      const lignes = validerJours(body.jours, lic.id);
+      if (typeof lignes === "string") return json({ erreur: lignes }, 400);
+      if (lignes.length) await dbUpsertActivite(lignes);
+      return json({ ok: true });
     }
 
     // --- Actions ADMIN (mot de passe requis) ---
@@ -212,6 +331,12 @@ Deno.serve(async (req) => {
       return json({ ok: true, codes });
     }
     if (body.action === "lister_codes") return json({ ok: true, codes: await dbListeCodes() });
+    if (body.action === "activite_lister") {
+      // Calcul en JS à partir de toutes les lignes (quelques milliers au plus : reste simple).
+      const aujourdhui = dateValide(body.aujourdhui) ?? new Date(isoDate(new Date()) + "T00:00:00Z");
+      const [licences, lignes] = await Promise.all([dbListe(), dbToutesActivites()]);
+      return json({ ok: true, activite: resumerActivite(licences, lignes, aujourdhui) });
+    }
     return json({ erreur: "action inconnue" }, 400);
   } catch (e) {
     return json({ erreur: String(e) }, 500);

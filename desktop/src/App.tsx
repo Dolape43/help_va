@@ -5,7 +5,7 @@ import BandeauMoteur from "./components/BandeauMoteur";
 import RappelsLicence from "./components/RappelsLicence";
 import Accueil from "./screens/Accueil";
 import ConvertirMp4 from "./screens/ConvertirMp4";
-import ConvertirImages, { type FormatImage } from "./screens/ConvertirImages";
+import ConvertirImages from "./screens/ConvertirImages";
 import Metadonnees from "./screens/Metadonnees";
 import Ranger from "./screens/Ranger";
 import Parametres from "./screens/Parametres";
@@ -20,13 +20,13 @@ import { useMoteur } from "./engine/useMoteur";
 import { useLicence } from "./engine/useLicence";
 import { useTraitement } from "./engine/useTraitement";
 import { useRanger } from "./engine/useRanger";
-import type { Bilan, Source, TypePost } from "./engine/api";
+import { PREFERENCES_DEFAUT, preferencesDepuis, type Bilan, type Preferences, type ResumeActivite, type Source, type TypePost } from "./engine/api";
 import type { EvLog } from "./engine/protocole";
 import { ligneDepuisLog } from "./engine/affichage";
 import { fr } from "./fr";
 import { ecranLicence, libelleFormule, nomLicence } from "./licence";
 import { messageErreur } from "./erreurs";
-import { ouvrirLien, themeFenetre } from "./plateforme";
+import { notifierSysteme, ouvrirLien, themeFenetre } from "./plateforme";
 
 export type Page = "accueil" | "parametres" | { module: CleModule };
 export type Theme = "light" | "dark";
@@ -140,11 +140,62 @@ export default function App() {
     contenu.current?.scrollTo({ top: 0 });
   }, []);
 
+  /* ---------- Choix par défaut et fin de traitement (Paramètres) ----------
+     Format JPG/PNG, « Renommer 1, 2, 3… », « Répartir au hasard » : le dernier choix est retenu
+     (parametres.json), qu'il soit fait dans un module ou dans Paramètres. */
+  const [prefs, setPrefs] = useState<Preferences>(PREFERENCES_DEFAUT);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+  // Une seule reprise, au premier chargement des paramètres : ensuite, l'écran fait foi.
+  const prefsReprises = useRef(false);
+  useEffect(() => {
+    if (prefsReprises.current || !m.parametres) return;
+    prefsReprises.current = true;
+    setPrefs(preferencesDepuis(m.parametres));
+  }, [m.parametres]);
+  const ecrireParametres = m.ecrireParametres;
+  const changerPref = useCallback(
+    <K extends keyof Preferences>(cle: K, valeur: Preferences[K]) => {
+      prefsReprises.current = true; // un choix fait avant la lecture des paramètres n'est pas écrasé
+      setPrefs((p) => ({ ...p, [cle]: valeur }));
+      ecrireParametres({ [cle]: valeur }).catch((e) => erreur("Préférence non enregistrée", e));
+    },
+    [ecrireParametres, erreur],
+  );
+
+  /* ---------- Activité (compteurs de l'Accueil) ---------- */
+  const [resumeActivite, setResumeActivite] = useState<ResumeActivite | null>(null);
+  const rechargerActivite = useCallback(() => {
+    // Moteur ancien ou absent : pas de carte d'activité (rien d'alarmant à montrer).
+    moteur.activiteLire().then(setResumeActivite, () => {});
+  }, [moteur]);
+  const rechargerActiviteRef = useRef(rechargerActivite);
+  rechargerActiviteRef.current = rechargerActivite;
+
   /* ---------- Les 4 modules ---------- */
   // Fin d'un traitement : la carte de résultat suffit si l'utilisateur est sur l'écran du module ;
   // sinon, une notification avec « Ouvrir le dossier ».
+  // Réglages « Fin de traitement » : ouvrir le dossier du résultat, et notification Windows si
+  // HelpVA n'est pas au premier plan (sinon le toast ou la carte de résultat suffisent).
   const surFin = useCallback(
     (cle: CleModule) => (res: { arrete: boolean; bilan: Bilan; sortie: string }) => {
+      const pr = prefsRef.current;
+      const auPremierPlan = document.hasFocus(); // lu AVANT d'ouvrir l'Explorateur (qui prend le focus)
+      rechargerActiviteRef.current();
+      if (pr.fin_notification && !auPremierPlan) {
+        const titreFin = res.arrete
+          ? "Traitement interrompu"
+          : cle === "ranger"
+            ? "Rangement terminé"
+            : cle === "metadonnees"
+              ? "Métadonnées terminées"
+              : "Conversion terminée";
+        void notifierSysteme(`HelpVA — ${titreFin}`, resumeBilan(res.bilan, cle));
+      }
+      // Seulement si le dossier existe ET contient quelque chose (sinon rien à montrer).
+      if (pr.fin_ouvrir_dossier && !res.arrete && res.sortie) {
+        moteur.dossierExiste(res.sortie).then((plein) => plein && void ouvrir(res.sortie), () => {});
+      }
       const p = pageRef.current;
       if (typeof p === "object" && p.module === cle) return;
       const titreModule = moduleParCle(cle).titre;
@@ -160,7 +211,7 @@ export default function App() {
         duree: 8000,
       });
     },
-    [notifier, ouvrir],
+    [notifier, ouvrir, moteur],
   );
 
   // Le module qui travaille (calculé plus bas, après les crochets) : lu juste avant chaque lancement.
@@ -170,12 +221,17 @@ export default function App() {
     return a && a !== cle ? moduleParCle(a).titre : null;
   };
 
-  // Options gardées quand on change d'écran (comme les sources).
-  const [formatImages, setFormatImages] = useState<FormatImage>("jpg");
-  const [renommer, setRenommer] = useState(true);
-  // Conversions : noms d'origine gardés par défaut ; 1, 2, 3… si l'utilisateur coche la case.
-  const [renommerMp4, setRenommerMp4] = useState(false);
-  const [renommerImages, setRenommerImages] = useState(false);
+  // Options des modules = les réglages retenus (défauts : JPG ; conversions : noms d'origine
+  // gardés ; métadonnées : 1, 2, 3… recommandé ; Ranger : au hasard).
+  const formatImages = prefs.format_images;
+  const setFormatImages = (v: Preferences["format_images"]) => changerPref("format_images", v);
+  const renommer = prefs.renommer_metadonnees;
+  const setRenommer = (v: boolean) => changerPref("renommer_metadonnees", v);
+  const renommerMp4 = prefs.renommer_mp4;
+  const setRenommerMp4 = (v: boolean) => changerPref("renommer_mp4", v);
+  const renommerImages = prefs.renommer_images;
+  const setRenommerImages = (v: boolean) => changerPref("renommer_images", v);
+  const setAleatoire = useCallback((v: boolean) => changerPref("ranger_aleatoire", v), [changerPref]);
 
   const mp4 = useTraitement({
     moteur,
@@ -217,6 +273,8 @@ export default function App() {
     ecrireParametres: m.ecrireParametres,
     erreur,
     surFin: surFin("ranger"),
+    aleatoire: prefs.ranger_aleatoire,
+    setAleatoire,
     occupeAilleurs: autreQue("ranger"),
   });
 
@@ -230,6 +288,12 @@ export default function App() {
     const cible = actif ?? (typeof pageRef.current === "object" ? pageRef.current.module : null);
     if (cible) suivis[cible].ajouter(ligneDepuisLog(ev));
   };
+
+  // L'Accueil montre l'activité à jour à chaque arrivée (et dès que le moteur est là).
+  const surAccueil = page === "accueil";
+  useEffect(() => {
+    if (surAccueil && m.connexion === "connecte") rechargerActivite();
+  }, [surAccueil, m.connexion, rechargerActivite]);
 
   /* ---------- Dossier de sortie ---------- */
   const ouvrirSortieGenerale = useCallback(async () => {
@@ -414,6 +478,7 @@ export default function App() {
           nom={nom}
           formule={formule}
           activite={activite}
+          resumeActivite={resumeActivite}
           bandeau={bandeau}
         />
       );
@@ -428,6 +493,8 @@ export default function App() {
           reinitialiserSortie={reinitialiserSortie}
           ouvrirSortie={ouvrirSortieGenerale}
           resilier={lic.resilier}
+          prefs={prefs}
+          changerPref={changerPref}
           bandeau={bandeau}
         />
       );

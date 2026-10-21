@@ -735,6 +735,11 @@ def parametres_lire(ctx, args):
     return _vue_parametres(_charger_parametres())
 
 
+# Paramètres « oui / non » (choix par défaut des modules, fin de traitement, 1er démarrage).
+_PARAMETRES_BOOLEENS = ("deja_demarre", "renommer_images", "renommer_mp4", "renommer_metadonnees",
+                        "ranger_aleatoire", "fin_ouvrir_dossier", "fin_notification")
+
+
 @commande("parametres_ecrire", critique=True)
 def parametres_ecrire(ctx, args):
     """args = {"valeurs": {...}} — seules les clés connues sont acceptées."""
@@ -767,9 +772,13 @@ def parametres_ecrire(ctx, args):
                                                 for k, v in val.items()):
                 raise _invalide("valeurs.ranger_types",
                                 "« ranger_types » doit être {type: true|false}.")
-        elif cle == "deja_demarre":
+        elif cle == "format_images":
+            if val not in ("jpg", "png"):
+                raise _invalide("valeurs.format_images",
+                                "« format_images » doit valoir « jpg » ou « png ».")
+        elif cle in _PARAMETRES_BOOLEENS:
             if not isinstance(val, bool):
-                raise _invalide("valeurs.deja_demarre", "« deja_demarre » doit valoir true ou false.")
+                raise _invalide(f"valeurs.{cle}", f"« {cle} » doit valoir true ou false.")
         else:
             raise _invalide(f"valeurs.{cle}", f"Paramètre inconnu : {cle}")
         propres[cle] = val
@@ -1413,6 +1422,9 @@ def ranger_lancer(ctx, args):
         r["aucun_type"] = False
         resultats.append(r)
 
+    # Compteur d'activité : médias VRAIMENT copiés, tous comptes confondus (même après un arrêt).
+    _compter_activite("ranges", sum(sum((r.get("places") or {}).values()) for r in resultats))
+
     # Champs de tête : même forme qu'avant (1 compte : le résultat de ranger() tel quel).
     if plusieurs:
         out = {"types": [t for t in rangement.TYPES if any(t in r["types"] for r in resultats)]}
@@ -1447,6 +1459,51 @@ def ranger_lancer(ctx, args):
         bilan = {"titre": "Ranger", "message": txt, "erreur": alerte}
     out.update({"sortie": sortie, "duree_s": round(time.monotonic() - debut, 1),
                 "bilan": bilan, "comptes": resultats})
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Compteur d'activité (agent/activite.py)
+# ═══════════════════════════════════════════════════════════════════════════
+def lancer_envoi_activite(delai_s: float = 0.0) -> None:
+    """Envoie les compteurs au serveur des licences, dans un fil d'arrière-plan.
+
+    Pourquoi un fil ? Hors-ligne, l'envoi peut attendre ~8 s : il ne doit jamais retarder
+    la réponse d'une commande. Fil « daemon » : il ne bloque pas l'arrêt du moteur.
+    Sans licence enregistrée (mode dev, tests), activite.envoyer() ne fait RIEN : aucun
+    appel réseau. Deux envois ne tournent jamais en même temps (verrou dans activite.py)."""
+    def envoyer():
+        if delai_s > 0:
+            time.sleep(delai_s)
+        try:
+            from agent import activite
+            activite.envoyer()
+        except Exception:
+            pass        # jamais d'erreur visible : on réessaiera au prochain traitement
+    try:
+        threading.Thread(target=envoyer, name="activite", daemon=True).start()
+    except Exception:
+        pass
+
+
+def _compter_activite(categorie: str, n) -> None:
+    """Ajoute ce qui a VRAIMENT été traité (même après un arrêt), puis envoie au serveur.
+    Ne fait JAMAIS échouer le traitement (voir activite.ajouter)."""
+    try:
+        from agent import activite
+        activite.ajouter(categorie, n)
+    except Exception as e:
+        print(f"⚠️ Compteur d'activité non mis à jour : {e}")
+    lancer_envoi_activite()
+
+
+@commande("activite_lire")
+def activite_lire(ctx, args):
+    """Activité de ce PC (carte « Votre activité » de l'Accueil) + partage : true si les
+    compteurs sont envoyés à l'agence (une licence est enregistrée)."""
+    from agent import activite
+    out = activite.resume()
+    out["partage"] = activite.partage()
     return out
 
 
@@ -1488,6 +1545,7 @@ def conversion_mp4(ctx, args):
     except Exception as e:
         raise _echec("Convertir en MP4", e)
     res["arrete"] = res.get("arrete") or ctx.doit_arreter()
+    _compter_activite("videos", res.get("medias", 0))
     nb_d = res.get("dossiers") if (dossier and res.get("dossiers", 1) > 1) else None
     bilan = bilan_fin("Conversion terminée", res, sortie, "vidéo(s) en .mp4", nb_dossiers=nb_d)
     return {"traites": res.get("medias", 0), "echecs": res.get("echecs") or [],
@@ -1517,6 +1575,7 @@ def conversion_images(ctx, args):
     except Exception as e:
         raise _echec("Convertir les images", e)
     res["arrete"] = ctx.doit_arreter()
+    _compter_activite("images", res.get("images", 0))
     bilan = bilan_fin("Images converties", res, sortie, f"image(s) en .{fmt}")
     return {"traites": res.get("images", 0), "echecs": res.get("echecs") or [],
             "arrete": bool(res["arrete"]), "dossiers": res.get("dossiers", 1),
@@ -1552,6 +1611,7 @@ def metadonnees(ctx, args):
                                           progress=ctx.progress, doit_arreter=ctx.doit_arreter)
     except Exception as e:
         raise _echec("Métadonnées", e)
+    _compter_activite("metadonnees", res.get("medias", 0))
     bilan = bilan_fin("Métadonnées changées", res, sortie, "média(s)", res.get("dossiers"))
     return {"traites": res.get("medias", 0), "echecs": res.get("echecs") or [],
             "arrete": bool(res.get("arrete")), "dossiers": res.get("dossiers", 0),

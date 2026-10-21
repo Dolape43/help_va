@@ -130,6 +130,18 @@ input::placeholder{color:var(--faint)}
 .codeline.clic:hover{border-color:var(--acc)}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);font-size:13px;font-weight:500;padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.headrow{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.headrow .iact{margin-top:2px}
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.act{width:100%;border-collapse:collapse;font-size:13px}
+.act th{font-size:11px;font-weight:600;color:var(--mut);text-align:right;padding:10px 10px;border-bottom:1px solid var(--line);white-space:nowrap;letter-spacing:.02em}
+.act td{padding:11px 10px;border-top:1px solid var(--line-2);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.act tr:first-child td{border-top:none}
+.act th:first-child,.act td:first-child{text-align:left;white-space:normal}
+.act .va{font-weight:500;font-size:13.5px}
+.act .va small{display:block;font-family:var(--mono);font-size:11px;color:var(--faint);font-weight:400;letter-spacing:.02em}
+.act .fort{font-weight:600;color:var(--ink)}
+.act .nul{color:var(--faint)}
 </style>
 
 <div class="shell">
@@ -164,6 +176,7 @@ input::placeholder{color:var(--faint)}
       <button class="tab" role="tab" aria-selected="true" onclick="onglet('creer',this)">Créer</button>
       <button class="tab" role="tab" aria-selected="false" onclick="onglet('licences',this)">Licences</button>
       <button class="tab" role="tab" aria-selected="false" onclick="onglet('codes',this)">Codes</button>
+      <button class="tab" role="tab" aria-selected="false" onclick="onglet('activite',this)">Activité</button>
     </nav>
 
     <main>
@@ -232,6 +245,21 @@ input::placeholder{color:var(--faint)}
         <p class="sub" id="codeSub">Chargement…</p>
         <div class="list" id="codeList"></div>
       </section>
+
+      <!-- ACTIVITE -->
+      <section class="panel" id="p-activite" hidden>
+        <div class="headrow">
+          <div><h1>Activité</h1>
+          <p class="sub" id="actSub">Chargement…</p></div>
+          <button class="iact" type="button" onclick="chargerActivite()">Actualiser</button>
+        </div>
+        <div class="tablewrap">
+          <table class="act">
+            <thead><tr><th scope="col">VA</th><th scope="col">Aujourd'hui</th><th scope="col">7 j</th><th scope="col">30 j</th><th scope="col">Total</th><th scope="col">Dernière activité</th></tr></thead>
+            <tbody id="actList"></tbody>
+          </table>
+        </div>
+      </section>
     </main>
   </div>
 </div>
@@ -297,6 +325,7 @@ function onglet(id,el){
   $("p-"+id).hidden=false;
   if(id==="licences")chargerLic();
   if(id==="codes")chargerCodes();
+  if(id==="activite")chargerActivite();
 }
 
 /* wizard */
@@ -379,6 +408,39 @@ function rendreCodes(C){
   $("codeSub").textContent=C.length+" code"+(C.length>1?"s":"")+" · "+libres+" libre"+(libres>1?"s":"");
   $("codeList").innerHTML=C.length?C.map(ligneCode).join(""):'<div class="empty">Aucun code. Crée-en dans l\'onglet Créer.</div>';
 }
+/* activité des VA (compteurs envoyés par l'app) */
+function esc(t){return String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function jourLocal(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function nb(n){return Number(n||0).toLocaleString("fr-FR");}
+async function chargerActivite(){
+  $("actSub").textContent="Chargement…";$("actList").innerHTML="";
+  // « Aujourd'hui » = la date de CE navigateur (ton fuseau), pas celle du serveur.
+  const d=await api({action:"activite_lister",aujourdhui:jourLocal(new Date())});
+  if(!d.ok){$("actSub").textContent=d.erreur||"Erreur";return;}
+  const A=(d.activite||[]).slice().sort((a,b)=>(b.semaine.total-a.semaine.total)||(b.total.total-a.total.total));
+  const sem=A.reduce((s,a)=>s+a.semaine.total,0);
+  const actifs=A.filter(a=>a.semaine.total>0).length;
+  $("actSub").textContent=A.length+" VA · "+actifs+" actif"+(actifs>1?"s":"")+" sur 7 jours · "+nb(sem)+" média"+(sem>1?"s":"")+" traité"+(sem>1?"s":"");
+  $("actList").innerHTML=A.length?A.map(ligneActivite).join(""):'<tr><td colspan="6"><div class="empty">Aucune licence.</div></td></tr>';
+}
+function detailAct(c){return nb(c.images)+" image(s) · "+nb(c.videos)+" vidéo(s) · "+nb(c.metadonnees)+" métadonnée(s) · "+nb(c.ranges)+" rangé(s)";}
+function celluleAct(c,fort){return '<td title="'+esc(detailAct(c))+'" class="'+(c.total?(fort?"fort":""):"nul")+'">'+nb(c.total)+'</td>';}
+function quand(j){
+  if(!j)return '<span class="nul">—</span>';
+  const auj=jourLocal(new Date()),hier=jourLocal(new Date(Date.now()-86400000));
+  if(j===auj)return "Aujourd'hui";
+  if(j===hier)return "Hier";
+  const p=j.split("-");return p[2]+"/"+p[1]+"/"+p[0];
+}
+function ligneActivite(a){
+  const nom=a.nom_client?esc(a.nom_client):'<span class="mono">'+esc(a.empreinte)+'</span>';
+  const etat=a.statut!=="actif"?' <span class="pill '+esc(a.statut)+'">'+(a.statut==="resiliee"?"résiliée":esc(a.statut))+'</span>':"";
+  const sous=a.nom_client?'<small>'+esc(a.empreinte)+'</small>':"";
+  return '<tr><td><div class="va">'+nom+etat+sous+'</div></td>'
+    +celluleAct(a.aujourd_hui)+celluleAct(a.semaine,true)+celluleAct(a.mois)+celluleAct(a.total)
+    +'<td>'+quand(a.dernier_jour)+'</td></tr>';
+}
+
 function ligneCode(c){
   const label=c.statut==="utilise"?"utilisé":c.statut;
   const meta=[typeLabel(c.type),c.nom_client,c.empreinte].filter(Boolean).join(" · ");

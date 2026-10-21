@@ -74,6 +74,65 @@ export type VueParametres = {
   personnalise: boolean;
 };
 
+/**
+ * Les réglages « Choix par défaut » et « Fin de traitement » (clés de parametres.json,
+ * vérifiées par parametres_ecrire). Absents du fichier = valeurs de PREFERENCES_DEFAUT.
+ */
+export type Preferences = {
+  format_images: "jpg" | "png";
+  renommer_images: boolean;
+  renommer_mp4: boolean;
+  renommer_metadonnees: boolean;
+  ranger_aleatoire: boolean;
+  fin_ouvrir_dossier: boolean;
+  fin_notification: boolean;
+};
+
+/** Mêmes défauts que le moteur (agent/parametres.py). */
+export const PREFERENCES_DEFAUT: Preferences = {
+  format_images: "jpg",
+  renommer_images: false,
+  renommer_mp4: false,
+  renommer_metadonnees: true,
+  ranger_aleatoire: true,
+  fin_ouvrir_dossier: false,
+  fin_notification: true,
+};
+
+/** Lit les préférences dans les paramètres bruts ; une valeur absente ou d'un mauvais type → défaut. */
+export function preferencesDepuis(p: Record<string, unknown> | null): Preferences {
+  const d = PREFERENCES_DEFAUT;
+  const bool = (cle: keyof Preferences, defaut: boolean) => (typeof p?.[cle] === "boolean" ? (p[cle] as boolean) : defaut);
+  return {
+    format_images: p?.format_images === "png" ? "png" : p?.format_images === "jpg" ? "jpg" : d.format_images,
+    renommer_images: bool("renommer_images", d.renommer_images),
+    renommer_mp4: bool("renommer_mp4", d.renommer_mp4),
+    renommer_metadonnees: bool("renommer_metadonnees", d.renommer_metadonnees),
+    ranger_aleatoire: bool("ranger_aleatoire", d.ranger_aleatoire),
+    fin_ouvrir_dossier: bool("fin_ouvrir_dossier", d.fin_ouvrir_dossier),
+    fin_notification: bool("fin_notification", d.fin_notification),
+  };
+}
+
+/* ---------- Activité (compteur des médias traités sur ce PC) ---------- */
+
+/** images = converties ; videos = converties en MP4 ; metadonnees = passées dans Métadonnées ; ranges = copiées par le Ranger. */
+export type Compteurs = { images: number; videos: number; metadonnees: number; ranges: number; total: number };
+
+/** Réponse de activite_lire. */
+export type ResumeActivite = {
+  aujourd_hui: Compteurs;
+  /** 7 derniers jours, aujourd'hui compris */
+  semaine: Compteurs;
+  /** 30 derniers jours */
+  mois: Compteurs;
+  total: Compteurs;
+  /** premier jour compté (« AAAA-MM-JJ »), null si rien encore */
+  depuis: string | null;
+  /** vrai = une licence existe : les compteurs sont envoyés à l'agence */
+  partage: boolean;
+};
+
 /* ---------- Traitements : MP4, images, métadonnées ---------- */
 
 export type CommandeTraitement = "conversion_mp4" | "conversion_images" | "metadonnees";
@@ -299,6 +358,9 @@ export interface Moteur {
   choisirDossier(titre?: string): Promise<string | null>;
   choisirFichiers(titre?: string, filtre?: FiltreFichiers): Promise<string[]>;
 
+  /** Les compteurs d'activité de ce PC (aujourd'hui, 7 jours, 30 jours, total). */
+  activiteLire(): Promise<ResumeActivite>;
+
   /** AVANT un traitement : où ira le résultat, combien de médias, faut-il demander « Remplacer ? ». */
   preparer(commande: CommandeTraitement, args: ArgsTraitement): Promise<Preparation>;
   /** Lance un traitement (tâche longue, annulable). */
@@ -403,6 +465,10 @@ export class MoteurReel implements Moteur {
     }
     const r = await this.client.appeler<{ chemins: string[] }>("choisir_fichiers", { titre, filtre }, {}, 0);
     return r.chemins;
+  }
+
+  activiteLire() {
+    return this.client.appeler<ResumeActivite>("activite_lire");
   }
 
   preparer(commande: CommandeTraitement, args: ArgsTraitement) {

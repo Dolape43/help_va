@@ -1,7 +1,7 @@
 // Côté Rust de HelpVA.
 //
 // Rust fait très peu de choses ici : il ouvre la fenêtre, affiche l'interface web (React)
-// et active trois plugins officiels. Le vrai travail (conversion, métadonnées, rangement,
+// et active quatre plugins officiels. Le vrai travail (conversion, métadonnées, rangement,
 // licence) reste dans le moteur Python (dossiers engine/ et agent/), lancé comme « sidecar » :
 // voir desktop/src/engine/sidecar.ts et desktop/README.md.
 
@@ -14,6 +14,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // Ouvrir un lien dans le navigateur par défaut.
         .plugin(tauri_plugin_opener::init())
+        // Notification Windows quand un traitement finit (si HelpVA n'est pas au premier plan).
+        .plugin(tauri_plugin_notification::init())
         .run(tauri::generate_context!())
         .expect("erreur au lancement de HelpVA");
 }

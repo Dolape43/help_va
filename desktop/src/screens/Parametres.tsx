@@ -1,14 +1,17 @@
 import { ArrowCounterClockwise, WarningCircle } from "@phosphor-icons/react";
-import { Bouton, Carte, Rouage, TitrePage, Tuile3D } from "../components/ui";
+import { Bouton, Carte, Case, Rouage, Segments, Surtitre, TitrePage, Tuile3D } from "../components/ui";
 import { ICONES_3D } from "../icones3d";
 import Dialogue from "../components/Dialogue";
 import { useState, type ReactNode } from "react";
-import type { StatutLicence } from "../engine/api";
+import type { Preferences, StatutLicence } from "../engine/api";
 import { dateLongue, nomLicence } from "../licence";
 import { messageErreur } from "../erreurs";
 import { fr } from "../fr";
 
-/** Paramètres : dossier de sortie (lu et modifié via le moteur) et licence (avec la résiliation). */
+/**
+ * Paramètres : dossier de sortie (lu et modifié via le moteur), choix par défaut des modules,
+ * fin de traitement, et licence (avec la résiliation).
+ */
 export default function Parametres({
   sortie,
   personnalise,
@@ -18,6 +21,8 @@ export default function Parametres({
   reinitialiserSortie,
   ouvrirSortie,
   resilier,
+  prefs,
+  changerPref,
   bandeau,
 }: {
   sortie: string | null;
@@ -32,6 +37,9 @@ export default function Parametres({
   ouvrirSortie: () => void;
   /** supprime la licence de ce PC ; l'écran d'activation prend alors le relais */
   resilier: () => Promise<void>;
+  /** choix par défaut et fin de traitement (enregistrés dans parametres.json par App) */
+  prefs: Preferences;
+  changerPref: <K extends keyof Preferences>(cle: K, valeur: Preferences[K]) => void;
   bandeau: ReactNode;
 }) {
   const [confirmer, setConfirmer] = useState(false);
@@ -62,7 +70,7 @@ export default function Parametres({
     <div className="entree mx-auto max-w-[760px] px-6 pb-10 pt-9 @min-[700px]:px-10">
       {bandeau}
       <TitrePage>Paramètres</TitrePage>
-      <p className="mt-1.5 text-14 text-fg-2">Dossier de sortie et licence.</p>
+      <p className="mt-1.5 text-14 text-fg-2">Dossier de sortie, choix par défaut, fin de traitement et licence.</p>
 
       <Carte className="mt-7 p-5">
         <div className="flex items-start gap-3">
@@ -95,6 +103,91 @@ export default function Parametres({
                   Réinitialiser (Bureau)
                 </Bouton>
               )}
+            </div>
+          </div>
+        </div>
+      </Carte>
+
+      <Carte className="mt-4 p-5">
+        <div className="flex items-start gap-3">
+          <Tuile3D src={ICONES_3D.parametres} taille={52} />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-16 font-semibold">Choix par défaut</h2>
+            <p className="text-13 text-fg-2">
+              {fr("Retenus d'une fois sur l'autre. Vous pouvez aussi les changer dans chaque module.")}
+            </p>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <span className="text-14" aria-hidden="true">
+                Format des images
+              </span>
+              <Segments
+                nom="parametres-format-images"
+                libelle="Format des images converties"
+                valeur={prefs.format_images}
+                onChange={(v) => changerPref("format_images", v)}
+                choix={[
+                  { valeur: "jpg", libelle: "JPG" },
+                  { valeur: "png", libelle: "PNG" },
+                ]}
+              />
+            </div>
+
+            <div className="mt-5">
+              <Surtitre>{fr("Renommer 1, 2, 3…")}</Surtitre>
+              <div className="mt-2.5 flex flex-col gap-2.5">
+                <Case coche={prefs.renommer_images} onChange={(v) => changerPref("renommer_images", v)} aide="Convertir des images">
+                  Images
+                </Case>
+                <Case coche={prefs.renommer_mp4} onChange={(v) => changerPref("renommer_mp4", v)} aide="Convertir en MP4">
+                  Vidéos MP4
+                </Case>
+                <Case
+                  coche={prefs.renommer_metadonnees}
+                  onChange={(v) => changerPref("renommer_metadonnees", v)}
+                  aide="Changer les métadonnées (recommandé)"
+                >
+                  Métadonnées
+                </Case>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <Surtitre>Ranger les médias</Surtitre>
+              <Case
+                className="mt-2.5"
+                coche={prefs.ranger_aleatoire}
+                onChange={(v) => changerPref("ranger_aleatoire", v)}
+                aide={fr("Les carrousels gardent toujours l'ordre 1, 2, 3…")}
+              >
+                Répartir au hasard
+              </Case>
+            </div>
+          </div>
+        </div>
+      </Carte>
+
+      <Carte className="mt-4 p-5">
+        <div className="flex items-start gap-3">
+          <Tuile3D src={ICONES_3D.succes} taille={52} />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-16 font-semibold">Fin de traitement</h2>
+            <p className="text-13 text-fg-2">Ce que fait HelpVA quand une conversion ou un rangement se termine.</p>
+            <div className="mt-4 flex flex-col gap-2.5">
+              <Case
+                coche={prefs.fin_ouvrir_dossier}
+                onChange={(v) => changerPref("fin_ouvrir_dossier", v)}
+                aide="L'Explorateur s'ouvre tout seul sur vos fichiers prêts."
+              >
+                Ouvrir le dossier du résultat
+              </Case>
+              <Case
+                coche={prefs.fin_notification}
+                onChange={(v) => changerPref("fin_notification", v)}
+                aide="Seulement si HelpVA n'est pas au premier plan."
+              >
+                Me prévenir par une notification
+              </Case>
             </div>
           </div>
         </div>
