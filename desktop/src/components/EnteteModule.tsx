@@ -48,9 +48,7 @@ export default function EnteteModule({
           className="pointer-events-none absolute -left-16 -top-20 h-64 w-64 rounded-full bg-[radial-gradient(circle,var(--glow),transparent_68%)]"
         />
         <div className="relative flex items-center gap-5">
-          <span className="grid h-[76px] w-[76px] shrink-0 place-items-center rounded-[20px] border border-line bg-[linear-gradient(180deg,var(--surface-2),var(--surface))] shadow-[0_10px_30px_-18px_rgba(29,63,230,0.55)]">
-            <img src={mod.icone} alt="" className="h-[58px] w-[58px] object-contain drop-shadow-[0_8px_14px_rgba(9,9,11,0.22)]" />
-          </span>
+          <img src={mod.icone} alt="" className="h-[72px] w-[72px] shrink-0 object-contain drop-shadow-[0_8px_14px_rgba(9,9,11,0.22)]" />
           <div className="min-w-0">
             <TitrePage>{mod.titre}</TitrePage>
             <p className="mt-1 text-14 text-fg-2">{sousTitre}</p>

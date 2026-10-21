@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ICONES_3D } from "../icones3d";
 import SelecteurTheme from "./SelecteurTheme";
 import logo from "../assets/logo.png";
-import { MODULES, type CleModule } from "../modules";
 import type { Activite, Page, Theme } from "../App";
 import { versionApp } from "../plateforme";
 import type { EtatConnexion } from "../engine/useMoteur";
@@ -78,8 +77,6 @@ export default function Sidebar({
     versionApp().then(setVersion);
   }, []);
 
-  const moduleActif: CleModule | null = typeof page === "object" ? page.module : null;
-
   return (
     <aside className="flex w-[248px] shrink-0 flex-col px-3 pb-3 pt-4">
       {/* Marque */}
@@ -91,9 +88,18 @@ export default function Sidebar({
       {/* Navigation */}
       <nav aria-label="Navigation principale" className="flex flex-col gap-0.5">
         <Lien
-          actif={page === "accueil"}
+          // Les modules s'ouvrent depuis l'Accueil : sur la page d'un module, « Accueil » reste actif.
+          actif={page === "accueil" || typeof page === "object"}
           onClick={() => aller("accueil")}
           icone={<img src={ICONES_3D.accueil} alt="" className="h-[18px] w-[18px] object-contain" />}
+          badge={
+            activite ? (
+              <span className="tabular flex shrink-0 items-center gap-1 rounded-full bg-brand-soft px-1.5 py-px text-11 font-medium text-brand-text">
+                <span className="point-actif h-1.5 w-1.5 rounded-full bg-brand" aria-hidden="true" />
+                {activite.pct}&nbsp;%
+              </span>
+            ) : undefined
+          }
         >
           Accueil
         </Lien>
@@ -106,27 +112,6 @@ export default function Sidebar({
         </Lien>
       </nav>
 
-      <p className="mb-1.5 mt-6 px-2.5 text-11 font-medium uppercase tracking-[0.12em] text-fg-3">Modules</p>
-      <nav aria-label="Modules" className="flex flex-col gap-0.5">
-        {MODULES.map((m) => (
-          <Lien
-            key={m.cle}
-            actif={moduleActif === m.cle}
-            onClick={() => aller({ module: m.cle })}
-            icone={<img src={m.icone} alt="" className="h-[18px] w-[18px] object-contain" />}
-            badge={
-              activite?.module === m.cle ? (
-                <span className="tabular flex shrink-0 items-center gap-1 rounded-full bg-brand-soft px-1.5 py-px text-11 font-medium text-brand-text">
-                  <span className="point-actif h-1.5 w-1.5 rounded-full bg-brand" aria-hidden="true" />
-                  {activite.pct}&nbsp;%
-                </span>
-              ) : undefined
-            }
-          >
-            {m.titre}
-          </Lien>
-        ))}
-      </nav>
 
       <div className="flex-1" />
 

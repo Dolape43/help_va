@@ -1,5 +1,5 @@
 import { ArrowRight } from "@phosphor-icons/react";
-import { Bouton, Carte, Icone3D, Surtitre, TitrePage, Tuile3D } from "../components/ui";
+import { Bouton, Carte, Surtitre, TitrePage, Tuile3D } from "../components/ui";
 import { ICONES_3D } from "../icones3d";
 import { MODULES, type CleModule } from "../modules";
 import type { ReactNode } from "react";
@@ -64,11 +64,9 @@ export default function Accueil({
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Bouton taille="sm" onClick={ouvrirSortie} disabled={!sortie}>
-              <Icone3D src={ICONES_3D.dossier} taille={18} />
               Ouvrir
             </Bouton>
             <Bouton taille="sm" variante="fantome" onClick={allerParametres}>
-              <Icone3D src={ICONES_3D.crayon} taille={18} />
               Changer
             </Bouton>
             <span className="ml-auto text-12 text-fg-3">Vos fichiers préparés arrivent ici.</span>
@@ -101,9 +99,7 @@ export default function Accueil({
             className="carte-module entree flex items-center gap-4 rounded-2xl border border-line bg-surface p-5 text-left shadow-card"
             style={{ animationDelay: `${60 + i * 40}ms` }}
           >
-            <span className="grid h-16 w-16 shrink-0 place-items-center rounded-[16px] border border-line bg-[linear-gradient(180deg,var(--surface-2),var(--surface))]">
-              <img src={m.icone} alt="" className="icone-3d h-12 w-12 object-contain" />
-            </span>
+            <img src={m.icone} alt="" className="icone-3d h-14 w-14 shrink-0 object-contain" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-16 font-semibold tracking-[-0.01em]">{m.titre}</span>
               {activite?.module === m.cle ? (
@@ -122,10 +118,6 @@ export default function Accueil({
         ))}
       </div>
 
-      <p className="mt-7 flex items-center gap-2 text-13 text-fg-3">
-        <Icone3D src={ICONES_3D.bouclier} taille={22} />
-        {fr("Vos originaux ne sont jamais modifiés : HelpVA travaille sur des copies.")}
-      </p>
     </div>
   );
 }

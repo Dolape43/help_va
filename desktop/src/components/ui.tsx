@@ -216,12 +216,8 @@ export function Icone3D({ src, taille = 40, className = "" }: { src: string; tai
 /** Une icône 3D dans une tuile arrondie, comme les icônes des cartes de modules de l'accueil. */
 export function Tuile3D({ src, taille = 48 }: { src: string; taille?: number }) {
   return (
-    <span
-      aria-hidden="true"
-      className="grid shrink-0 place-items-center rounded-[14px] border border-line bg-[linear-gradient(180deg,var(--surface-2),var(--surface))]"
-      style={{ width: taille, height: taille }}
-    >
-      <Icone3D src={src} taille={Math.round(taille * 0.74)} />
+    <span aria-hidden="true" className="grid shrink-0 place-items-center" style={{ width: taille, height: taille }}>
+      <Icone3D src={src} taille={taille} />
     </span>
   );
 }
