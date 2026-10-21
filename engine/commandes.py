@@ -580,9 +580,18 @@ def ouvrir_dans_explorateur(ctx, args):
 
 @commande("dossier_existe")
 def dossier_existe(ctx, args):
-    """Le dossier existe-t-il déjà ? (l'interface grise « Ouvrir » tant qu'il n'est pas créé)"""
+    """Le dossier existe-t-il, et contient-il quelque chose ? L'interface grise « Ouvrir le dossier
+    du résultat » tant qu'il est absent ou vide (rien n'a encore été produit)."""
     chemin = args.get("chemin")
-    return {"existe": bool(est_absolu(chemin) and os.path.isdir(chemin))}
+    existe = bool(est_absolu(chemin) and os.path.isdir(chemin))
+    plein = False
+    if existe:
+        try:
+            with os.scandir(chemin) as it:
+                plein = any(True for _ in it)
+        except OSError:
+            plein = False
+    return {"existe": existe, "plein": plein}
 
 
 @commande("preparer")

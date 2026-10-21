@@ -239,17 +239,17 @@ export function joindre(dossier: string, nom: string) {
 }
 
 /**
- * Où arrive le résultat d'un module : le chemin COMPLET (sélectionnable) et un bouton pour ouvrir
- * ce dossier. « Ouvrir » reste grisé tant que le dossier n'existe pas (rien n'a encore été lancé) :
- * sinon Windows afficherait « Emplacement non disponible ». On revérifie quand le chemin change,
- * quand `cle` change (fin d'un traitement) et quand la fenêtre revient au premier plan.
+ * Un petit bouton « Ouvrir le dossier du résultat » (le chemin complet en bulle au survol).
+ * Grisé tant que le dossier est absent ou vide (rien n'a encore été produit) : sinon Windows
+ * afficherait « Emplacement non disponible ». On revérifie quand le chemin change, quand `cle`
+ * change (fin d'un traitement) et quand la fenêtre revient au premier plan.
  */
 export function LienDossier({
   chemin,
   ouvrir,
   existe: verifier,
   cle,
-  libelle = "Résultat dans :",
+  libelle = "Ouvrir le dossier du résultat",
 }: {
   chemin: string;
   ouvrir: () => void;
@@ -272,23 +272,14 @@ export function LienDossier({
     };
   }, [chemin, cle, verifier]);
   return (
-    // Chemin affiché EN ENTIER (sur 2 lignes s'il le faut) : la fin (« images (jpg) ») est la partie utile.
-    <div className="mt-1.5 flex min-w-0 items-center gap-3">
-      <p className="min-w-0 flex-1 text-12 text-fg-3">
-        {libelle}{" "}
-        <span className="selectable font-mono text-fg-2 [overflow-wrap:anywhere]">{chemin}</span>
-      </p>
-      <Bouton
-        taille="sm"
-        variante="fantome"
-        className="shrink-0"
-        onClick={ouvrir}
-        disabled={!existe}
-        aria-label={`Ouvrir le dossier ${chemin}`}
-        title={existe ? undefined : "Le dossier sera créé au premier lancement."}
-      >
-        Ouvrir
-      </Bouton>
-    </div>
+    <Bouton
+      taille="sm"
+      className="mt-2"
+      onClick={ouvrir}
+      disabled={!existe}
+      title={existe ? chemin : "Rien pour l'instant : le dossier se remplit au premier lancement."}
+    >
+      {libelle}
+    </Bouton>
   );
 }

@@ -210,7 +210,7 @@ Une annulation reçue avant ce moment ne supprime **rien** (`result` avec `arret
 |---|---|---|---|
 | `info` | R | — | `nom, version, protocole, python, plateforme, frozen, pid, dossier_donnees, dossier_sortie, extensions{…}, types_ranger[…], images_par_carrousel, commandes` |
 | `ouvrir_dans_explorateur` | R | `{chemin}` (dossier existant) | `{ok}` |
-| `dossier_existe` | R | `{chemin}` | `{existe}` (dossier absolu existant ; sert à griser « Ouvrir ») |
+| `dossier_existe` | R | `{chemin}` | `{existe, plein}` (dossier absolu existant / non vide ; sert à griser « Ouvrir le dossier du résultat ») |
 | `preparer` | R | `{commande, args}` (mêmes args que la commande longue) | `{sortie, existe, remplacement, nb_medias}` (+ `deja_presents` pour `conversion_mp4` : .mp4 qui seront écrasés) — pour poser « Remplacer ? » **avant** |
 | `licence_statut` | N | — | statut de `licence.verifier()` (`ok, raison, type, expire_le "AAAA-MM-JJ", debut_le, jours_restants, nom, hors_ligne`) + `empreinte` |
 | `licence_activer` | N | `{code}` | `{ok, message, statut}` (`ok:false` = refus, pas une erreur) |

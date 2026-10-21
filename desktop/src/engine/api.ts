@@ -294,7 +294,7 @@ export interface Moteur {
   /** Le dossier de sortie effectif (créé s'il n'existe pas, comme l'ancienne app). */
   dossierSortie(): Promise<{ chemin: string; defaut: string; personnalise: boolean }>;
   ouvrirDossier(chemin: string): Promise<void>;
-  /** le dossier existe-t-il déjà ? (« Ouvrir » reste grisé tant qu'il n'est pas créé) */
+  /** le dossier existe-t-il ET contient-il quelque chose ? (sinon « Ouvrir le dossier du résultat » est grisé) */
   dossierExiste(chemin: string): Promise<boolean>;
   choisirDossier(titre?: string): Promise<string | null>;
   choisirFichiers(titre?: string, filtre?: FiltreFichiers): Promise<string[]>;
@@ -379,7 +379,8 @@ export class MoteurReel implements Moteur {
     await this.client.appeler("ouvrir_dans_explorateur", { chemin });
   }
   async dossierExiste(chemin: string) {
-    return (await this.client.appeler<{ existe: boolean }>("dossier_existe", { chemin })).existe;
+    const r = await this.client.appeler<{ existe: boolean; plein?: boolean }>("dossier_existe", { chemin });
+    return r.existe && r.plein === true;
   }
 
   async choisirDossier(titre = "Choisir un dossier") {

@@ -660,7 +660,6 @@ export default function Ranger({
                       ouvrir={() => ouvrirDossier(cheminRanger)}
                       existe={dossierExiste}
                       cle={r.resultat}
-                      libelle={plusieurs ? "Un sous-dossier par compte dans :" : "Résultat dans :"}
                     />
                   )
                 )}
