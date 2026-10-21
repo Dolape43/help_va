@@ -51,7 +51,6 @@ export default function Metadonnees({
         ),
       },
       bouton: "Lancer",
-      indication: "Résultat : un dossier « <votre dossier> (métadonnées changées) », même arborescence.",
       progression: {
         titre: "Changement des métadonnées…",
         enAttente: "Préparation des médias",

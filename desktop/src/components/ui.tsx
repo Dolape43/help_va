@@ -231,3 +231,28 @@ export function Chiffre3D({ n, taille = 44, fonce, clair }: { n: number; taille?
     </span>
   );
 }
+
+/** Joint un dossier et un nom avec le séparateur du chemin (« \\ » sous Windows). */
+export function joindre(dossier: string, nom: string) {
+  const sep = dossier.includes("\\") ? "\\" : "/";
+  return dossier.replace(/[\\/]+$/, "") + sep + nom;
+}
+
+/**
+ * Où arrive le résultat d'un module : le chemin COMPLET (sélectionnable, en entier au survol)
+ * et un bouton pour ouvrir ce dossier.
+ */
+export function LienDossier({ chemin, ouvrir, libelle = "Résultat dans :" }: { chemin: string; ouvrir: () => void; libelle?: string }) {
+  return (
+    // Chemin affiché EN ENTIER (sur 2 lignes s'il le faut) : la fin (« images (jpg) ») est la partie utile.
+    <div className="mt-1.5 flex min-w-0 items-center gap-3">
+      <p className="min-w-0 flex-1 text-12 text-fg-3">
+        {libelle}{" "}
+        <span className="selectable font-mono text-fg-2 [overflow-wrap:anywhere]">{chemin}</span>
+      </p>
+      <Bouton taille="sm" variante="fantome" className="shrink-0" onClick={ouvrir} aria-label={`Ouvrir le dossier ${chemin}`}>
+        Ouvrir
+      </Bouton>
+    </div>
+  );
+}

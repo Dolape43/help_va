@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowRight, CalendarBlank, Check, FolderOpen, Package, Warning, X } from "@phosphor-icons/react";
-import { Bouton, Case, Icone3D, Rouage, Surtitre } from "../components/ui";
+import { Bouton, Case, Icone3D, LienDossier, Rouage, Surtitre, joindre } from "../components/ui";
 import { ICONES_3D } from "../icones3d";
 import EnteteModule from "../components/EnteteModule";
 import Dialogue from "../components/Dialogue";
@@ -242,6 +242,7 @@ export default function Ranger({
   bandeau,
   retour,
   ouvrirDossier,
+  sortie,
   erreur,
   info,
 }: {
@@ -252,6 +253,8 @@ export default function Ranger({
   bandeau: ReactNode;
   retour: () => void;
   ouvrirDossier: (chemin: string) => void;
+  /** le dossier de sortie général (null pendant le chargement) */
+  sortie: string | null;
   erreur: (titre: string, e: unknown) => void;
   info: (titre: string, texte: string) => void;
 }) {
@@ -263,6 +266,7 @@ export default function Ranger({
   const occupe = r.occupe;
   const termine = r.etat === "fini" || r.etat === "arrete";
   const plusieurs = r.comptes.length > 1;
+  const cheminRanger = sortie ? joindre(sortie, "ranger") : null;
   /** le compte affiché à l'étape 2 */
   const c = r.compte;
   const ac = r.analyseDe(r.compteActif);
@@ -645,13 +649,17 @@ export default function Ranger({
                             ? fr(`${pluriel(comptesRanges.length, "compte")} · ${creneauxActifs} créneau${creneauxActifs > 1 ? "x" : ""} à remplir`)
                             : fr(`${pluriel(r.actifs.length, "type")} de post · ${creneauxActifs} créneau${creneauxActifs > 1 ? "x" : ""} à remplir`)}
                 </p>
-                <p className="text-12 text-fg-3">
-                  {occupeAilleurs
-                    ? fr(`Patientez : « ${occupeAilleurs} » doit d'abord se terminer.`)
-                    : plusieurs
-                      ? fr("Résultat dans « ranger », un sous-dossier par compte. Un récapitulatif s'affiche avant de commencer.")
-                      : fr("Résultat dans « ranger », dans votre dossier de sortie. Un récapitulatif s'affiche avant de commencer.")}
-                </p>
+                {occupeAilleurs ? (
+                  <p className="text-12 text-fg-3">{fr(`Patientez : « ${occupeAilleurs} » doit d'abord se terminer.`)}</p>
+                ) : (
+                  cheminRanger && (
+                    <LienDossier
+                      chemin={cheminRanger}
+                      ouvrir={() => ouvrirDossier(cheminRanger)}
+                      libelle={plusieurs ? "Un sous-dossier par compte dans :" : "Résultat dans :"}
+                    />
+                  )
+                )}
               </div>
               <Bouton
                 ref={boutonLancer}

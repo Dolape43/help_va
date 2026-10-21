@@ -10,6 +10,7 @@ export type PropsEcranTraitement = {
   bandeau: ReactNode;
   retour: () => void;
   ouvrirDossier: (chemin: string) => void;
+  sortie: string | null;
 };
 
 const s = (n: number) => (n > 1 ? "s" : "");
@@ -40,7 +41,7 @@ const CONFIG: ConfigTraitement = {
         : null,
   },
   bouton: "Convertir",
-  indication: "Résultat dans « media (mp4) ». La conversion peut être longue selon les vidéos.",
+  dossierResultat: "media (mp4)",
   progression: {
     titre: "Conversion en cours…",
     enAttente: "Conversion des vidéos",
