@@ -110,6 +110,9 @@ export default function App() {
     [moteur, erreur],
   );
 
+  // Fonction STABLE (useCallback) : LienDossier ne revérifie pas le dossier à chaque rendu.
+  const dossierExiste = useCallback((chemin: string) => moteur.dossierExiste(chemin), [moteur]);
+
   /* ---------- Thème ---------- */
   const moteurRef = useRef(moteur);
   moteurRef.current = moteur;
@@ -395,15 +398,7 @@ export default function App() {
   /* ---------- L'application ---------- */
   const bandeau = <BandeauMoteur connexion={m.connexion} raison={m.raison} reconnecter={m.reconnecter} />;
   const retour = () => aller("accueil");
-  // Le dossier de résultat n'existe pas encore (rien n'a été lancé) : on ouvre le dossier de sortie.
-  const ouvrirResultat = async (chemin: string) => {
-    try {
-      await moteur.ouvrirDossier(chemin);
-    } catch {
-      await ouvrirSortieGenerale();
-    }
-  };
-  const commun = { bandeau, retour, ouvrirDossier: (c: string) => void ouvrirResultat(c), sortie: m.sortie };
+  const commun = { bandeau, retour, ouvrirDossier: (c: string) => void ouvrir(c), dossierExiste, sortie: m.sortie };
 
   const ecran = (() => {
     if (page === "accueil")

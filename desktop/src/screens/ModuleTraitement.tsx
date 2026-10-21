@@ -93,6 +93,7 @@ export default function ModuleTraitement({
   bandeau,
   retour,
   ouvrirDossier,
+  dossierExiste,
   sortie,
 }: {
   mod: ModuleDef;
@@ -103,6 +104,7 @@ export default function ModuleTraitement({
   bandeau: ReactNode;
   retour: () => void;
   ouvrirDossier: (chemin: string) => void;
+  dossierExiste: (chemin: string) => Promise<boolean>;
   /** le dossier de sortie général (null pendant le chargement) */
   sortie: string | null;
 }) {
@@ -218,7 +220,9 @@ export default function ModuleTraitement({
                 {occupeAilleurs ? (
                   <p className="text-12 text-fg-3">{fr(`Patientez : « ${occupeAilleurs} » doit d'abord se terminer.`)}</p>
                 ) : (
-                  cheminResultat && <LienDossier chemin={cheminResultat} ouvrir={() => ouvrirDossier(cheminResultat)} />
+                  cheminResultat && (
+                    <LienDossier chemin={cheminResultat} ouvrir={() => ouvrirDossier(cheminResultat)} existe={dossierExiste} cle={t.resultat} />
+                  )
                 )}
               </div>
               <Bouton

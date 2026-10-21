@@ -294,6 +294,8 @@ export interface Moteur {
   /** Le dossier de sortie effectif (créé s'il n'existe pas, comme l'ancienne app). */
   dossierSortie(): Promise<{ chemin: string; defaut: string; personnalise: boolean }>;
   ouvrirDossier(chemin: string): Promise<void>;
+  /** le dossier existe-t-il déjà ? (« Ouvrir » reste grisé tant qu'il n'est pas créé) */
+  dossierExiste(chemin: string): Promise<boolean>;
   choisirDossier(titre?: string): Promise<string | null>;
   choisirFichiers(titre?: string, filtre?: FiltreFichiers): Promise<string[]>;
 
@@ -375,6 +377,9 @@ export class MoteurReel implements Moteur {
     // (jamais un .exe). Ça marche pareil avec le pont de dev et dans Tauri, sans donner à
     // l'interface la permission d'ouvrir n'importe quel chemin.
     await this.client.appeler("ouvrir_dans_explorateur", { chemin });
+  }
+  async dossierExiste(chemin: string) {
+    return (await this.client.appeler<{ existe: boolean }>("dossier_existe", { chemin })).existe;
   }
 
   async choisirDossier(titre = "Choisir un dossier") {

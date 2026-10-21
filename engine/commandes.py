@@ -578,6 +578,13 @@ def ouvrir_dans_explorateur(ctx, args):
     return {"ok": True}
 
 
+@commande("dossier_existe")
+def dossier_existe(ctx, args):
+    """Le dossier existe-t-il déjà ? (l'interface grise « Ouvrir » tant qu'il n'est pas créé)"""
+    chemin = args.get("chemin")
+    return {"existe": bool(est_absolu(chemin) and os.path.isdir(chemin))}
+
+
 @commande("preparer")
 def preparer(ctx, args):
     """Avant une tâche longue : où ira le résultat ? Faudra-t-il REMPLACER un dossier ?

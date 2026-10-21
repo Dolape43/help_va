@@ -242,6 +242,7 @@ export default function Ranger({
   bandeau,
   retour,
   ouvrirDossier,
+  dossierExiste,
   sortie,
   erreur,
   info,
@@ -253,6 +254,7 @@ export default function Ranger({
   bandeau: ReactNode;
   retour: () => void;
   ouvrirDossier: (chemin: string) => void;
+  dossierExiste: (chemin: string) => Promise<boolean>;
   /** le dossier de sortie général (null pendant le chargement) */
   sortie: string | null;
   erreur: (titre: string, e: unknown) => void;
@@ -656,6 +658,8 @@ export default function Ranger({
                     <LienDossier
                       chemin={cheminRanger}
                       ouvrir={() => ouvrirDossier(cheminRanger)}
+                      existe={dossierExiste}
+                      cle={r.resultat}
                       libelle={plusieurs ? "Un sous-dossier par compte dans :" : "Résultat dans :"}
                     />
                   )

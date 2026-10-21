@@ -10,6 +10,7 @@ export type PropsEcranTraitement = {
   bandeau: ReactNode;
   retour: () => void;
   ouvrirDossier: (chemin: string) => void;
+  dossierExiste: (chemin: string) => Promise<boolean>;
   sortie: string | null;
 };
 
