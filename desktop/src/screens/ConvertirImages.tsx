@@ -19,8 +19,7 @@ export default function ConvertirImages({
   const occupe = props.t.occupe;
   const config = useMemo<ConfigTraitement>(
     () => ({
-      sousTitre: "Convertit vos images en .jpg ou .png (HEIC iPhone inclus).",
-      points: ["JPG ou PNG", "Photos iPhone HEIC lisibles", "Originaux intacts"],
+      sousTitre: "Convertit n'importe quel type d'image en .jpg ou .png.",
       mot: "image",
       feminin: true,
       info: fr(

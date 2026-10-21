@@ -16,8 +16,8 @@ import { fr, pluriel } from "../fr";
 /** Ce qui change d'un module de traitement à l'autre (MP4, images, métadonnées). */
 export type ConfigTraitement = {
   sousTitre: string;
-  /** 2 ou 3 points clés très courts, sous le titre */
-  points: string[];
+  /** 2 ou 3 points clés très courts, sous le titre (facultatif) */
+  points?: string[];
   /** l'explication complète (« En savoir plus ») */
   info: ReactNode;
   /** ce qu'on traite, au singulier (« vidéo », « image », « média ») et son genre */
