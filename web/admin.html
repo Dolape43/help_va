@@ -464,7 +464,9 @@ function statutLabel(s){return s==="resiliee"?"résiliée":s==="utilise"?"utilis
 function ligneLic(l){
   const exp=l.exp?("exp. "+l.exp):"à vie";
   return '<div class="row clic" onclick="ouvrirProfil(\''+esc(l.id)+'\')" title="Voir la fiche"><div class="id"><div class="nm">'+esc(l.nom_client||"—")+' <span class="pill '+esc(l.statut)+'">'+esc(statutLabel(l.statut))+'</span></div>'
-    +'<div class="meta mono">'+esc(l.empreinte)+' · '+esc(typeLabel(l.type))+' · '+esc(exp)+'</div></div>'+actionsLic(l)+'</div>';
+    +'<div class="meta mono">'+esc(l.empreinte)+' · '+esc(typeLabel(l.type))+' · '+esc(exp)+'</div></div>'
+    // Un seul bouton dans la liste : les actions (nouveau code, supprimer, activer…) sont dans la fiche.
+    +'<button class="iact" onclick="event.stopPropagation();ouvrirProfil(''+esc(l.id)+'')">Voir le profil</button></div>';
 }
 async function supprimerVA(id){
   const l=_lics.find(x=>x.id===id);
