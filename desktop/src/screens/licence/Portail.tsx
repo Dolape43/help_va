@@ -75,11 +75,14 @@ function PanneauVisuel() {
     );
   }
   return (
-    // Fond noir, un faisceau de lumière d'en haut, un sol en perspective, le texte en bas.
-    // Sans logo, rien ne bouge.
+    // « Aurore » : fond nuit, trois grandes lueurs floues (bleu HelpVA, violet, cyan) et un léger
+    // grain, le texte en bas. Sans logo, rien ne bouge.
     <div aria-hidden="true" className="panneau-portail relative hidden flex-col overflow-hidden text-white md:flex">
-      <div className="absolute inset-x-0 top-0 h-[75%] bg-[radial-gradient(45%_70%_at_50%_0%,rgba(142,162,255,0.32),rgba(58,92,255,0.08)_55%,transparent_75%)]" />
-      <div className="sol-portail absolute inset-x-[-30%] bottom-[22%] h-[38%]" />
+      <div className="absolute -left-[20%] -top-[15%] h-[70%] w-[90%] rounded-full bg-[#3a5cff] opacity-90 blur-[70px]" />
+      <div className="absolute -right-[25%] top-[20%] h-[60%] w-[75%] rounded-full bg-[#8b5cf6] opacity-75 blur-[80px]" />
+      <div className="absolute -bottom-[20%] left-[10%] h-[45%] w-[70%] rounded-full bg-[#22d3ee] opacity-50 blur-[70px]" />
+      <div className="grain-portail absolute inset-0" />
+      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[linear-gradient(to_top,rgba(5,6,15,0.7),transparent)]" />
       <div className="min-h-[300px] flex-1" />
       <div className="relative px-8 pb-8">
         <p className="text-20 font-semibold leading-snug">Préparez vos contenus Instagram en quelques clics.</p>

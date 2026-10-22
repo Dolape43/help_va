@@ -353,18 +353,14 @@ button:disabled {
 /* Panneau de gauche des écrans de licence (en attendant l'illustration) : le bleu de la marque,
    plus foncé en bas (là où est le texte blanc : contraste AA), avec une trame de points. */
 .panneau-portail {
-  /* Noir profond, à peine éclairé au centre (derrière le logo) */
-  background: radial-gradient(70% 60% at 50% 50%, #1a1b22 0%, #0b0b0f 60%, #050507 100%);
+  /* Nuit profonde, sous les lueurs « aurore » de l'écran de licence */
+  background: #070814;
 }
-/* Sol en perspective sous le logo (écran de licence) : quadrillage fin qui s'efface au loin */
-.sol-portail {
-  background-image:
-    linear-gradient(rgba(142, 162, 255, 0.24) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(142, 162, 255, 0.24) 1px, transparent 1px);
-  background-size: 44px 44px;
-  transform: perspective(380px) rotateX(62deg);
-  transform-origin: bottom center;
-  mask-image: radial-gradient(60% 90% at 50% 100%, #000 30%, transparent 75%);
+/* Grain très léger : les dégradés flous ne font pas de « bandes » */
+.grain-portail {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity: 0.12;
+  mix-blend-mode: overlay;
 }
 @keyframes flotter {
   0%,
