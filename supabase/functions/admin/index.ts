@@ -86,15 +86,23 @@ async function dbInsert(row: unknown) {
   if (!r.ok) throw new Error("db insert " + r.status + " " + (await r.text()));
 }
 async function dbListe() {
-  // Les VA supprimés (supprime_le renseigné) ne sont plus listés. Si la colonne n'existe pas
-  // encore (SQL 20261023 pas appliqué), on liste tout plutôt que de casser la console.
+  // Les VA supprimés (supprime_le renseigné) ne sont plus listés ; chaque licence vient avec
+  // son agence_id. Si une colonne n'existe pas encore (SQL 20261023_suppression_va.sql ou
+  // 20261023_agences.sql pas appliqué), on liste sans elle plutôt que de casser la console.
   const champs = "id,empreinte,nom_client,type,exp,premium,statut,cree_le";
-  const r = await fetch(
-    `${SUPA_URL}/rest/v1/licences?select=${champs}&supprime_le=is.null&order=cree_le.desc`,
-    { headers: dbHeaders() });
-  if (r.ok) return await r.json();
-  const r2 = await fetch(`${SUPA_URL}/rest/v1/licences?select=${champs}&order=cree_le.desc`, { headers: dbHeaders() });
-  return await r2.json();
+  const essais = [
+    `select=${champs},agence_id&supprime_le=is.null`,
+    `select=${champs}&supprime_le=is.null`,
+    `select=${champs},agence_id`,
+    `select=${champs}`,
+  ];
+  let derniere = "";
+  for (const q of essais) {
+    const r = await fetch(`${SUPA_URL}/rest/v1/licences?${q}&order=cree_le.desc`, { headers: dbHeaders() });
+    if (r.ok) return await r.json();
+    derniere = r.status + " " + (await r.text());
+  }
+  throw new Error("db licences " + derniere);
 }
 async function dbSupprimer(id: string) {
   // « Supprimer » = résilier + masquer (voir supabase/migrations/20261023_suppression_va.sql).
@@ -244,6 +252,7 @@ function resumerActivite(licences: any[], lignes: any[], aujourdhui: Date) {
   for (const l of licences) {
     parLicence.set(l.id, {
       id: l.id, nom_client: l.nom_client, empreinte: l.empreinte, type: l.type, statut: l.statut,
+      agence_id: l.agence_id ?? null, agence_nom: l.agence_nom ?? null,
       aujourd_hui: vide(), semaine: vide(), mois: vide(), total: vide(), dernier_jour: null,
     });
   }
@@ -278,8 +287,14 @@ async function dbLire(table: string, filtre: string, cols: string) {
   return await r.json();
 }
 async function dbLicence(id: string) {
-  const rows = await dbLire("licences", `id=eq.${id}`, COLS_LICENCE);
-  return rows[0] || null;
+  // Avec agence_id si la colonne existe (SQL 20261023_agences.sql), sinon sans.
+  try {
+    const rows = await dbLire("licences", `id=eq.${id}`, COLS_LICENCE + ",agence_id");
+    return rows[0] || null;
+  } catch {
+    const rows = await dbLire("licences", `id=eq.${id}`, COLS_LICENCE);
+    return rows[0] || null;
+  }
 }
 async function dbActiviteLicence(licence_id: string) {
   // Même lecture page par page que dbToutesActivites, limitée à une licence.
@@ -344,7 +359,8 @@ async function profilVA(lic: any, aujourdhui: Date) {
   };
 }
 
-// Nouveau code d'activation pour un VA existant : mêmes nom, formule, premium (et jours d'essai).
+// Nouveau code d'activation pour un VA existant : mêmes nom, formule, premium (et jours d'essai),
+// même agence (si le VA en a une).
 // Le code garde licence_id = l'ancienne licence tant qu'il est libre (lien visible dans la fiche) ;
 // à l'activation, dbMarquerCode le remplace par la nouvelle licence.
 async function nouveauCodePour(lic: any, typeDemande: unknown) {
@@ -359,8 +375,95 @@ async function nouveauCodePour(lic: any, typeDemande: unknown) {
   await dbInsertCodes([{
     code, type, premium: !!lic.premium, jours,
     nom_client: (lic.nom_client || "").trim() || null, statut: "libre", licence_id: lic.id,
+    ...(lic.agence_id ? { agence_id: lic.agence_id } : {}),
   }]);
   return code;
+}
+
+// ---------- agences (ranger les VA par agence, voir supabase/migrations/20261023_agences.sql) ----------
+const MSG_AGENCES_ABSENTES =
+  "Les agences ne sont pas encore installées : exécute d'abord le SQL 20261023_agences.sql dans Supabase.";
+const MAX_NOM_AGENCE = 60;
+
+// Erreur « normale » (saisie invalide, doublon…) : renvoyée telle quelle à la console.
+class ErreurClient extends Error {
+  status: number;
+  constructor(message: string, status = 400) { super(message); this.status = status; }
+}
+// Table ou colonne absente (SQL pas encore appliqué) : PostgREST répond 404 (table) ou 400 (colonne).
+const sqlAbsent = (status: number, texte: string) =>
+  status === 404 || /42P01|42703|PGRST20[045]/.test(texte);
+
+function nomAgence(v: unknown): string {
+  const nom = typeof v === "string" ? v.trim().replace(/\s+/g, " ") : "";
+  if (!nom || nom.length > MAX_NOM_AGENCE)
+    throw new ErreurClient(`Nom d'agence invalide (1 à ${MAX_NOM_AGENCE} caractères).`);
+  return nom;
+}
+// UUID facultatif : null / "" -> null ; sinon un UUID valide, ou une erreur claire.
+function uuidOuNull(v: unknown, quoi: string): string | null {
+  if (v == null || v === "") return null;
+  const id = typeof v === "string" ? v.trim() : "";
+  if (!UUID.test(id)) throw new ErreurClient(`Identifiant ${quoi} invalide.`);
+  return id;
+}
+
+// Liste des agences. strict = false : null si la table n'existe pas encore (la console
+// fonctionne alors sans agences) ; strict = true : erreur claire à la place.
+async function dbAgences(strict = false): Promise<any[] | null> {
+  const r = await fetch(`${SUPA_URL}/rest/v1/agences?select=id,nom,cree_le&order=nom.asc`, { headers: dbHeaders() });
+  if (r.ok) return await r.json();
+  if (!strict) return null;
+  const texte = await r.text();
+  if (sqlAbsent(r.status, texte)) throw new ErreurClient(MSG_AGENCES_ABSENTES);
+  throw new Error("db agences " + r.status + " " + texte);
+}
+async function agenceExiste(id: string) {
+  return ((await dbAgences(true)) || []).some((a) => a.id === id);
+}
+// Écriture dans la table agences (création, renommage, suppression) -> lignes touchées.
+async function dbEcrireAgences(methode: string, filtre: string, corps?: unknown): Promise<any[]> {
+  const r = await fetch(`${SUPA_URL}/rest/v1/agences?select=id,nom${filtre}`, {
+    method: methode,
+    headers: dbHeaders({ "Content-Type": "application/json", Prefer: "return=representation" }),
+    body: corps === undefined ? undefined : JSON.stringify(corps),
+  });
+  const texte = await r.text();
+  if (r.ok) return texte ? JSON.parse(texte) : [];
+  // Index unique sur lower(nom) : « Erika » et « erika » sont la même agence.
+  if (r.status === 409 || texte.includes("23505")) throw new ErreurClient("Cette agence existe déjà.", 409);
+  if (sqlAbsent(r.status, texte)) throw new ErreurClient(MSG_AGENCES_ABSENTES);
+  throw new Error("db agences " + r.status + " " + texte);
+}
+// Ajoute agence_nom à chaque licence (agence_id absent = SQL pas appliqué -> null).
+function nommerAgences(licences: any[], agences: any[] | null) {
+  const noms = new Map((agences || []).map((a) => [a.id, a.nom]));
+  for (const l of licences) {
+    l.agence_id = l.agence_id ?? null;
+    l.agence_nom = l.agence_id ? noms.get(l.agence_id) ?? null : null;
+  }
+  return licences;
+}
+// Agences + nombre de VA (licences non supprimées) dans chacune. null reste null.
+function compterVA(agences: any[] | null, licences: any[]) {
+  if (!agences) return null;
+  const nb = new Map<string, number>();
+  for (const l of licences) if (l.agence_id) nb.set(l.agence_id, (nb.get(l.agence_id) || 0) + 1);
+  return agences.map((a) => ({ id: a.id, nom: a.nom, cree_le: a.cree_le, nb_va: nb.get(a.id) || 0 }));
+}
+async function dbLicenceAgence(licence_id: string, agence_id: string | null) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/licences?id=eq.${licence_id}&select=id`, {
+    method: "PATCH",
+    headers: dbHeaders({ "Content-Type": "application/json", Prefer: "return=representation" }),
+    body: JSON.stringify({ agence_id }),
+  });
+  const texte = await r.text();
+  if (!r.ok) {
+    if (sqlAbsent(r.status, texte)) throw new ErreurClient(MSG_AGENCES_ABSENTES);
+    if (r.status === 409 || texte.includes("23503")) throw new ErreurClient("Agence introuvable.", 404);
+    throw new Error("db licence agence " + r.status + " " + texte);
+  }
+  return (texte ? JSON.parse(texte) : []).length > 0;
 }
 
 const json = (o: unknown, s = 200) =>
@@ -387,10 +490,19 @@ Deno.serve(async (req) => {
       const payload = construirePayload(emp, c.type, c.nom_client || "", !!c.premium, c.jours || 0);
       const licence = await genererLicence(payload);
       const cle_hash = await sha256hex(licence);
-      const licence_id = await dbInsertLicenceRet({
+      const ligne = {
         empreinte: emp, cle_hash, nom_client: c.nom_client || null,
         type: c.type, exp: (payload as any).exp || null, premium: !!c.premium, statut: "actif",
-      });
+      };
+      // L'agence du code passe à la licence. Si ça échoue (SQL des agences incomplet…),
+      // on active SANS agence : l'activation d'un VA ne doit jamais échouer à cause des agences.
+      let licence_id: string;
+      if (c.agence_id) {
+        try { licence_id = await dbInsertLicenceRet({ ...ligne, agence_id: c.agence_id }); }
+        catch { licence_id = await dbInsertLicenceRet(ligne); }
+      } else {
+        licence_id = await dbInsertLicenceRet(ligne);
+      }
       await dbMarquerCode(code, emp, licence_id);
       return json({ ok: true, licence, exp: (payload as any).exp || null });
     }
@@ -426,7 +538,11 @@ Deno.serve(async (req) => {
       });
       return json({ ok: true, licence, exp: (payload as any).exp || null });
     }
-    if (body.action === "lister") return json({ ok: true, licences: await dbListe() });
+    if (body.action === "lister") {
+      // agences = null tant que le SQL des agences n'est pas appliqué (la console les masque).
+      const [licences, agences] = await Promise.all([dbListe(), dbAgences()]);
+      return json({ ok: true, licences: nommerAgences(licences, agences), agences: compterVA(agences, licences) });
+    }
     if (body.action === "supprimer") {
       const id = typeof body.id === "string" ? body.id.trim() : "";
       if (!UUID.test(id)) return json({ erreur: "Identifiant de licence invalide." }, 400);
@@ -441,19 +557,56 @@ Deno.serve(async (req) => {
     if (body.action === "creer_codes") {
       const n = Math.min(Math.max(parseInt(body.n) || 1, 1), 100);
       const type = ["vie", "mois", "an", "essai"].includes(body.type) ? body.type : "vie";
+      // Agence facultative : sans elle, les codes sont créés comme avant (même sans le SQL des agences).
+      const agence_id = uuidOuNull(body.agence_id, "d'agence");
+      if (agence_id && !(await agenceExiste(agence_id))) return json({ erreur: "Agence introuvable." }, 404);
       const codes = Array.from({ length: n }, () => genererCode());
       await dbInsertCodes(codes.map((code) => ({
         code, type, premium: !!body.premium, jours: body.jours || null,
         nom_client: (body.nom || "").trim() || null, statut: "libre",
+        ...(agence_id ? { agence_id } : {}),
       })));
       return json({ ok: true, codes });
     }
     if (body.action === "lister_codes") return json({ ok: true, codes: await dbListeCodes() });
+    if (body.action === "agences_lister") {
+      const agences = await dbAgences(true);
+      return json({ ok: true, agences: compterVA(agences, await dbListe()) });
+    }
+    if (body.action === "agence_creer") {
+      const rows = await dbEcrireAgences("POST", "", { nom: nomAgence(body.nom) });
+      return json({ ok: true, agence: rows[0] || null });
+    }
+    if (body.action === "agence_renommer") {
+      const id = uuidOuNull(body.id, "d'agence");
+      if (!id) return json({ erreur: "Identifiant d'agence invalide." }, 400);
+      const rows = await dbEcrireAgences("PATCH", `&id=eq.${id}`, { nom: nomAgence(body.nom) });
+      if (!rows.length) return json({ erreur: "Agence introuvable." }, 404);
+      return json({ ok: true, agence: rows[0] });
+    }
+    if (body.action === "agence_supprimer") {
+      // « on delete set null » (voir le SQL) : ses licences et codes passent « sans agence ».
+      const id = uuidOuNull(body.id, "d'agence");
+      if (!id) return json({ erreur: "Identifiant d'agence invalide." }, 400);
+      const rows = await dbEcrireAgences("DELETE", `&id=eq.${id}`);
+      if (!rows.length) return json({ erreur: "Agence introuvable." }, 404);
+      return json({ ok: true });
+    }
+    if (body.action === "licence_agence") {
+      const licence_id = uuidOuNull(body.licence_id, "de licence");
+      if (!licence_id) return json({ erreur: "Identifiant de licence invalide." }, 400);
+      const agence_id = uuidOuNull(body.agence_id, "d'agence"); // null = « sans agence »
+      if (agence_id && !(await agenceExiste(agence_id))) return json({ erreur: "Agence introuvable." }, 404);
+      if (!(await dbLicenceAgence(licence_id, agence_id))) return json({ erreur: "Licence introuvable." }, 404);
+      return json({ ok: true });
+    }
     if (body.action === "activite_lister") {
       // Calcul en JS à partir de toutes les lignes (quelques milliers au plus : reste simple).
       const aujourdhui = dateValide(body.aujourdhui) ?? new Date(isoDate(new Date()) + "T00:00:00Z");
-      const [licences, lignes] = await Promise.all([dbListe(), dbToutesActivites()]);
-      return json({ ok: true, activite: resumerActivite(licences, lignes, aujourdhui) });
+      const [licences, lignes, agences] = await Promise.all([dbListe(), dbToutesActivites(), dbAgences()]);
+      nommerAgences(licences, agences);
+      return json({ ok: true, activite: resumerActivite(licences, lignes, aujourdhui),
+                    agences: compterVA(agences, licences) });
     }
     if (body.action === "profil" || body.action === "nouveau_code") {
       const id = typeof body.licence_id === "string" ? body.licence_id.trim() : "";
@@ -463,7 +616,9 @@ Deno.serve(async (req) => {
       if (body.action === "profil") {
         const aujourdhui = dateValide(body.aujourd_hui ?? body.aujourdhui)
           ?? new Date(isoDate(new Date()) + "T00:00:00Z");
-        return json({ ok: true, ...(await profilVA(lic, aujourdhui)) });
+        const agences = await dbAgences();
+        nommerAgences([lic], agences);
+        return json({ ok: true, ...(await profilVA(lic, aujourdhui)), agences });
       }
       if (body.type != null && !TYPES.includes(body.type))
         return json({ erreur: "Formule invalide (vie, mois, an ou essai)." }, 400);
@@ -474,6 +629,7 @@ Deno.serve(async (req) => {
     }
     return json({ erreur: "action inconnue" }, 400);
   } catch (e) {
+    if (e instanceof ErreurClient) return json({ erreur: e.message }, e.status);
     return json({ erreur: String(e) }, 500);
   }
 });

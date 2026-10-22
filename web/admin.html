@@ -51,9 +51,9 @@ main{flex:1;padding:22px 24px 44px}
 h1{font-size:19px;font-weight:600;margin:2px 0 2px;letter-spacing:-.01em;text-wrap:balance}
 .sub{color:var(--mut);font-size:13.5px;margin:0 0 18px}
 label{display:block;font-size:12px;font-weight:500;color:var(--mut);margin:14px 0 6px;letter-spacing:.01em}
-input[type=text],input[type=number],input.f{width:100%;font-family:var(--sans);font-size:15px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:12px 13px;transition:.15s}
+input[type=text],input[type=number],input.f,select.f{width:100%;font-family:var(--sans);font-size:15px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:12px 13px;transition:.15s}
 input.mono{font-family:var(--mono);letter-spacing:.02em}
-input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-weak)}
+input:focus,select:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-weak)}
 input::placeholder{color:var(--faint)}
 .btn{width:100%;font-family:var(--sans);font-size:14.5px;font-weight:600;border:none;border-radius:var(--r-sm);padding:13px;cursor:pointer;transition:.15s;margin-top:20px}
 .btn.primary{background:var(--acc);color:var(--acc-ink)}
@@ -173,6 +173,19 @@ input::placeholder{color:var(--faint)}
 .check input{margin:3px 0 0;accent-color:var(--acc);width:16px;height:16px;flex:none}
 @media (max-width:480px){.tiles{grid-template-columns:repeat(2,1fr)}}
 .toast{z-index:30}
+select.f{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:36px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239A9DB0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center}
+.filtres{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.filtres .search{flex:1 1 220px;margin-bottom:0}
+.filtres select.f{flex:1 1 180px;width:auto}
+.grp{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:13px;font-weight:600;margin:18px 0 0;padding:0 2px 7px;border-bottom:1px solid var(--line)}
+.grp:first-child{margin-top:6px}
+.grp .n{font-size:12px;font-weight:500;color:var(--faint);white-space:nowrap}
+.grp+.row{border-top:none}
+.act tr.grp td{background:var(--surface-2);text-align:left;font-size:12.5px;font-weight:600;padding:9px 10px;border-top:1px solid var(--line)}
+.act tr.grp span{color:var(--mut);font-weight:500}
+.infos select.f{font-size:13.5px;padding:6px 32px 6px 10px;width:auto;max-width:100%;background-position:right 10px center}
+.ajout{display:flex;gap:8px}
+.ajout .iact{padding:0 14px}
 </style>
 
 <div class="shell">
@@ -214,27 +227,13 @@ input::placeholder{color:var(--faint)}
       <!-- CREER -->
       <section class="panel" id="p-creer">
         <div class="steps">
-          <div class="step on" id="s1"><div class="dot">1</div><div class="nm">Type</div><div class="bar"></div></div>
-          <div class="step" id="s2"><div class="dot">2</div><div class="nm">Détails</div><div class="bar"></div></div>
-          <div class="step" id="s3"><div class="dot">3</div><div class="nm">Résultat</div></div>
+          <div class="step on" id="s1"><div class="dot">1</div><div class="nm">Détails</div><div class="bar"></div></div>
+          <div class="step" id="s2"><div class="dot">2</div><div class="nm">Résultat</div></div>
         </div>
 
         <div id="w1">
           <h1>Créer des codes d'activation</h1>
           <p class="sub">Le client saisit un code dans l'app, l'activation est automatique.</p>
-          <div class="choice">
-            <button class="opt" aria-pressed="true" onclick="choisir(this,'code')">
-              <span class="tick"></span>
-              <span><span class="ttl">Codes d'activation</span>
-              <span class="ds">Génère un ou plusieurs codes à envoyer à tes clients.</span></span>
-            </button>
-          </div>
-          <button class="btn primary" onclick="etape(2)">Continuer</button>
-        </div>
-
-        <div id="w2" hidden>
-          <h1 id="w2t">Détails des codes</h1>
-          <p class="sub" id="w2s">Configure puis génère.</p>
 
           <div id="f-code">
             <label>Quantité</label>
@@ -246,13 +245,16 @@ input::placeholder{color:var(--faint)}
             </div>
             <label>Nom du client <span style="color:var(--faint)">— optionnel</span></label>
             <input class="f" type="text" id="cNom" placeholder="Ex. Agence Erika">
+            <div id="cAgenceBloc" hidden>
+              <label for="cAgence">Agence <span style="color:var(--faint)">— optionnel</span></label>
+              <select class="f" id="cAgence"><option value="">Sans agence</option></select>
+            </div>
           </div>
 
           <button class="btn primary" id="btnGen" onclick="generer()">Générer</button>
-          <button class="btn ghost" onclick="etape(1)">Retour</button>
         </div>
 
-        <div id="w3" hidden>
+        <div id="w2" hidden>
           <div class="result" id="r-code">
             <div class="done-h"><span class="r"></span><b id="r-code-h">Codes créés</b></div>
             <div class="codeblock" id="r-code-list"></div>
@@ -264,9 +266,15 @@ input::placeholder{color:var(--faint)}
 
       <!-- LICENCES -->
       <section class="panel" id="p-licences" hidden>
-        <h1>Licences</h1>
-        <p class="sub" id="licSub">Chargement…</p>
-        <input class="f search" type="text" id="licSearch" placeholder="Rechercher un client ou une empreinte" oninput="filtrer()">
+        <div class="headrow">
+          <div><h1>Licences</h1>
+          <p class="sub" id="licSub">Chargement…</p></div>
+          <button class="iact" type="button" onclick="ouvrirAgences()">Agences</button>
+        </div>
+        <div class="filtres">
+          <input class="f search" type="text" id="licSearch" placeholder="Rechercher un client ou une empreinte" oninput="filtrer()">
+          <select class="f" id="licAgence" onchange="filtrer()" aria-label="Filtrer par agence" hidden></select>
+        </div>
         <div class="list" id="licList"></div>
       </section>
 
@@ -283,6 +291,9 @@ input::placeholder{color:var(--faint)}
           <div><h1>Activité</h1>
           <p class="sub" id="actSub">Chargement…</p></div>
           <button class="iact" type="button" onclick="chargerActivite()">Actualiser</button>
+        </div>
+        <div class="filtres" id="actFiltres" hidden>
+          <select class="f" id="actAgence" onchange="rendreActivite()" aria-label="Filtrer par agence"></select>
         </div>
         <div class="tablewrap">
           <table class="act">
@@ -331,6 +342,23 @@ input::placeholder{color:var(--faint)}
       <button class="btn primary" onclick="copyTxt($('ncCode').textContent)">Copier</button>
       <button class="btn ghost" onclick="fermerNC()">Fermer</button>
     </div>
+  </div>
+</div>
+<!-- AGENCES -->
+<div class="modal haut" id="ag" hidden onclick="if(event.target===this)fermerAgences()">
+  <div class="sheet petit" role="dialog" aria-modal="true" aria-labelledby="agTitre">
+    <div class="sheethead">
+      <div><h1 id="agTitre">Agences</h1><p class="sub" id="agSub" style="margin:0">Chargement…</p></div>
+      <button class="fermer" type="button" onclick="fermerAgences()" aria-label="Fermer">×</button>
+    </div>
+    <label for="agNom">Nouvelle agence</label>
+    <div class="ajout">
+      <input class="f" type="text" id="agNom" maxlength="60" placeholder="Ex. Agence Erika" onkeydown="if(event.key==='Enter')creerAgence()">
+      <button class="iact acc" type="button" id="btnAg" onclick="creerAgence()">Créer</button>
+    </div>
+    <div class="err" id="agErr"></div>
+    <div class="list" id="agList" style="margin-top:10px"></div>
+    <button class="btn ghost" onclick="fermerAgences()">Fermer</button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -385,7 +413,7 @@ async function entrer(){
     $("loginErr").textContent=d.erreur==="mauvais mot de passe"?"Mot de passe incorrect.":(d.erreur||"Connexion impossible.");
   }
 }
-function sortir(){fermerNC();fermerProfil();$("app").hidden=true;$("login").hidden=false;}
+function sortir(){fermerNC();fermerAgences();fermerProfil();$("app").hidden=true;$("login").hidden=false;}
 
 /* onglets */
 function onglet(id,el){
@@ -398,41 +426,63 @@ function onglet(id,el){
   if(id==="activite")chargerActivite();
 }
 
-/* wizard */
-let mode="code";
-function choisir(el,m){mode=m;document.querySelectorAll(".opt").forEach(o=>o.setAttribute("aria-pressed","false"));el.setAttribute("aria-pressed","true");}
+/* wizard : 1 Détails -> 2 Résultat */
 document.querySelectorAll(".seg").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{
   seg.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true");}));
 function typeDe(segId){const b=document.querySelector("#"+segId+" button[aria-pressed='true']");const t=b?b.textContent.trim():"1 mois";
   return {"À vie":"vie","1 mois":"mois","1 an":"an","Essai":"essai"}[t]||"mois";}
 function typeLabel(t){return {vie:"À vie",mois:"1 mois",an:"1 an",essai:"Essai"}[t]||t;}
 function etape(n){
-  $("w1").hidden=n!==1;$("w2").hidden=n!==2;$("w3").hidden=n!==3;
-  const S=[$("s1"),$("s2"),$("s3")];
+  $("w1").hidden=n!==1;$("w2").hidden=n!==2;
+  const S=[$("s1"),$("s2")];
   S.forEach((s,i)=>{s.classList.remove("on","done");if(i<n-1)s.classList.add("done");else if(i===n-1)s.classList.add("on");});
-  if(n===2){
-    $("f-code").hidden=false;
-    $("w2t").textContent="Détails des codes";
-    $("w2s").textContent="Configure la formule puis génère.";
-  }
 }
 
 /* génération */
 let dernier={mode:"code",codes:[],licence:""};
 async function generer(){
   const btn=$("btnGen");btn.disabled=true;btn.textContent="Génération…";
-  const d=await api({action:"creer_codes",n:$("cN").value,type:typeDe("seg-code"),nom:$("cNom").value});
+  // Agence facultative (sélecteur masqué tant que le SQL des agences n'est pas appliqué).
+  const agence_id=$("cAgenceBloc").hidden?null:($("cAgence").value||null);
+  const d=await api({action:"creer_codes",n:$("cN").value,type:typeDe("seg-code"),nom:$("cNom").value,agence_id});
   btn.disabled=false;btn.textContent="Générer";
   if(!d.ok){toast(d.erreur||"Erreur");return;}
   dernier={mode:"code",codes:d.codes};
   $("r-code").hidden=false;
   $("r-code-h").textContent=d.codes.length+(d.codes.length>1?" codes créés":" code créé");
   $("r-code-list").innerHTML=d.codes.map(c=>'<div class="codeline clic" onclick="copyTxt(\''+c+'\')" title="Cliquer pour copier">'+c+'</div>').join("");
-  etape(3);
+  etape(2);
 }
 function copier(){
   const txt=dernier.mode==="code"?dernier.codes.join("\n"):dernier.licence;
   navigator.clipboard.writeText(txt).then(()=>toast("Copié"));
+}
+
+/* agences : filtres et regroupements (Licences, Activité) */
+// _agences = null tant que le SQL des agences n'est pas appliqué : tout s'affiche alors comme avant.
+let _agences=null;
+function trierAgences(A){return Array.isArray(A)?A.slice().sort((a,b)=>String(a.nom).localeCompare(String(b.nom),"fr",{sensitivity:"base"})):null;}
+function nbVA(n){return n+" VA";}
+function optionsAgences(A){return (A||[]).map(a=>'<option value="'+esc(a.id)+'">'+esc(a.nom)+'</option>').join("");}
+// Remplit les sélecteurs d'agence en gardant le choix en cours (s'il existe encore).
+function majSelectsAgence(){
+  const dispo=!!_agences,opts=optionsAgences(_agences);
+  [["licAgence",true],["actAgence",true],["cAgence",false]].forEach(([id,filtre])=>{
+    const s=$(id),v=dispo?s.value:"";
+    s.innerHTML=(filtre?'<option value="">Toutes les agences</option><option value="_sans">Sans agence</option>':'<option value="">Sans agence</option>')+opts;
+    s.value=v;if(s.value!==v)s.value="";
+  });
+  $("licAgence").hidden=!dispo;$("actFiltres").hidden=!dispo;$("cAgenceBloc").hidden=!dispo;
+}
+// "" = toutes, "_sans" = sans agence, sinon l'id d'une agence.
+function filtreAgence(selId,x){const v=$(selId).value;return !v||(v==="_sans"?!x.agence_id:x.agence_id===v);}
+// Range les lignes par agence (ordre alphabétique, « Sans agence » à la fin) avec un titre par groupe.
+// Aucune agence créée (ou SQL pas appliqué) : liste simple, comme avant.
+function grouper(L,titre,ligne){
+  if(!_agences||!_agences.length)return L.map(ligne).join("");
+  const G=_agences.map(a=>({nom:a.nom,L:L.filter(x=>x.agence_id===a.id)}));
+  G.push({nom:"Sans agence",L:L.filter(x=>!x.agence_id||!_agences.some(a=>a.id===x.agence_id))});
+  return G.filter(g=>g.L.length).map(g=>titre(g.nom,g.L)+g.L.map(ligne).join("")).join("");
 }
 
 /* listes licences */
@@ -441,14 +491,15 @@ async function chargerLic(){
   $("licSub").textContent="Chargement…";$("licList").innerHTML="";
   const d=await api({action:"lister"});
   if(!d.ok){$("licSub").textContent=d.erreur||"Erreur";return;}
-  _lics=d.licences||[];filtrer();
+  _lics=d.licences||[];_agences=trierAgences(d.agences);majSelectsAgence();filtrer();
 }
 function filtrer(){
   const q=($("licSearch").value||"").toLowerCase();
-  const L=_lics.filter(l=>!q||(l.nom_client||"").toLowerCase().includes(q)||(l.empreinte||"").toLowerCase().includes(q));
+  const L=_lics.filter(l=>(!q||(l.nom_client||"").toLowerCase().includes(q)||(l.empreinte||"").toLowerCase().includes(q))&&filtreAgence("licAgence",l));
   const act=_lics.filter(x=>x.statut==="actif").length;
   $("licSub").textContent=_lics.length+" licence"+(_lics.length>1?"s":"")+" · "+act+" active"+(act>1?"s":"");
-  $("licList").innerHTML=L.length?L.map(ligneLic).join(""):'<div class="empty">Aucune licence.</div>';
+  const titre=(nom,G)=>'<div class="grp"><span>'+esc(nom)+'</span><span class="n">'+nbVA(G.length)+'</span></div>';
+  $("licList").innerHTML=L.length?grouper(L,titre,ligneLic):'<div class="empty">Aucune licence.</div>';
 }
 // Boutons d'action d'une licence (liste et fiche profil). event.stopPropagation() :
 // un clic sur un bouton ne doit pas AUSSI ouvrir la fiche (la ligne est cliquable).
@@ -505,8 +556,11 @@ function rendreProfil(d){
   const l=d.licence;
   $("pfNom").innerHTML=esc(l.nom_client||"VA sans nom")+' <span class="pill '+esc(l.statut)+'">'+esc(statutLabel(l.statut))+'</span>';
   $("pfSub").textContent="Licence créée le "+dateFr(l.cree_le);
+  // Sélecteur d'agence seulement si le SQL des agences est appliqué (d.agences = null sinon).
+  const agence=d.agences?'<dt>Agence</dt><dd><select class="f" id="pfAgence" onchange="changerAgence(this.value)" aria-label="Agence du VA"><option value="">Sans agence</option>'+optionsAgences(trierAgences(d.agences))+'</select></dd>':"";
   const infos='<dl class="infos">'
     +'<dt>Nom</dt><dd>'+esc(l.nom_client||"—")+'</dd>'
+    +agence
     +'<dt>Empreinte</dt><dd class="mono">'+esc(l.empreinte||"—")+'</dd>'
     +'<dt>Formule</dt><dd>'+formule(l)+'</dd>'
     +'<dt>Expiration</dt><dd>'+(l.exp?jourFr(l.exp):"à vie")+'</dd>'
@@ -514,6 +568,14 @@ function rendreProfil(d){
     +'<dt>Créée le</dt><dd>'+dateFr(l.cree_le)+'</dd></dl>'
     +'<div class="btnrow">'+actionsLic(l)+'</div>';
   $("pfCorps").innerHTML=infos+'<div class="sec">Historique</div>'+histoProfil(d)+'<div class="sec">Activité de cette licence</div>'+activiteProfil(d.activite||{});
+  if($("pfAgence")){$("pfAgence").value=l.agence_id||"";if($("pfAgence").value!==(l.agence_id||""))$("pfAgence").value="";}
+}
+async function changerAgence(agence_id){
+  const id=_pfId;if(!id)return;
+  const d=await api({action:"licence_agence",licence_id:id,agence_id:agence_id||null});
+  if(!d.ok){toast(d.erreur||"Erreur");rafraichirProfil(id);return;}
+  toast("Agence mise à jour");
+  chargerLic();if(!$("p-activite").hidden)chargerActivite();rafraichirProfil(id);
 }
 // Licences + codes du même VA, du plus récent au plus ancien.
 function histoProfil(d){
@@ -605,16 +667,24 @@ function rendreCodes(C){
 function esc(t){return String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function jourLocal(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function nb(n){return Number(n||0).toLocaleString("fr-FR");}
+let _act=[];
 async function chargerActivite(){
   $("actSub").textContent="Chargement…";$("actList").innerHTML="";
   // « Aujourd'hui » = la date de CE navigateur (ton fuseau), pas celle du serveur.
   const d=await api({action:"activite_lister",aujourdhui:jourLocal(new Date())});
   if(!d.ok){$("actSub").textContent=d.erreur||"Erreur";return;}
-  const A=(d.activite||[]).slice().sort((a,b)=>(b.semaine.total-a.semaine.total)||(b.total.total-a.total.total));
+  _agences=trierAgences(d.agences);majSelectsAgence();
+  _act=(d.activite||[]).slice().sort((a,b)=>(b.semaine.total-a.semaine.total)||(b.total.total-a.total.total));
+  rendreActivite();
+}
+function rendreActivite(){
+  const A=_act.filter(a=>filtreAgence("actAgence",a));
   const sem=A.reduce((s,a)=>s+a.semaine.total,0);
   const actifs=A.filter(a=>a.semaine.total>0).length;
   $("actSub").textContent=A.length+" VA · "+actifs+" actif"+(actifs>1?"s":"")+" sur 7 jours · "+nb(sem)+" média"+(sem>1?"s":"")+" traité"+(sem>1?"s":"");
-  $("actList").innerHTML=A.length?A.map(ligneActivite).join(""):'<tr><td colspan="6"><div class="empty">Aucune licence.</div></td></tr>';
+  // Titre de groupe : nombre de VA + total de l'agence sur 7 et 30 jours.
+  const titre=(nom,G)=>'<tr class="grp"><td colspan="6">'+esc(nom)+' <span>· '+nbVA(G.length)+' · 7 j : '+nb(G.reduce((s,a)=>s+a.semaine.total,0))+' · 30 j : '+nb(G.reduce((s,a)=>s+a.mois.total,0))+'</span></td></tr>';
+  $("actList").innerHTML=A.length?grouper(A,titre,ligneActivite):'<tr><td colspan="6"><div class="empty">Aucune licence.</div></td></tr>';
 }
 function detailAct(c){return nb(c.images)+" image(s) · "+nb(c.videos)+" vidéo(s) · "+nb(c.metadonnees)+" métadonnée(s)";}
 function celluleAct(c,fort){return '<td title="'+esc(detailAct(c))+'" class="'+(c.total?(fort?"fort":""):"nul")+'">'+nb(c.total)+'</td>';}
@@ -639,6 +709,55 @@ function ligneCode(c){
   return '<div class="row clic" onclick="copyTxt(\''+esc(c.code)+'\')" title="Cliquer pour copier"><div class="id"><div class="nm mono">'+esc(c.code)+' <span class="pill '+esc(c.statut)+'">'+esc(statutLabel(c.statut))+'</span></div>'
     +'<div class="meta">'+meta+'</div></div><span class="copyhint">copier</span></div>';
 }
-// Échap ferme la boîte du dessus (nouveau code d'abord, puis la fiche).
-document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!$("nc").hidden)fermerNC();else if(!$("profil").hidden)fermerProfil();});
+/* gestion des agences (bouton « Agences » de l'onglet Licences) */
+let _agList=[];
+function ouvrirAgences(){$("agNom").value="";$("agErr").textContent="";$("agList").innerHTML="";$("ag").hidden=false;chargerAgences();$("agNom").focus();}
+function fermerAgences(){$("ag").hidden=true;}
+async function chargerAgences(){
+  $("agSub").textContent="Chargement…";
+  const d=await api({action:"agences_lister"});
+  if(!d.ok){$("agSub").textContent=d.erreur||"Erreur";$("agList").innerHTML="";return;}
+  _agList=trierAgences(d.agences)||[];
+  $("agSub").textContent=_agList.length?_agList.length+" agence"+(_agList.length>1?"s":"")+" · les VA sont rangés par agence dans Licences et Activité.":"Aucune agence pour l'instant.";
+  $("agList").innerHTML=_agList.length?_agList.map(ligneAgence).join(""):'<div class="empty">Crée ta première agence ci-dessus.</div>';
+}
+function ligneAgence(a){
+  const id=esc(a.id);
+  return '<div class="row"><div class="id"><div class="nm">'+esc(a.nom)+'</div><div class="meta">'+nbVA(a.nb_va||0)+'</div></div>'
+    +'<button class="iact" onclick="renommerAgence(\''+id+'\')">Renommer</button>'
+    +'<button class="iact dng" onclick="supprimerAgence(\''+id+'\')">Supprimer</button></div>';
+}
+async function creerAgence(){
+  const nom=$("agNom").value.trim(),btn=$("btnAg");$("agErr").textContent="";
+  if(!nom){$("agErr").textContent="Entre le nom de l'agence.";return;}
+  btn.disabled=true;
+  const d=await api({action:"agence_creer",nom});
+  btn.disabled=false;
+  if(!d.ok){$("agErr").textContent=d.erreur||"Erreur";return;}
+  $("agNom").value="";toast("Agence créée");apresAgences();
+}
+async function renommerAgence(id){
+  const a=_agList.find(x=>x.id===id);if(!a)return;
+  const nom=prompt("Nouveau nom de l'agence :",a.nom);
+  if(nom===null||!nom.trim()||nom.trim()===a.nom)return;
+  $("agErr").textContent="";
+  const d=await api({action:"agence_renommer",id,nom:nom.trim()});
+  if(!d.ok){$("agErr").textContent=d.erreur||"Erreur";return;}
+  toast("Agence renommée");apresAgences();
+}
+async function supprimerAgence(id){
+  const a=_agList.find(x=>x.id===id);if(!a)return;
+  const n=a.nb_va||0;
+  const suite=n>1?"Ses "+nbVA(n)+" passent « sans agence »":n===1?"Son VA passe « sans agence »":"Elle ne contient aucun VA";
+  if(!confirm("Supprimer l'agence « "+a.nom+" » ?\n\n"+suite+" : aucun VA n'est supprimé."))return;
+  $("agErr").textContent="";
+  const d=await api({action:"agence_supprimer",id});
+  if(!d.ok){$("agErr").textContent=d.erreur||"Erreur";return;}
+  toast("Agence supprimée");apresAgences();
+}
+// Après un changement : la liste, les filtres, les regroupements et la fiche ouverte se mettent à jour.
+function apresAgences(){chargerAgences();chargerLic();if(!$("p-activite").hidden)chargerActivite();rafraichirProfil();}
+
+// Échap ferme la boîte du dessus (nouveau code d'abord, puis les agences, puis la fiche).
+document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!$("nc").hidden)fermerNC();else if(!$("ag").hidden)fermerAgences();else if(!$("profil").hidden)fermerProfil();});
 </script>
