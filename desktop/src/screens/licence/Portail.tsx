@@ -75,19 +75,9 @@ function PanneauVisuel() {
     );
   }
   return (
-    <div aria-hidden="true" className="panneau-portail relative hidden flex-col overflow-hidden p-8 text-white md:flex">
-      <div className="relative flex flex-1 flex-col items-center justify-center py-6">
-        <div className="flottant grid h-[148px] w-[148px] place-items-center rounded-[36px] border border-white/20 bg-white/10 shadow-[0_24px_50px_-22px_rgba(0,0,0,0.65)] backdrop-blur-sm">
-          <img src={logo} alt="" className="h-[92px] w-[92px] object-contain drop-shadow-[0_14px_22px_rgba(0,0,0,0.35)]" />
-        </div>
-        <span className="mt-5 text-20 font-semibold tracking-[-0.02em]">HelpVA</span>
-      </div>
-      <div className="relative">
-        <p className="text-20 font-semibold leading-snug">Préparez vos contenus Instagram en quelques clics.</p>
-        <p className="mt-2 text-13 leading-relaxed text-white/85">
-          Conversion, métadonnées et rangement se font sur votre ordinateur. Vos originaux ne sont jamais modifiés.
-        </p>
-      </div>
+    // Fond noir, juste le logo assombri au centre. Rien ne bouge.
+    <div aria-hidden="true" className="panneau-portail relative hidden place-items-center overflow-hidden md:grid">
+      <img src={logo} alt="" className="relative h-[150px] w-[150px] object-contain opacity-40 brightness-75" />
     </div>
   );
 }

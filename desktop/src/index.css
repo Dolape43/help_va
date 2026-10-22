@@ -353,18 +353,8 @@ button:disabled {
 /* Panneau de gauche des écrans de licence (en attendant l'illustration) : le bleu de la marque,
    plus foncé en bas (là où est le texte blanc : contraste AA), avec une trame de points. */
 .panneau-portail {
-  background:
-    radial-gradient(120% 70% at 85% 0%, rgba(142, 162, 255, 0.55), transparent 60%),
-    linear-gradient(200deg, #5b74ff 0%, #3a5cff 40%, #1d3fe6 75%, #1530b8 100%);
-}
-.panneau-portail::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.22) 1px, transparent 1.2px);
-  background-size: 20px 20px;
-  mask-image: linear-gradient(to bottom, #000, transparent 85%);
-  opacity: 0.6;
+  /* Noir profond, à peine éclairé au centre (derrière le logo) */
+  background: radial-gradient(70% 60% at 50% 50%, #1a1b22 0%, #0b0b0f 60%, #050507 100%);
 }
 @keyframes flotter {
   0%,
