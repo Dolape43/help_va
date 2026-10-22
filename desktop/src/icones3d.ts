@@ -20,6 +20,7 @@ import licence from "./assets/icons/3d/licence.webp";
 import alerte from "./assets/icons/3d/alerte.webp";
 import accueil from "./assets/icons/3d/accueil.webp";
 import crayon from "./assets/icons/3d/crayon.webp";
+import telegram from "./assets/icons/3d/telegram.webp";
 import chiffre1 from "./assets/icons/3d/chiffre-1.webp";
 import chiffre2 from "./assets/icons/3d/chiffre-2.webp";
 import chiffre3 from "./assets/icons/3d/chiffre-3.webp";
@@ -63,6 +64,8 @@ export const ICONES_3D = {
   accueil,
   /** boutons « Changer » (dossier de sortie) */
   crayon,
+  /** Telegram (contacter le vendeur), même icône que sur le site */
+  telegram,
 } as const;
 
 /**

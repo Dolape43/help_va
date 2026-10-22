@@ -8,7 +8,6 @@ import {
   Key,
   PauseCircle,
   Prohibit,
-  TelegramLogo,
   WarningCircle,
 } from "@phosphor-icons/react";
 import { Bouton, Rouage } from "../../components/ui";
@@ -233,7 +232,7 @@ export default function Activation({
           onClick={() => ouvrirLien(lienVendeur(b.message))}
           className="inline-flex items-center gap-1.5 rounded-md text-13 font-medium text-brand-text hover:underline"
         >
-          <TelegramLogo weight="fill" className="h-4 w-4" aria-hidden="true" />
+          <img src={ICONES_3D.telegram} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
           {statut.raison === "pas_active" ? fr("Pas encore de code ? Contacter le vendeur") : "Contacter le vendeur"}
         </button>
       </div>
