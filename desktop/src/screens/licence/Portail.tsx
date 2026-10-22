@@ -75,9 +75,21 @@ function PanneauVisuel() {
     );
   }
   return (
-    // Fond noir, juste le logo assombri au centre. Rien ne bouge.
-    <div aria-hidden="true" className="panneau-portail relative hidden place-items-center overflow-hidden md:grid">
-      <img src={logo} alt="" className="relative h-[150px] w-[150px] object-contain opacity-40 brightness-75" />
+    // Fond noir, le logo en GRAND en arrière-plan (assombri), le texte en bas. Rien ne bouge.
+    <div aria-hidden="true" className="panneau-portail relative hidden flex-col justify-end overflow-hidden p-8 text-white md:flex">
+      <img
+        src={logo}
+        alt=""
+        className="pointer-events-none absolute left-1/2 top-[42%] h-[125%] max-h-[560px] w-auto max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.18] brightness-75"
+      />
+      {/* Dégradé noir en bas : le texte reste lisible par-dessus le logo */}
+      <div className="absolute inset-x-0 bottom-0 h-2/3 bg-[linear-gradient(to_top,#050507_25%,transparent)]" />
+      <div className="relative">
+        <p className="text-20 font-semibold leading-snug">Préparez vos contenus Instagram en quelques clics.</p>
+        <p className="mt-2 text-13 leading-relaxed text-white/70">
+          Conversion, métadonnées et rangement se font sur votre ordinateur. Vos originaux ne sont jamais modifiés.
+        </p>
+      </div>
     </div>
   );
 }
