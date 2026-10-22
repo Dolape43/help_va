@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import logo from "../../assets/logo.png";
 import SelecteurTheme from "../../components/SelecteurTheme";
+import BoutonSupport from "../../components/BoutonSupport";
 import { Icone3D, PastilleIcone, type Ton } from "../../components/ui";
 import type { Theme } from "../../App";
 import { versionApp } from "../../plateforme";
@@ -52,7 +53,8 @@ export default function Portail({
       </header>
       <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex h-14 items-center justify-between px-6">
         <span className="tabular text-12 text-fg-3">HelpVA v{version}</span>
-        <div className="pointer-events-auto">
+        <div className="pointer-events-auto flex items-center gap-3">
+          <BoutonSupport variante="discret" />
           <SelecteurTheme theme={theme} setTheme={setTheme} />
         </div>
       </footer>

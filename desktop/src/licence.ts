@@ -21,6 +21,7 @@ export const MESSAGES_VENDEUR = {
   renouveler: "Bonjour 👋\nJe souhaite renouveler ma licence HelpVA.",
   essai: "Bonjour 👋\nMon essai HelpVA se termine, je souhaite obtenir une licence.",
   suspendu: "Bonjour 👋\nMa licence HelpVA est suspendue. Pouvez-vous m'aider ?",
+  support: "Bonjour 👋\nJ'ai besoin d'aide avec HelpVA.",
 };
 
 /* ---------- Quel écran montrer ? ---------- */

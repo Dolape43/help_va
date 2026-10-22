@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ICONES_3D } from "../icones3d";
 import SelecteurTheme from "./SelecteurTheme";
+import BoutonSupport from "./BoutonSupport";
 import logo from "../assets/logo.png";
 import type { Activite, Page, Theme } from "../App";
 import { versionApp } from "../plateforme";
@@ -114,6 +115,11 @@ export default function Sidebar({
 
 
       <div className="flex-1" />
+
+      {/* Support : toujours là, en cas de blocage ou de problème */}
+      <div className="mb-2">
+        <BoutonSupport />
+      </div>
 
       {/* Carte utilisateur */}
       <button
