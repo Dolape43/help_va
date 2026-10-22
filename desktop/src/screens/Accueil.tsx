@@ -77,7 +77,6 @@ function CarteActivite({ r }: { r: ResumeActivite }) {
             </div>
           </>
         )}
-        {r.partage && <p className="mt-3 text-12 text-fg-3">Ces chiffres sont partagés avec votre agence.</p>}
       </section>
     </Carte>
   );
