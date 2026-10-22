@@ -34,7 +34,7 @@ function CarteActivite({ r }: { r: ResumeActivite }) {
   const semaineVide = r.semaine.total === 0;
   const detail = semaineVide ? r.total : r.semaine;
   return (
-    <Carte className="mt-4 p-5">
+    <Carte className="mt-6 p-5">
       <section aria-label="Votre activité">
         <Surtitre accent>Votre activité</Surtitre>
         {r.total.total === 0 ? (
@@ -161,9 +161,6 @@ export default function Accueil({
         </Carte>
       </div>
 
-      {/* Activité (pleine largeur) */}
-      {resumeActivite && <CarteActivite r={resumeActivite} />}
-
       {/* Modules */}
       <div className="mb-3 mt-9 flex items-end justify-between">
         <h2 className="text-16 font-semibold">Préparer le contenu</h2>
@@ -196,6 +193,8 @@ export default function Accueil({
         ))}
       </div>
 
+      {/* Activité (pleine largeur, sous les modules) */}
+      {resumeActivite && <CarteActivite r={resumeActivite} />}
     </div>
   );
 }
