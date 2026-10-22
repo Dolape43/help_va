@@ -1,6 +1,6 @@
 /**
  * useRanger.ts — la logique du module « Ranger les médias » (copie du déroulé de l'ancienne app,
- * app_ctk.py > _page_ranger / _lancer_ranger), pour UN OU PLUSIEURS comptes Instagram :
+ * app_ctk.py > _page_ranger / _lancer_ranger), pour UN OU PLUSIEURS comptes (réseaux sociaux) :
  *
  *   1. les comptes (comptes_lire) : chacun a SES dossiers sources et SON calendrier, qui dit
  *      combien de créneaux de chaque type il faut remplir ; les types cochés sont communs à tous

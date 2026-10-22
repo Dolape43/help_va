@@ -21,7 +21,7 @@ export default function Metadonnees({
       mot: "média",
       feminin: false,
       info: fr(
-        "Chaque média devient unique : nouvelles métadonnées et micro-variations invisibles à l'œil. Les photos iPhone HEIC / HEIF, qui ne s'affichent pas sur Instagram, sont aussi converties en .jpg automatiquement. Importez un dossier même avec des sous-dossiers : la structure est conservée. Vos fichiers originaux ne sont jamais modifiés.",
+        "Chaque média devient unique : nouvelles métadonnées et micro-variations invisibles à l'œil. Les photos iPhone HEIC / HEIF, qui ne s'affichent pas sur les réseaux sociaux, sont aussi converties en .jpg automatiquement. Importez un dossier même avec des sous-dossiers : la structure est conservée. Vos fichiers originaux ne sont jamais modifiés.",
       ),
       source: {
         titre: "Choisir la source",

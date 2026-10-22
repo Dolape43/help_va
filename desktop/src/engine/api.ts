@@ -203,7 +203,7 @@ export type SourcesRanger = Partial<Record<TypePost, string>>;
 export const MAX_COMPTES = 50;
 
 /**
- * Un compte Instagram du Ranger : SES dossiers sources et SON calendrier (comptes_ranger.json).
+ * Un compte (réseau social) du Ranger : SES dossiers sources et SON calendrier (comptes_ranger.json).
  * Les types cochés (paramètre ranger_types) restent communs à tous les comptes.
  */
 export type CompteRanger = {

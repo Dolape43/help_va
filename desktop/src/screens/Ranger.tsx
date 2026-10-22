@@ -504,7 +504,7 @@ export default function Ranger({
         <EnteteModule
           mod={mod}
           sousTitre="Classe vos photos et vidéos selon votre calendrier de posts."
-          details="HelpVA crée un dossier par semaine, par jour et par créneau, et y copie vos médias. Chaque type de post (réels, stories, stories CTA, carrousels) a son propre dossier source. Avec plusieurs comptes Instagram, chaque compte a ses propres dossiers, son propre calendrier, et son sous-dossier dans « ranger ». Les carrousels gardent l'ordre 1, 2, 3… Vos originaux ne sont pas touchés."
+          details="HelpVA crée un dossier par semaine, par jour et par créneau, et y copie vos médias. Chaque type de post (réels, stories, stories CTA, carrousels) a son propre dossier source. Avec plusieurs comptes, chaque compte a ses propres dossiers, son propre calendrier, et son sous-dossier dans « ranger ». Les carrousels gardent l'ordre 1, 2, 3… Vos originaux ne sont pas touchés."
           retour={retour}
         />
         <div className="mt-2">
@@ -513,7 +513,7 @@ export default function Ranger({
         <Etape
           numero={1}
           titre="Comptes et calendriers"
-          sousTitre="Combien de comptes Instagram, et le calendrier de posts de chacun."
+          sousTitre="Combien de comptes sur vos réseaux, et le calendrier de posts de chacun."
           fait={r.comptesCharges && r.actifsTous.length > 0}
         >
           {!r.comptesCharges ? (

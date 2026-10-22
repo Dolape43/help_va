@@ -25,7 +25,7 @@ export default function ConvertirImages({
       mot: "image",
       feminin: true,
       info: fr(
-        "Convertit chaque image au format choisi (.jpg ou .png). Les photos iPhone HEIC / HEIF, qui ne s'affichent pas sur Instagram, deviennent lisibles. Les images des sous-dossiers sont aussi converties, toutes dans le même dossier. Vos fichiers originaux ne sont jamais modifiés.",
+        "Convertit chaque image au format choisi (.jpg ou .png). Les photos iPhone HEIC / HEIF, qui ne s'affichent pas sur les réseaux sociaux, deviennent lisibles. Les images des sous-dossiers sont aussi converties, toutes dans le même dossier. Vos fichiers originaux ne sont jamais modifiés.",
       ),
       source: {
         titre: "Choisir les images",
@@ -56,7 +56,7 @@ export default function ConvertirImages({
               ]}
             />
             <p className="mt-2.5 text-12 text-fg-3">
-              JPG = plus léger (recommandé pour Instagram) · PNG = sans perte, garde la transparence.
+              JPG = plus léger (recommandé pour les réseaux sociaux) · PNG = sans perte, garde la transparence.
             </p>
             <Case
               className="mt-4"

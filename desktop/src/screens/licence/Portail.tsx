@@ -85,7 +85,7 @@ function PanneauVisuel() {
       <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[linear-gradient(to_top,rgba(5,6,15,0.7),transparent)]" />
       <div className="min-h-[300px] flex-1" />
       <div className="relative px-8 pb-8">
-        <p className="text-20 font-semibold leading-snug">Préparez vos contenus Instagram en quelques clics.</p>
+        <p className="text-20 font-semibold leading-snug">Préparez vos contenus pour les réseaux sociaux en quelques clics.</p>
         <p className="mt-2 text-13 leading-relaxed text-white/65">
           Conversion, métadonnées et rangement se font sur votre ordinateur. Vos originaux ne sont jamais modifiés.
         </p>

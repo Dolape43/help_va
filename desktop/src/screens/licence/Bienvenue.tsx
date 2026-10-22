@@ -38,7 +38,7 @@ export default function Bienvenue({
         <img src={logo} alt="" className="relative h-[84px] w-[84px] drop-shadow-[0_12px_28px_rgba(76,111,255,0.45)]" />
       </div>
       <h1 className="mt-5 text-28 font-semibold leading-tight">Bienvenue sur HelpVA</h1>
-      <p className="mt-2 text-16 text-fg-2">Votre assistant pour préparer vos contenus Instagram.</p>
+      <p className="mt-2 text-16 text-fg-2">Votre assistant pour préparer vos contenus pour les réseaux sociaux.</p>
 
       <p className="mt-5 inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-surface px-3.5 py-1.5 text-13 text-fg-2 shadow-card">
         <Icone3D src={ICONES_3D.succes} taille={20} />
