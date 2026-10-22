@@ -86,10 +86,24 @@ async function dbInsert(row: unknown) {
   if (!r.ok) throw new Error("db insert " + r.status + " " + (await r.text()));
 }
 async function dbListe() {
+  // Les VA supprimés (supprime_le renseigné) ne sont plus listés. Si la colonne n'existe pas
+  // encore (SQL 20261023 pas appliqué), on liste tout plutôt que de casser la console.
+  const champs = "id,empreinte,nom_client,type,exp,premium,statut,cree_le";
   const r = await fetch(
-    `${SUPA_URL}/rest/v1/licences?select=id,empreinte,nom_client,type,exp,premium,statut,cree_le&order=cree_le.desc`,
+    `${SUPA_URL}/rest/v1/licences?select=${champs}&supprime_le=is.null&order=cree_le.desc`,
     { headers: dbHeaders() });
-  return await r.json();
+  if (r.ok) return await r.json();
+  const r2 = await fetch(`${SUPA_URL}/rest/v1/licences?select=${champs}&order=cree_le.desc`, { headers: dbHeaders() });
+  return await r2.json();
+}
+async function dbSupprimer(id: string) {
+  // « Supprimer » = résilier + masquer (voir supabase/migrations/20261023_suppression_va.sql).
+  const r = await fetch(`${SUPA_URL}/rest/v1/licences?id=eq.${id}`, {
+    method: "PATCH",
+    headers: dbHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+    body: JSON.stringify({ statut: "resiliee", supprime_le: new Date().toISOString() }),
+  });
+  if (!r.ok) throw new Error("Suppression impossible (" + r.status + "). Le SQL 20261023_suppression_va.sql est-il appliqué ?");
 }
 async function dbStatut(id: string, statut: string) {
   const r = await fetch(`${SUPA_URL}/rest/v1/licences?id=eq.${id}`, {
@@ -413,6 +427,12 @@ Deno.serve(async (req) => {
       return json({ ok: true, licence, exp: (payload as any).exp || null });
     }
     if (body.action === "lister") return json({ ok: true, licences: await dbListe() });
+    if (body.action === "supprimer") {
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      if (!UUID.test(id)) return json({ erreur: "Identifiant de licence invalide." }, 400);
+      await dbSupprimer(id);
+      return json({ ok: true });
+    }
     if (body.action === "statut") {
       if (!["actif", "resiliee", "suspendu"].includes(body.statut)) return json({ erreur: "statut" }, 400);
       await dbStatut(body.id, body.statut);

@@ -241,7 +241,7 @@ input::placeholder{color:var(--faint)}
             <input class="f" type="number" id="cN" value="1" min="1" max="100">
             <label>Formule</label>
             <div class="seg" id="seg-code">
-              <button aria-pressed="true">À vie</button><button aria-pressed="false">1 mois</button>
+              <button aria-pressed="false">À vie</button><button aria-pressed="true">1 mois</button>
               <button aria-pressed="false">1 an</button><button aria-pressed="false">Essai</button>
             </div>
             <label>Nom du client <span style="color:var(--faint)">— optionnel</span></label>
@@ -403,8 +403,8 @@ let mode="code";
 function choisir(el,m){mode=m;document.querySelectorAll(".opt").forEach(o=>o.setAttribute("aria-pressed","false"));el.setAttribute("aria-pressed","true");}
 document.querySelectorAll(".seg").forEach(seg=>seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{
   seg.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true");}));
-function typeDe(segId){const b=document.querySelector("#"+segId+" button[aria-pressed='true']");const t=b?b.textContent.trim():"À vie";
-  return {"À vie":"vie","1 mois":"mois","1 an":"an","Essai":"essai"}[t]||"vie";}
+function typeDe(segId){const b=document.querySelector("#"+segId+" button[aria-pressed='true']");const t=b?b.textContent.trim():"1 mois";
+  return {"À vie":"vie","1 mois":"mois","1 an":"an","Essai":"essai"}[t]||"mois";}
 function typeLabel(t){return {vie:"À vie",mois:"1 mois",an:"1 an",essai:"Essai"}[t]||t;}
 function etape(n){
   $("w1").hidden=n!==1;$("w2").hidden=n!==2;$("w3").hidden=n!==3;
@@ -454,7 +454,8 @@ function filtrer(){
 // un clic sur un bouton ne doit pas AUSSI ouvrir la fiche (la ligne est cliquable).
 function actionsLic(l){
   const id=esc(l.id),s="event.stopPropagation();";
-  const nc='<button class="iact acc" onclick="'+s+'ouvrirNC(\''+id+'\')" title="Nouveau code d\'activation pour ce VA">Nouveau code</button>';
+  const nc='<button class="iact acc" onclick="'+s+'ouvrirNC(\''+id+'\')" title="Nouveau code d\'activation pour ce VA">Nouveau code</button>'
+    +'<button class="iact dng" onclick="'+s+'supprimerVA(\''+id+'\')" title="Supprimer ce VA de la console (sa licence est résiliée)">Supprimer</button>';
   if(l.statut==="actif")return nc+'<button class="iact" onclick="'+s+'setStatut(\''+id+'\',\'suspendu\')">Suspendre</button><button class="iact dng" onclick="'+s+'setStatut(\''+id+'\',\'resiliee\')">Résilier</button>';
   if(l.statut==="suspendu")return nc+'<button class="iact" onclick="'+s+'setStatut(\''+id+'\',\'actif\')">Activer</button><button class="iact dng" onclick="'+s+'setStatut(\''+id+'\',\'resiliee\')">Résilier</button>';
   return nc+'<button class="iact" onclick="'+s+'setStatut(\''+id+'\',\'actif\')">Activer</button>';
@@ -464,6 +465,13 @@ function ligneLic(l){
   const exp=l.exp?("exp. "+l.exp):"à vie";
   return '<div class="row clic" onclick="ouvrirProfil(\''+esc(l.id)+'\')" title="Voir la fiche"><div class="id"><div class="nm">'+esc(l.nom_client||"—")+' <span class="pill '+esc(l.statut)+'">'+esc(statutLabel(l.statut))+'</span></div>'
     +'<div class="meta mono">'+esc(l.empreinte)+' · '+esc(typeLabel(l.type))+' · '+esc(exp)+'</div></div>'+actionsLic(l)+'</div>';
+}
+async function supprimerVA(id){
+  const l=_lics.find(x=>x.id===id);
+  const nom=l&&l.nom_client?"« "+l.nom_client+" »":"ce VA";
+  if(!confirm("Supprimer "+nom+" ?\n\nSa licence est résiliée : il sera bloqué à sa prochaine connexion. Il disparaît de la console (l'historique reste en base)."))return;
+  const d=await api({action:"supprimer",id});
+  if(d.ok){toast("VA supprimé");if(_pfId===id&&typeof fermerProfil==="function")fermerProfil();chargerLic();}else toast(d.erreur||"Erreur");
 }
 async function setStatut(id,statut){
   if(statut==="resiliee"&&!confirm("Résilier cette licence ? Le client sera bloqué à sa prochaine connexion."))return;
