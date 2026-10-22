@@ -75,18 +75,15 @@ function PanneauVisuel() {
     );
   }
   return (
-    // Fond noir, le logo en GRAND en arrière-plan (assombri), le texte en bas. Rien ne bouge.
-    <div aria-hidden="true" className="panneau-portail relative hidden flex-col justify-end overflow-hidden p-8 text-white md:flex">
-      <img
-        src={logo}
-        alt=""
-        className="pointer-events-none absolute left-1/2 top-[42%] h-[125%] max-h-[560px] w-auto max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.18] brightness-75"
-      />
-      {/* Dégradé noir en bas : le texte reste lisible par-dessus le logo */}
-      <div className="absolute inset-x-0 bottom-0 h-2/3 bg-[linear-gradient(to_top,#050507_25%,transparent)]" />
-      <div className="relative">
+    // Fond noir, un faisceau de lumière d'en haut, un sol en perspective, le texte en bas.
+    // Sans logo, rien ne bouge.
+    <div aria-hidden="true" className="panneau-portail relative hidden flex-col overflow-hidden text-white md:flex">
+      <div className="absolute inset-x-0 top-0 h-[75%] bg-[radial-gradient(45%_70%_at_50%_0%,rgba(142,162,255,0.32),rgba(58,92,255,0.08)_55%,transparent_75%)]" />
+      <div className="sol-portail absolute inset-x-[-30%] bottom-[22%] h-[38%]" />
+      <div className="min-h-[300px] flex-1" />
+      <div className="relative px-8 pb-8">
         <p className="text-20 font-semibold leading-snug">Préparez vos contenus Instagram en quelques clics.</p>
-        <p className="mt-2 text-13 leading-relaxed text-white/70">
+        <p className="mt-2 text-13 leading-relaxed text-white/65">
           Conversion, métadonnées et rangement se font sur votre ordinateur. Vos originaux ne sont jamais modifiés.
         </p>
       </div>

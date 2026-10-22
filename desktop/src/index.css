@@ -356,6 +356,16 @@ button:disabled {
   /* Noir profond, à peine éclairé au centre (derrière le logo) */
   background: radial-gradient(70% 60% at 50% 50%, #1a1b22 0%, #0b0b0f 60%, #050507 100%);
 }
+/* Sol en perspective sous le logo (écran de licence) : quadrillage fin qui s'efface au loin */
+.sol-portail {
+  background-image:
+    linear-gradient(rgba(142, 162, 255, 0.24) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(142, 162, 255, 0.24) 1px, transparent 1px);
+  background-size: 44px 44px;
+  transform: perspective(380px) rotateX(62deg);
+  transform-origin: bottom center;
+  mask-image: radial-gradient(60% 90% at 50% 100%, #000 30%, transparent 75%);
+}
 @keyframes flotter {
   0%,
   100% {
