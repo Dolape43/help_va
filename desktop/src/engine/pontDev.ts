@@ -89,13 +89,16 @@ export class TransportPontDev implements Transport {
   async envoyer(req: Requete): Promise<void> {
     if (this.ferme) throw new ErreurMoteur("MOTEUR_ARRETE", "Pont de dev déconnecté.");
     let rep: Response;
+    const corps = JSON.stringify(req);
     try {
       rep = await fetch(`${ADRESSE_PONT}/cmd`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-HelpVA-Token": this.jeton },
-        body: JSON.stringify(req),
+        body: corps,
         // La demande part même si la page se ferme (annulation envoyée au rechargement).
-        keepalive: true,
+        // MAIS le navigateur refuse keepalive au-delà de 64 Ko (fetch échoue aussitôt) : une grosse
+        // demande (ex. comptes_sauver avec plusieurs calendriers) part sans keepalive.
+        keepalive: corps.length < 60_000,
       });
     } catch {
       throw new ErreurMoteur("MOTEUR_ARRETE", "Pont de dev injoignable.");
