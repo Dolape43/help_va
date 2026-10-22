@@ -251,6 +251,104 @@ function resumerActivite(licences: any[], lignes: any[], aujourdhui: Date) {
   return [...parLicence.values()];
 }
 
+// ---------- fiche profil d'un VA + « nouveau code pour ce VA » ----------
+const TYPES = ["vie", "mois", "an", "essai"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EMPREINTE = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+const COLS_LICENCE = "id,empreinte,nom_client,type,exp,premium,statut,cree_le";
+const COLS_CODE = "code,type,premium,jours,statut,nom_client,empreinte,licence_id,cree_le,utilise_le";
+
+async function dbLire(table: string, filtre: string, cols: string) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?select=${cols}&${filtre}`, { headers: dbHeaders() });
+  if (!r.ok) throw new Error("db " + table + " " + r.status + " " + (await r.text()));
+  return await r.json();
+}
+async function dbLicence(id: string) {
+  const rows = await dbLire("licences", `id=eq.${id}`, COLS_LICENCE);
+  return rows[0] || null;
+}
+async function dbActiviteLicence(licence_id: string) {
+  // Même lecture page par page que dbToutesActivites, limitée à une licence.
+  const lignes: any[] = [];
+  for (let debut = 0; ; debut += 1000) {
+    const page = await dbLire("activite",
+      `licence_id=eq.${licence_id}&order=jour.asc&limit=1000&offset=${debut}`,
+      "licence_id,jour,images,videos,metadonnees");
+    lignes.push(...page);
+    if (page.length < 1000) return lignes;
+  }
+}
+// Fusionne plusieurs listes en retirant les doublons (même valeur de « cle »).
+function fusionner(listes: any[][], cle: string) {
+  const vus = new Map<string, any>();
+  for (const l of listes) for (const x of l) vus.set(x[cle], x);
+  return [...vus.values()];
+}
+
+// Licences et codes du même VA : même nom_client (s'il existe), même empreinte,
+// ou code lié par licence_id. Sans nom : la licence et son empreinte seulement.
+async function profilVA(lic: any, aujourdhui: Date) {
+  const nom = (lic.nom_client || "").trim();
+  const parEmp = EMPREINTE.test(lic.empreinte || "")
+    ? dbLire("licences", `empreinte=eq.${lic.empreinte}`, COLS_LICENCE) : Promise.resolve([]);
+  const parNom = nom
+    ? dbLire("licences", `nom_client=eq.${encodeURIComponent(nom)}`, COLS_LICENCE) : Promise.resolve([]);
+  const licences = fusionner([[lic], await parEmp, await parNom], "id");
+
+  const ids = licences.map((l) => l.id).filter((id) => UUID.test(id));
+  const emps = [...new Set(licences.map((l) => l.empreinte).filter((e) => EMPREINTE.test(e || "")))];
+  const requetes: Promise<any[]>[] = [];
+  if (ids.length) requetes.push(dbLire("codes", `licence_id=in.(${ids.join(",")})`, COLS_CODE));
+  if (emps.length) requetes.push(dbLire("codes", `empreinte=in.(${emps.join(",")})`, COLS_CODE));
+  if (nom) requetes.push(dbLire("codes", `nom_client=eq.${encodeURIComponent(nom)}`, COLS_CODE));
+  const codes = fusionner(await Promise.all(requetes), "code");
+
+  const parDate = (a: any, b: any) => String(b.cree_le || "").localeCompare(String(a.cree_le || ""));
+  licences.sort(parDate);
+  codes.sort(parDate);
+
+  // Activité de CETTE licence : totaux (mêmes calculs que l'onglet Activité)
+  // + jours actifs des 90 derniers jours, du plus récent au plus ancien.
+  const lignes = await dbActiviteLicence(lic.id);
+  const r = resumerActivite([lic], lignes, aujourdhui)[0];
+  const debut90 = isoDate(plusJours(aujourdhui, -89));
+  const auj = isoDate(aujourdhui);
+  const jours = lignes
+    .filter((l) => l.jour >= debut90 && l.jour <= auj)
+    .map((l) => ({ jour: l.jour, images: l.images || 0, videos: l.videos || 0, metadonnees: l.metadonnees || 0,
+                   total: (l.images || 0) + (l.videos || 0) + (l.metadonnees || 0) }))
+    .filter((l) => l.total > 0)
+    .reverse();
+  return {
+    licence: lic,
+    licences_liees: licences.filter((l) => l.id !== lic.id),
+    codes,
+    activite: {
+      totaux: { aujourd_hui: r.aujourd_hui, semaine: r.semaine, mois: r.mois, total: r.total, dernier_jour: r.dernier_jour },
+      jours,
+    },
+  };
+}
+
+// Nouveau code d'activation pour un VA existant : mêmes nom, formule, premium (et jours d'essai).
+// Le code garde licence_id = l'ancienne licence tant qu'il est libre (lien visible dans la fiche) ;
+// à l'activation, dbMarquerCode le remplace par la nouvelle licence.
+async function nouveauCodePour(lic: any, typeDemande: unknown) {
+  const type = TYPES.includes(typeDemande as string) ? typeDemande as string
+    : (TYPES.includes(lic.type) ? lic.type : "vie");
+  let jours: number | null = null;
+  if (type === "essai") {
+    const anciens = await dbLire("codes", `licence_id=eq.${lic.id}&jours=not.is.null&limit=1`, "jours");
+    jours = anciens[0]?.jours || null; // null -> 3 jours par défaut à l'activation
+  }
+  const code = genererCode();
+  await dbInsertCodes([{
+    code, type, premium: !!lic.premium, jours,
+    nom_client: (lic.nom_client || "").trim() || null, statut: "libre", licence_id: lic.id,
+  }]);
+  return code;
+}
+
 const json = (o: unknown, s = 200) =>
   new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json", ...CORS } });
 
@@ -336,6 +434,23 @@ Deno.serve(async (req) => {
       const aujourdhui = dateValide(body.aujourdhui) ?? new Date(isoDate(new Date()) + "T00:00:00Z");
       const [licences, lignes] = await Promise.all([dbListe(), dbToutesActivites()]);
       return json({ ok: true, activite: resumerActivite(licences, lignes, aujourdhui) });
+    }
+    if (body.action === "profil" || body.action === "nouveau_code") {
+      const id = typeof body.licence_id === "string" ? body.licence_id.trim() : "";
+      if (!UUID.test(id)) return json({ erreur: "Identifiant de licence invalide." }, 400);
+      const lic = await dbLicence(id);
+      if (!lic) return json({ erreur: "Licence introuvable." }, 404);
+      if (body.action === "profil") {
+        const aujourdhui = dateValide(body.aujourd_hui ?? body.aujourdhui)
+          ?? new Date(isoDate(new Date()) + "T00:00:00Z");
+        return json({ ok: true, ...(await profilVA(lic, aujourdhui)) });
+      }
+      if (body.type != null && !TYPES.includes(body.type))
+        return json({ erreur: "Formule invalide (vie, mois, an ou essai)." }, 400);
+      const code = await nouveauCodePour(lic, body.type);
+      // Le code est créé AVANT la résiliation : en cas d'erreur, le VA n'est jamais bloqué sans code.
+      if (body.resilier_ancienne === true && lic.statut !== "resiliee") await dbStatut(lic.id, "resiliee");
+      return json({ ok: true, code });
     }
     return json({ erreur: "action inconnue" }, 400);
   } catch (e) {

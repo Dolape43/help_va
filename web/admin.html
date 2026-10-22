@@ -142,6 +142,37 @@ input::placeholder{color:var(--faint)}
 .act .va small{display:block;font-family:var(--mono);font-size:11px;color:var(--faint);font-weight:400;letter-spacing:.02em}
 .act .fort{font-weight:600;color:var(--ink)}
 .act .nul{color:var(--faint)}
+.act tr.clic{cursor:pointer;transition:background .12s}
+.act tr.clic:hover td{background:var(--surface-2)}
+.modal{position:fixed;inset:0;background:rgba(10,11,25,.45);display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;z-index:10}
+.modal.haut{z-index:20}
+.sheet{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);width:100%;max-width:560px;padding:22px 22px 24px;margin:auto 0}
+.sheet.petit{max-width:420px}
+.sheet .btn{margin-top:14px}
+.sheethead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+.sheethead h1{display:flex;align-items:center;gap:8px;flex-wrap:wrap;word-break:break-word}
+.fermer{background:none;border:1px solid var(--line);color:var(--mut);cursor:pointer;width:32px;height:32px;border-radius:8px;font-size:18px;line-height:1;flex:none;font-family:var(--sans)}
+.fermer:hover{color:var(--ink);border-color:var(--faint)}
+.infos{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13.5px;margin:0}
+.infos dt{color:var(--mut);font-size:12px;padding-top:1px}
+.infos dd{margin:0;word-break:break-all}
+.infos .mono{font-family:var(--mono);letter-spacing:.02em}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.btnrow .iact.acc{color:var(--acc);border-color:var(--acc)}
+.sec{font-size:12px;font-weight:600;color:var(--mut);letter-spacing:.06em;text-transform:uppercase;margin:24px 0 8px}
+.hist{display:flex;flex-direction:column}
+.hist .row{padding:10px 2px}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tile{background:var(--surface-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:10px 10px 9px}
+.tile b{display:block;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.tile span{font-size:11px;color:var(--mut)}
+.graph{margin-top:10px;background:var(--surface-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:10px 10px 4px}
+.graph svg{display:block;width:100%;height:64px}
+.graph .ax{display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint);margin-top:2px}
+.check{display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--ink);margin:16px 0 0;cursor:pointer;font-weight:400;letter-spacing:0}
+.check input{margin:3px 0 0;accent-color:var(--acc);width:16px;height:16px;flex:none}
+@media (max-width:480px){.tiles{grid-template-columns:repeat(2,1fr)}}
+.toast{z-index:30}
 </style>
 
 <div class="shell">
@@ -263,6 +294,45 @@ input::placeholder{color:var(--faint)}
     </main>
   </div>
 </div>
+<!-- FICHE PROFIL D'UN VA -->
+<div class="modal" id="profil" hidden onclick="if(event.target===this)fermerProfil()">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pfNom">
+    <div class="sheethead">
+      <div><h1 id="pfNom">Profil</h1><p class="sub" id="pfSub" style="margin:0">Chargement…</p></div>
+      <button class="fermer" type="button" onclick="fermerProfil()" aria-label="Fermer">×</button>
+    </div>
+    <div id="pfCorps"></div>
+  </div>
+</div>
+
+<!-- NOUVEAU CODE POUR CE VA -->
+<div class="modal haut" id="nc" hidden onclick="if(event.target===this)fermerNC()">
+  <div class="sheet petit" role="dialog" aria-modal="true" aria-labelledby="ncTitre">
+    <div class="sheethead">
+      <div><h1 id="ncTitre">Nouveau code</h1><p class="sub" id="ncSub" style="margin:0"></p></div>
+      <button class="fermer" type="button" onclick="fermerNC()" aria-label="Fermer">×</button>
+    </div>
+    <div id="ncForm">
+      <label>Formule</label>
+      <div class="seg" id="seg-nc">
+        <button aria-pressed="true">À vie</button><button aria-pressed="false">1 mois</button>
+        <button aria-pressed="false">1 an</button><button aria-pressed="false">Essai</button>
+      </div>
+      <label class="check"><input type="checkbox" id="ncRes"> <span>Résilier l'ancienne licence (le VA change de PC)</span></label>
+      <div class="err" id="ncErr"></div>
+      <button class="btn primary" id="btnNC" onclick="creerNC()">Générer le code</button>
+      <button class="btn ghost" onclick="fermerNC()">Annuler</button>
+    </div>
+    <div id="ncFin" hidden>
+      <div class="result">
+        <div class="done-h"><span class="r"></span><b>Code créé</b></div>
+        <div class="codeline" id="ncCode"></div>
+      </div>
+      <button class="btn primary" onclick="copyTxt($('ncCode').textContent)">Copier</button>
+      <button class="btn ghost" onclick="fermerNC()">Fermer</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -315,7 +385,7 @@ async function entrer(){
     $("loginErr").textContent=d.erreur==="mauvais mot de passe"?"Mot de passe incorrect.":(d.erreur||"Connexion impossible.");
   }
 }
-function sortir(){$("app").hidden=true;$("login").hidden=false;}
+function sortir(){fermerNC();fermerProfil();$("app").hidden=true;$("login").hidden=false;}
 
 /* onglets */
 function onglet(id,el){
@@ -380,20 +450,133 @@ function filtrer(){
   $("licSub").textContent=_lics.length+" licence"+(_lics.length>1?"s":"")+" · "+act+" active"+(act>1?"s":"");
   $("licList").innerHTML=L.length?L.map(ligneLic).join(""):'<div class="empty">Aucune licence.</div>';
 }
+// Boutons d'action d'une licence (liste et fiche profil). event.stopPropagation() :
+// un clic sur un bouton ne doit pas AUSSI ouvrir la fiche (la ligne est cliquable).
+function actionsLic(l){
+  const id=esc(l.id),s="event.stopPropagation();";
+  const nc='<button class="iact acc" onclick="'+s+'ouvrirNC(\''+id+'\')" title="Nouveau code d\'activation pour ce VA">Nouveau code</button>';
+  if(l.statut==="actif")return nc+'<button class="iact" onclick="'+s+'setStatut(\''+id+'\',\'suspendu\')">Suspendre</button><button class="iact dng" onclick="'+s+'setStatut(\''+id+'\',\'resiliee\')">Résilier</button>';
+  if(l.statut==="suspendu")return nc+'<button class="iact" onclick="'+s+'setStatut(\''+id+'\',\'actif\')">Activer</button><button class="iact dng" onclick="'+s+'setStatut(\''+id+'\',\'resiliee\')">Résilier</button>';
+  return nc+'<button class="iact" onclick="'+s+'setStatut(\''+id+'\',\'actif\')">Activer</button>';
+}
+function statutLabel(s){return s==="resiliee"?"résiliée":s==="utilise"?"utilisé":s;}
 function ligneLic(l){
   const exp=l.exp?("exp. "+l.exp):"à vie";
-  const label=l.statut==="resiliee"?"résiliée":l.statut;
-  let a="";
-  if(l.statut==="actif")a='<button class="iact" onclick="setStatut(\''+l.id+'\',\'suspendu\')">Suspendre</button><button class="iact dng" onclick="setStatut(\''+l.id+'\',\'resiliee\')">Résilier</button>';
-  else if(l.statut==="suspendu")a='<button class="iact" onclick="setStatut(\''+l.id+'\',\'actif\')">Activer</button><button class="iact dng" onclick="setStatut(\''+l.id+'\',\'resiliee\')">Résilier</button>';
-  else a='<button class="iact" onclick="setStatut(\''+l.id+'\',\'actif\')">Activer</button>';
-  return '<div class="row"><div class="id"><div class="nm">'+(l.nom_client||"—")+' <span class="pill '+l.statut+'">'+label+'</span></div>'
-    +'<div class="meta mono">'+l.empreinte+' · '+typeLabel(l.type)+' · '+exp+'</div></div>'+a+'</div>';
+  return '<div class="row clic" onclick="ouvrirProfil(\''+esc(l.id)+'\')" title="Voir la fiche"><div class="id"><div class="nm">'+esc(l.nom_client||"—")+' <span class="pill '+esc(l.statut)+'">'+esc(statutLabel(l.statut))+'</span></div>'
+    +'<div class="meta mono">'+esc(l.empreinte)+' · '+esc(typeLabel(l.type))+' · '+esc(exp)+'</div></div>'+actionsLic(l)+'</div>';
 }
 async function setStatut(id,statut){
   if(statut==="resiliee"&&!confirm("Résilier cette licence ? Le client sera bloqué à sa prochaine connexion."))return;
   const d=await api({action:"statut",id,statut});
-  if(d.ok){toast("Mis à jour");chargerLic();}else toast(d.erreur||"Erreur");
+  if(d.ok){toast("Mis à jour");chargerLic();rafraichirProfil(id);}else toast(d.erreur||"Erreur");
+}
+
+/* fiche profil d'un VA */
+let _pfId="";
+function dateFr(t){
+  if(!t)return "—";
+  const d=new Date(t);if(isNaN(d.getTime()))return esc(t);
+  return d.toLocaleDateString("fr-FR")+(String(t).length>10?" à "+d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}):"");
+}
+function jourFr(j){const p=String(j||"").split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:esc(j);}
+function formule(x){return esc(typeLabel(x.type))+(x.premium?" · premium":"");}
+function fermerProfil(){$("profil").hidden=true;_pfId="";}
+function rafraichirProfil(id){if(_pfId&&!$("profil").hidden&&(!id||id===_pfId))ouvrirProfil(_pfId);}
+async function ouvrirProfil(id){
+  const memeVA=_pfId===id&&!$("profil").hidden;
+  _pfId=id;$("profil").hidden=false;
+  if(!memeVA){$("pfNom").textContent="Profil";$("pfSub").textContent="Chargement…";$("pfCorps").innerHTML="";}
+  const d=await api({action:"profil",licence_id:id,aujourd_hui:jourLocal(new Date())});
+  if(_pfId!==id)return; // une autre fiche a été ouverte entre-temps
+  if(!d.ok){$("pfSub").textContent="Fiche indisponible : "+(d.erreur||"erreur inconnue");return;}
+  rendreProfil(d);
+}
+function rendreProfil(d){
+  const l=d.licence;
+  $("pfNom").innerHTML=esc(l.nom_client||"VA sans nom")+' <span class="pill '+esc(l.statut)+'">'+esc(statutLabel(l.statut))+'</span>';
+  $("pfSub").textContent="Licence créée le "+dateFr(l.cree_le);
+  const infos='<dl class="infos">'
+    +'<dt>Nom</dt><dd>'+esc(l.nom_client||"—")+'</dd>'
+    +'<dt>Empreinte</dt><dd class="mono">'+esc(l.empreinte||"—")+'</dd>'
+    +'<dt>Formule</dt><dd>'+formule(l)+'</dd>'
+    +'<dt>Expiration</dt><dd>'+(l.exp?jourFr(l.exp):"à vie")+'</dd>'
+    +'<dt>Statut</dt><dd>'+esc(statutLabel(l.statut))+'</dd>'
+    +'<dt>Créée le</dt><dd>'+dateFr(l.cree_le)+'</dd></dl>'
+    +'<div class="btnrow">'+actionsLic(l)+'</div>';
+  $("pfCorps").innerHTML=infos+'<div class="sec">Historique</div>'+histoProfil(d)+'<div class="sec">Activité de cette licence</div>'+activiteProfil(d.activite||{});
+}
+// Licences + codes du même VA, du plus récent au plus ancien.
+function histoProfil(d){
+  const ev=[];
+  [d.licence].concat(d.licences_liees||[]).forEach(l=>{
+    const ici=l.id===d.licence.id;
+    ev.push({t:l.cree_le||"",h:'<div class="row'+(ici?'':' clic')+'"'+(ici?'':' onclick="ouvrirProfil(\''+esc(l.id)+'\')" title="Ouvrir cette licence"')+'><div class="id">'
+      +'<div class="nm">Licence'+(ici?' (celle-ci)':'')+' <span class="pill '+esc(l.statut)+'">'+esc(statutLabel(l.statut))+'</span></div>'
+      +'<div class="meta">Créée le '+dateFr(l.cree_le)+' · '+formule(l)+' · <span class="mono">'+esc(l.empreinte)+'</span>'+(l.exp?' · exp. '+jourFr(l.exp):'')+'</div></div></div>'});
+  });
+  (d.codes||[]).forEach(c=>{
+    const meta=["Créé le "+dateFr(c.cree_le),formule(c)];
+    if(c.utilise_le)meta.push("utilisé le "+dateFr(c.utilise_le));
+    if(c.empreinte)meta.push('<span class="mono">'+esc(c.empreinte)+'</span>');
+    ev.push({t:c.cree_le||"",h:'<div class="row clic" onclick="copyTxt(\''+esc(c.code)+'\')" title="Cliquer pour copier"><div class="id">'
+      +'<div class="nm mono">'+esc(c.code)+' <span class="pill '+esc(c.statut)+'">'+esc(statutLabel(c.statut))+'</span></div>'
+      +'<div class="meta">'+meta.join(" · ")+'</div></div><span class="copyhint">copier</span></div>'});
+  });
+  ev.sort((a,b)=>String(b.t).localeCompare(String(a.t)));
+  return '<div class="hist">'+ev.map(e=>e.h).join("")+'</div>';
+}
+function activiteProfil(a){
+  const T=a.totaux||{},J=a.jours||[],z={total:0};
+  const tile=(c,nm)=>'<div class="tile" title="'+esc(detailAct(c||z))+'"><b>'+nb((c||z).total)+'</b><span>'+nm+'</span></div>';
+  let h='<div class="tiles">'+tile(T.aujourd_hui,"Aujourd'hui")+tile(T.semaine,"7 jours")+tile(T.mois,"30 jours")+tile(T.total,"Total")+'</div>';
+  if(!J.length)return h+'<div class="empty">Aucune activité sur les 90 derniers jours.</div>';
+  // Graphique : 90 colonnes (une par jour, la plus récente à droite), hauteur = total du jour.
+  const auj=new Date();auj.setHours(12,0,0,0);
+  const parJour={};J.forEach(j=>parJour[j.jour]=j);
+  const max=Math.max.apply(null,J.map(j=>j.total))||1;
+  let barres="";
+  for(let i=0;i<90;i++){
+    const j=parJour[jourLocal(new Date(auj.getTime()-(89-i)*86400000))];
+    if(!j)continue;
+    const ht=Math.max(2,Math.round(j.total/max*60));
+    barres+='<rect x="'+(i*4)+'" y="'+(60-ht)+'" width="3" height="'+ht+'" rx="1" fill="var(--acc)"><title>'+jourFr(j.jour)+' : '+esc(detailAct(j))+'</title></rect>';
+  }
+  h+='<div class="graph"><svg viewBox="0 0 360 60" preserveAspectRatio="none" role="img" aria-label="Médias traités par jour, 90 derniers jours">'+barres+'</svg>'
+    +'<div class="ax"><span>il y a 90 j</span><span>aujourd\'hui</span></div></div>';
+  h+='<div class="tablewrap" style="margin-top:10px"><table class="act"><thead><tr><th scope="col">Jour</th><th scope="col">Images</th><th scope="col">Vidéos</th><th scope="col">Métadonnées</th><th scope="col">Total</th></tr></thead><tbody>'
+    +J.map(j=>'<tr><td>'+quand(j.jour)+'</td><td>'+nb(j.images)+'</td><td>'+nb(j.videos)+'</td><td>'+nb(j.metadonnees)+'</td><td class="fort">'+nb(j.total)+'</td></tr>').join("")
+    +'</tbody></table></div>';
+  return h;
+}
+
+/* nouveau code pour un VA existant */
+let _ncId="";
+function trouverLic(id){return _lics.find(x=>x.id===id)||null;}
+async function ouvrirNC(id){
+  _ncId=id;
+  let l=trouverLic(id);
+  if(!l){const d=await api({action:"profil",licence_id:id,aujourd_hui:jourLocal(new Date())});if(!d.ok){toast(d.erreur||"Licence introuvable");return;}l=d.licence;}
+  $("ncSub").textContent="Pour "+(l.nom_client||l.empreinte||"ce VA")+" · même nom, formule et option premium.";
+  const lab=typeLabel(l.type);
+  $("seg-nc").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.textContent.trim()===lab?"true":"false"));
+  if(!$("seg-nc").querySelector("button[aria-pressed='true']"))$("seg-nc").querySelector("button").setAttribute("aria-pressed","true");
+  $("ncRes").checked=false;$("ncRes").disabled=l.statut==="resiliee";
+  $("ncErr").textContent="";$("ncForm").hidden=false;$("ncFin").hidden=true;
+  $("nc").hidden=false;
+}
+function fermerNC(){$("nc").hidden=true;_ncId="";}
+async function creerNC(){
+  const btn=$("btnNC"),id=_ncId,res=$("ncRes").checked&&!$("ncRes").disabled;
+  if(!id)return;
+  if(res&&!confirm("Résilier l'ancienne licence ? L'ancien PC sera bloqué à sa prochaine connexion."))return;
+  btn.disabled=true;btn.textContent="Génération…";$("ncErr").textContent="";
+  const d=await api({action:"nouveau_code",licence_id:id,type:typeDe("seg-nc"),resilier_ancienne:res});
+  btn.disabled=false;btn.textContent="Générer le code";
+  if(!d.ok){$("ncErr").textContent="Code non créé : "+(d.erreur||"erreur inconnue");return;}
+  $("ncCode").textContent=d.code;
+  $("ncForm").hidden=true;$("ncFin").hidden=false;
+  toast(res?"Code créé · ancienne licence résiliée":"Code créé");
+  chargerLic();rafraichirProfil(id);
 }
 
 /* listes codes */
@@ -436,15 +619,16 @@ function ligneActivite(a){
   const nom=a.nom_client?esc(a.nom_client):'<span class="mono">'+esc(a.empreinte)+'</span>';
   const etat=a.statut!=="actif"?' <span class="pill '+esc(a.statut)+'">'+(a.statut==="resiliee"?"résiliée":esc(a.statut))+'</span>':"";
   const sous=a.nom_client?'<small>'+esc(a.empreinte)+'</small>':"";
-  return '<tr><td><div class="va">'+nom+etat+sous+'</div></td>'
+  return '<tr class="clic" onclick="ouvrirProfil(\''+esc(a.id)+'\')" title="Voir la fiche"><td><div class="va">'+nom+etat+sous+'</div></td>'
     +celluleAct(a.aujourd_hui)+celluleAct(a.semaine,true)+celluleAct(a.mois)+celluleAct(a.total)
     +'<td>'+quand(a.dernier_jour)+'</td></tr>';
 }
 
 function ligneCode(c){
-  const label=c.statut==="utilise"?"utilisé":c.statut;
-  const meta=[typeLabel(c.type),c.nom_client,c.empreinte].filter(Boolean).join(" · ");
-  return '<div class="row clic" onclick="copyTxt(\''+c.code+'\')" title="Cliquer pour copier"><div class="id"><div class="nm mono">'+c.code+' <span class="pill '+c.statut+'">'+label+'</span></div>'
+  const meta=[typeLabel(c.type),c.nom_client,c.empreinte].filter(Boolean).map(esc).join(" · ");
+  return '<div class="row clic" onclick="copyTxt(\''+esc(c.code)+'\')" title="Cliquer pour copier"><div class="id"><div class="nm mono">'+esc(c.code)+' <span class="pill '+esc(c.statut)+'">'+esc(statutLabel(c.statut))+'</span></div>'
     +'<div class="meta">'+meta+'</div></div><span class="copyhint">copier</span></div>';
 }
+// Échap ferme la boîte du dessus (nouveau code d'abord, puis la fiche).
+document.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!$("nc").hidden)fermerNC();else if(!$("profil").hidden)fermerProfil();});
 </script>
