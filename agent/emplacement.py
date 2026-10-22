@@ -30,7 +30,10 @@ def dossier_donnees() -> str:
     else:
         base = os.environ.get("XDG_DATA_HOME") or os.path.join(
             os.path.expanduser("~"), ".local", "share")
-    d = os.path.join(base, NOM_APP)
+    # HELPVA_NOM_DOSSIER : posé par le moteur de la NOUVELLE app (engine/helpva_engine.py, exe
+    # seulement) -> %APPDATA%\HelpVA2 : nouvelle licence et réglages neufs, l'ancienne app garde
+    # %APPDATA%\HelpVA.
+    d = os.path.join(base, os.environ.get("HELPVA_NOM_DOSSIER") or NOM_APP)
     try:
         os.makedirs(d, exist_ok=True)
     except Exception:

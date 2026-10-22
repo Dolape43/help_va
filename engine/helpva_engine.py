@@ -77,6 +77,10 @@ from concurrent.futures import ThreadPoolExecutor   # noqa: E402
 from datetime import date, datetime            # noqa: E402
 
 GELE = bool(getattr(sys, "frozen", False))     # True dans l'exe PyInstaller
+if GELE:
+    # Nouvelle app : ses données à part (%APPDATA%\HelpVA2, voir agent/emplacement.py). Elle demande
+    # donc un NOUVEAU code d'activation, sans reprendre la licence ni les réglages de l'ancienne.
+    os.environ.setdefault("HELPVA_NOM_DOSSIER", "HelpVA2")
 
 if not GELE:
     # En développement : on rend importables agent/ (racine du dépôt) et
