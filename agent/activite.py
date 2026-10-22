@@ -3,14 +3,17 @@ Compteur d'activité : combien de médias ce PC a traités, jour par jour.
 
 Fichier `activite.json` (%APPDATA%\\HelpVA sous Windows) :
     {"version": 1,
-     "jours":  {"2026-10-22": {"images": 12, "videos": 3, "metadonnees": 40, "ranges": 87}},
+     "jours":  {"2026-10-22": {"images": 12, "videos": 3, "metadonnees": 40}},
      "envoye": {"2026-10-22": {...mêmes clés...}},
-     "anciens": {"images": 0, "videos": 0, "metadonnees": 0, "ranges": 0, "depuis": null}}
+     "anciens": {"images": 0, "videos": 0, "metadonnees": 0, "depuis": null},
+     "vus":    {"images": ["3f9a…", …], "videos": […], "metadonnees": […]}}
 
   - images      = images converties (module Images) ;
   - videos      = vidéos converties en MP4 ;
-  - metadonnees = médias passés dans Métadonnées ;
-  - ranges      = médias copiés par le Ranger.
+  - metadonnees = médias passés dans Métadonnées.
+    (Le Ranger ne compte pas : il ne fait que copier des médias déjà préparés.)
+  - vus     = les EMPREINTES des médias déjà comptés, par catégorie : retraiter les mêmes
+              images (même renommées ou copiées ailleurs) ne fait pas monter le compteur.
   - envoye  = dernières valeurs CONFIRMÉES par le serveur des licences, par jour : on ne
               renvoie que les jours qui ont changé depuis.
   - anciens = les totaux des jours purgés (on garde ~400 jours au plus) : le « total depuis
@@ -33,7 +36,9 @@ import time
 from datetime import date, timedelta
 
 FICHIER = "activite.json"
-CATEGORIES = ("images", "videos", "metadonnees", "ranges")
+CATEGORIES = ("images", "videos", "metadonnees")
+EMPREINTES_MAX = 200_000    # par catégorie ; au-delà, on oublie les plus anciennes
+_BLOC = 64 * 1024           # empreinte = taille + 64 Ko du début + 64 Ko de la fin
 JOURS_GARDES = 400          # au-delà : purgés (leurs totaux vont dans « anciens »)
 JOURS_ENVOYES = 30          # on ne renvoie jamais plus de 30 jours au serveur
 DELAI_RESEAU_S = 8          # timeout court : l'envoi se fait en arrière-plan
@@ -56,7 +61,8 @@ def _chemin() -> str:
 
 def _vide() -> dict:
     return {"version": 1, "jours": {}, "envoye": {},
-            "anciens": {**{c: 0 for c in CATEGORIES}, "depuis": None}}
+            "anciens": {**{c: 0 for c in CATEGORIES}, "depuis": None},
+            "vus": {c: [] for c in CATEGORIES}}
 
 
 def _entier(v) -> int:
@@ -97,6 +103,12 @@ def _nettoyer(brut) -> dict:
         propre["anciens"].update(_compteurs(anciens))
         if _jour_valide(anciens.get("depuis")):
             propre["anciens"]["depuis"] = anciens["depuis"]
+    vus = brut.get("vus")
+    if isinstance(vus, dict):
+        for c in CATEGORIES:
+            liste = vus.get(c)
+            if isinstance(liste, list):
+                propre["vus"][c] = [e for e in liste if isinstance(e, str)][-EMPREINTES_MAX:]
     return propre
 
 
@@ -193,6 +205,61 @@ def ajouter(categorie: str, n) -> None:
         print(f"⚠️ Compteur d'activité non mis à jour : {e}")
 
 
+def empreinte(chemin: str):
+    """Empreinte d'un fichier (None s'il est illisible) : taille + 64 Ko du début + 64 Ko
+    de la fin, hachés. Le même média garde la même empreinte même renommé ou copié
+    ailleurs ; et c'est rapide (on ne relit pas des vidéos de plusieurs Go en entier)."""
+    import hashlib
+    try:
+        taille = os.path.getsize(chemin)
+        h = hashlib.sha1(str(taille).encode())
+        with open(chemin, "rb") as f:
+            h.update(f.read(_BLOC))
+            if taille > 2 * _BLOC:
+                f.seek(-_BLOC, os.SEEK_END)
+                h.update(f.read(_BLOC))
+        return h.hexdigest()[:20]
+    except OSError:
+        return None
+
+
+def ajouter_medias(categorie: str, chemins, traites) -> int:
+    """Compte les médias NOUVEAUX d'un traitement : au plus `traites` (ce qui a vraiment
+    été traité), parmi les `chemins` sources dont l'empreinte n'a jamais été comptée dans
+    cette catégorie. Retraiter les mêmes images (ou un doublon dans le même lot) ne compte
+    donc pas. Renvoie le nombre ajouté. Ne lève JAMAIS d'exception."""
+    try:
+        n = _entier(traites)
+        if n <= 0 or categorie not in CATEGORIES:
+            return 0
+        lot, vus_lot = [], set()
+        for chemin in chemins or []:
+            e = empreinte(chemin)
+            if e and e not in vus_lot:
+                vus_lot.add(e)
+                lot.append(e)
+        aujourd_hui = date.today()
+        with _VERROU:
+            donnees = _charger()
+            deja = donnees["vus"][categorie]
+            connus = set(deja)
+            # Arrêt en cours de route : on ne marque que les n premiers (l'ordre de traitement),
+            # les autres seront comptés quand ils seront vraiment traités.
+            nouveaux = [e for e in lot if e not in connus][:n]
+            if not nouveaux:
+                return 0
+            jour = donnees["jours"].setdefault(aujourd_hui.isoformat(), _compteurs({}))
+            jour[categorie] += len(nouveaux)
+            deja.extend(nouveaux)
+            del deja[:-EMPREINTES_MAX]
+            _purger(donnees, aujourd_hui)
+            _sauver(donnees)
+            return len(nouveaux)
+    except Exception as e:
+        print(f"⚠️ Compteur d'activité non mis à jour : {e}")
+        return 0
+
+
 def _somme(jours: dict, depuis: str = None) -> dict:
     out = {c: 0 for c in CATEGORIES}
     for j, v in jours.items():
@@ -207,7 +274,7 @@ def resume() -> dict:
     """Ce que le VA voit sur l'Accueil :
     {aujourd_hui, semaine (7 derniers jours, aujourd'hui compris), mois (30 derniers jours),
      total, depuis ("AAAA-MM-JJ" du 1er jour compté, ou None)}.
-    Chaque bloc = {images, videos, metadonnees, ranges, total}."""
+    Chaque bloc = {images, videos, metadonnees, total}."""
     aujourd_hui = date.today()
     try:
         with _VERROU:

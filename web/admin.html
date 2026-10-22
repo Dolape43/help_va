@@ -423,7 +423,7 @@ async function chargerActivite(){
   $("actSub").textContent=A.length+" VA · "+actifs+" actif"+(actifs>1?"s":"")+" sur 7 jours · "+nb(sem)+" média"+(sem>1?"s":"")+" traité"+(sem>1?"s":"");
   $("actList").innerHTML=A.length?A.map(ligneActivite).join(""):'<tr><td colspan="6"><div class="empty">Aucune licence.</div></td></tr>';
 }
-function detailAct(c){return nb(c.images)+" image(s) · "+nb(c.videos)+" vidéo(s) · "+nb(c.metadonnees)+" métadonnée(s) · "+nb(c.ranges)+" rangé(s)";}
+function detailAct(c){return nb(c.images)+" image(s) · "+nb(c.videos)+" vidéo(s) · "+nb(c.metadonnees)+" métadonnée(s)";}
 function celluleAct(c,fort){return '<td title="'+esc(detailAct(c))+'" class="'+(c.total?(fort?"fort":""):"nul")+'">'+nb(c.total)+'</td>';}
 function quand(j){
   if(!j)return '<span class="nul">—</span>';

@@ -116,8 +116,8 @@ export function preferencesDepuis(p: Record<string, unknown> | null): Preference
 
 /* ---------- Activité (compteur des médias traités sur ce PC) ---------- */
 
-/** images = converties ; videos = converties en MP4 ; metadonnees = passées dans Métadonnées ; ranges = copiées par le Ranger. */
-export type Compteurs = { images: number; videos: number; metadonnees: number; ranges: number; total: number };
+/** images = converties ; videos = converties en MP4 ; metadonnees = passées dans Métadonnées (chaque média compté une fois). */
+export type Compteurs = { images: number; videos: number; metadonnees: number; total: number };
 
 /** Réponse de activite_lire. */
 export type ResumeActivite = {

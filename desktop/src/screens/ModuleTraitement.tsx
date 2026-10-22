@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { ArrowRight, Warning } from "@phosphor-icons/react";
-import { Bouton, Icone3D, LienDossier, Rouage, Surtitre, joindre } from "../components/ui";
+import { Bouton, Icone3D, Rouage, Surtitre } from "../components/ui";
 import { ICONES_3D } from "../icones3d";
 import EnteteModule from "../components/EnteteModule";
 import Dialogue from "../components/Dialogue";
@@ -39,8 +39,6 @@ export type ConfigTraitement = {
   options?: { titre: string; sousTitre: string; contenu: ReactNode };
   /** « Convertir », « Lancer » */
   bouton: string;
-  /** nom du dossier de résultat, quand on le connaît avant de choisir la source (« media (mp4) ») */
-  dossierResultat?: string;
   progression: { titre: string; enAttente: string; unite: string; texteAnnulation: string; annonceParFichier?: boolean };
   resultat: (r: ResultatTraitement) => {
     titre: string;
@@ -93,8 +91,6 @@ export default function ModuleTraitement({
   bandeau,
   retour,
   ouvrirDossier,
-  dossierExiste,
-  sortie,
 }: {
   mod: ModuleDef;
   config: ConfigTraitement;
@@ -104,16 +100,11 @@ export default function ModuleTraitement({
   bandeau: ReactNode;
   retour: () => void;
   ouvrirDossier: (chemin: string) => void;
-  dossierExiste: (chemin: string) => Promise<boolean>;
-  /** le dossier de sortie général (null pendant le chargement) */
-  sortie: string | null;
 }) {
   const occupe = t.occupe;
   const bloque = occupe || !!occupeAilleurs;
   const termine = t.etat === "fini" || t.etat === "arrete";
   const idResultat = `resultat-${mod.cle}`;
-  /** où arrivera le résultat : connu exactement une fois la source choisie, sinon déduit du réglage */
-  const cheminResultat = t.source?.sortie ?? (sortie ? (config.dossierResultat ? joindre(sortie, config.dossierResultat) : sortie) : null);
 
   // Fin du traitement : la carte de progression disparaît. Si le focus était dessus (il retombe
   // alors sur <body>), on le rend au bouton « Lancer » pour ne pas perdre l'utilisateur au clavier.
@@ -217,12 +208,8 @@ export default function ModuleTraitement({
             <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4 pl-5 shadow-card @min-[600px]:flex-row @min-[600px]:items-center @min-[600px]:gap-5">
               <div className="min-w-0 flex-1">
                 <p className="text-14 font-semibold">{occupeAilleurs ? "Une autre action est en cours" : (pret ?? "Choisissez une source pour commencer")}</p>
-                {occupeAilleurs ? (
+                {occupeAilleurs && (
                   <p className="text-12 text-fg-3">{fr(`Patientez : « ${occupeAilleurs} » doit d'abord se terminer.`)}</p>
-                ) : (
-                  cheminResultat && (
-                    <LienDossier chemin={cheminResultat} ouvrir={() => ouvrirDossier(cheminResultat)} existe={dossierExiste} cle={t.resultat} />
-                  )
                 )}
               </div>
               <Bouton

@@ -147,7 +147,7 @@ function genererCode(): string {
 }
 
 // ---------- compteur d'activité des VA (table activite, voir supabase/migrations) ----------
-const CATEGORIES = ["images", "videos", "metadonnees", "ranges"] as const;
+const CATEGORIES = ["images", "videos", "metadonnees"] as const;
 const MAX_COMPTEUR = 1_000_000;
 const MAX_JOURS = 31;
 
@@ -175,7 +175,7 @@ async function dbToutesActivites() {
   const lignes: any[] = [];
   for (let debut = 0; ; debut += 1000) {
     const r = await fetch(
-      `${SUPA_URL}/rest/v1/activite?select=licence_id,jour,images,videos,metadonnees,ranges` +
+      `${SUPA_URL}/rest/v1/activite?select=licence_id,jour,images,videos,metadonnees` +
       `&order=jour.asc,licence_id.asc&limit=1000&offset=${debut}`,
       { headers: dbHeaders() });
     if (!r.ok) throw new Error("db activite " + r.status);
@@ -222,7 +222,7 @@ function validerJours(jours: unknown, licence_id: string): unknown[] | string {
 // Totaux par licence pour la console : aujourd'hui / 7 jours / 30 jours / total + dernier jour actif.
 // « aujourd'hui » = la date du NAVIGATEUR de l'admin (son fuseau), sinon celle d'UTC.
 function resumerActivite(licences: any[], lignes: any[], aujourdhui: Date) {
-  const vide = () => ({ images: 0, videos: 0, metadonnees: 0, ranges: 0, total: 0 });
+  const vide = () => ({ images: 0, videos: 0, metadonnees: 0, total: 0 });
   const auj = isoDate(aujourdhui);
   const debut7 = isoDate(plusJours(aujourdhui, -6));
   const debut30 = isoDate(plusJours(aujourdhui, -29));

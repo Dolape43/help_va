@@ -17,7 +17,6 @@ create table if not exists public.activite (
   images       int         not null default 0,     -- images converties
   videos       int         not null default 0,     -- vidéos converties en MP4
   metadonnees  int         not null default 0,     -- médias passés dans Métadonnées
-  ranges       int         not null default 0,     -- médias copiés par le Ranger
   maj_le       timestamptz not null default now(), -- dernier envoi reçu pour ce jour
   primary key (licence_id, jour)
 );

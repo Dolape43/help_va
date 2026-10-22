@@ -256,23 +256,26 @@ c'est l'interface qui les lit et les passe en arguments.
 ### Compteur d'activité (`activite.json`, `agent/activite.py`)
 Chaque traitement terminé (même arrêté en cours de route) ajoute ce qui a **vraiment** été
 traité, au jour LOCAL du PC : `images` (`conversion_images`), `videos` (`conversion_mp4`),
-`metadonnees` (`metadonnees`), `ranges` (`ranger_lancer`, somme des `places` de tous les comptes).
+`metadonnees` (`metadonnees`). Le Ranger ne compte pas (il copie des médias déjà préparés).
+**Un média n'est compté qu'une fois par catégorie** : son empreinte (taille + 64 Ko du début et
+de la fin) est gardée dans `vus` ; retraiter les mêmes images, même renommées, ne compte pas.
 ```json
 {"version": 1,
- "jours":  {"2026-10-22": {"images": 12, "videos": 3, "metadonnees": 40, "ranges": 87}},
- "envoye": {"2026-10-22": {"images": 12, "videos": 3, "metadonnees": 40, "ranges": 87}},
- "anciens": {"images": 0, "videos": 0, "metadonnees": 0, "ranges": 0, "depuis": null}}
+ "jours":  {"2026-10-22": {"images": 12, "videos": 3, "metadonnees": 40}},
+ "envoye": {"2026-10-22": {"images": 12, "videos": 3, "metadonnees": 40}},
+ "anciens": {"images": 0, "videos": 0, "metadonnees": 0, "depuis": null},
+ "vus":    {"images": ["3f9a…"], "videos": [], "metadonnees": []}}
 ```
 - 400 jours gardés au plus ; les jours purgés vont dans `anciens` (le total reste juste).
   Fichier illisible : mis de côté (`activite.illisible-AAAAMMJJ-HHMMSS.json`), on repart de zéro.
   Le compteur ne fait **jamais** échouer un traitement.
 - `activite_lire` → `aujourd_hui`, `semaine` (7 derniers jours, aujourd'hui compris), `mois`
-  (30 derniers jours), `total` : chacun `{images, videos, metadonnees, ranges, total}` ; `depuis`
+  (30 derniers jours), `total` : chacun `{images, videos, metadonnees, total}` ; `depuis`
   = 1er jour compté (`"AAAA-MM-JJ"` ou `null`) ; `partage` = `true` si une licence est
   enregistrée (les compteurs sont alors envoyés à l'agence).
 - **Envoi** : dans un fil d'arrière-plan, ~5 s après le démarrage puis après chaque traitement.
   POST `<SUPABASE_URL>/functions/v1/admin` `{action: "activite", licence, jours: [{jour, images,
-  videos, metadonnees, ranges}]}` = les jours (30 derniers au plus) qui diffèrent de `envoye`
+  videos, metadonnees}]}` = les jours (30 derniers au plus) qui diffèrent de `envoye`
   (valeurs **absolues** du jour) ; `{ok: true}` → `envoye` mis à jour. Timeout 8 s, aucune erreur
   visible, jamais deux envois en même temps. **Sans licence enregistrée, rien ne part** (aucun
   appel réseau : mode dev, tests).

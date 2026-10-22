@@ -110,8 +110,6 @@ export default function App() {
     [moteur, erreur],
   );
 
-  // Fonction STABLE (useCallback) : LienDossier ne revérifie pas le dossier à chaque rendu.
-  const dossierExiste = useCallback((chemin: string) => moteur.dossierExiste(chemin), [moteur]);
 
   /* ---------- Thème ---------- */
   const moteurRef = useRef(moteur);
@@ -465,7 +463,7 @@ export default function App() {
   /* ---------- L'application ---------- */
   const bandeau = <BandeauMoteur connexion={m.connexion} raison={m.raison} reconnecter={m.reconnecter} />;
   const retour = () => aller("accueil");
-  const commun = { bandeau, retour, ouvrirDossier: (c: string) => void ouvrir(c), dossierExiste, sortie: m.sortie };
+  const commun = { bandeau, retour, ouvrirDossier: (c: string) => void ouvrir(c) };
 
   const ecran = (() => {
     if (page === "accueil")

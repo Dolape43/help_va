@@ -230,6 +230,17 @@ def _compter_medias(dossier, fichiers, extensions) -> int:
     return n
 
 
+def _lister_medias(dossier, fichiers, extensions) -> list:
+    """Les fichiers utiles d'une source, dans l'ordre du traitement (pour le compteur
+    d'activité : empreintes des médias traités)."""
+    if fichiers is not None:
+        return [f for f in fichiers if _a_extension(f, extensions)]
+    trouves = []
+    for racine, _sous, noms in os.walk(dossier):
+        trouves += [os.path.join(racine, f) for f in sorted(noms) if _a_extension(f, extensions)]
+    return trouves
+
+
 def _norm(chemin: str) -> str:
     return os.path.normcase(os.path.realpath(os.path.abspath(chemin)))
 
@@ -1422,9 +1433,6 @@ def ranger_lancer(ctx, args):
         r["aucun_type"] = False
         resultats.append(r)
 
-    # Compteur d'activité : médias VRAIMENT copiés, tous comptes confondus (même après un arrêt).
-    _compter_activite("ranges", sum(sum((r.get("places") or {}).values()) for r in resultats))
-
     # Champs de tête : même forme qu'avant (1 compte : le résultat de ranger() tel quel).
     if plusieurs:
         out = {"types": [t for t in rangement.TYPES if any(t in r["types"] for r in resultats)]}
@@ -1486,12 +1494,13 @@ def lancer_envoi_activite(delai_s: float = 0.0) -> None:
         pass
 
 
-def _compter_activite(categorie: str, n) -> None:
-    """Ajoute ce qui a VRAIMENT été traité (même après un arrêt), puis envoie au serveur.
-    Ne fait JAMAIS échouer le traitement (voir activite.ajouter)."""
+def _compter_activite(categorie: str, sources: list, n) -> None:
+    """Ajoute ce qui a VRAIMENT été traité (même après un arrêt), SANS recompter un média
+    déjà compté (empreinte), puis envoie au serveur. Ne fait JAMAIS échouer le traitement
+    (voir activite.ajouter_medias)."""
     try:
         from agent import activite
-        activite.ajouter(categorie, n)
+        activite.ajouter_medias(categorie, sources, n)
     except Exception as e:
         print(f"⚠️ Compteur d'activité non mis à jour : {e}")
     lancer_envoi_activite()
@@ -1545,7 +1554,8 @@ def conversion_mp4(ctx, args):
     except Exception as e:
         raise _echec("Convertir en MP4", e)
     res["arrete"] = res.get("arrete") or ctx.doit_arreter()
-    _compter_activite("videos", res.get("medias", 0))
+    _compter_activite("videos", _lister_medias(dossier, fichiers, conversion.EXT_VIDEOS),
+                      res.get("medias", 0))
     nb_d = res.get("dossiers") if (dossier and res.get("dossiers", 1) > 1) else None
     bilan = bilan_fin("Conversion terminée", res, sortie, "vidéo(s) en .mp4", nb_dossiers=nb_d)
     return {"traites": res.get("medias", 0), "echecs": res.get("echecs") or [],
@@ -1575,7 +1585,8 @@ def conversion_images(ctx, args):
     except Exception as e:
         raise _echec("Convertir les images", e)
     res["arrete"] = ctx.doit_arreter()
-    _compter_activite("images", res.get("images", 0))
+    _compter_activite("images", _lister_medias(dossier, fichiers, unicite.EXT_IMAGES),
+                      res.get("images", 0))
     bilan = bilan_fin("Images converties", res, sortie, f"image(s) en .{fmt}")
     return {"traites": res.get("images", 0), "echecs": res.get("echecs") or [],
             "arrete": bool(res["arrete"]), "dossiers": res.get("dossiers", 1),
@@ -1611,7 +1622,9 @@ def metadonnees(ctx, args):
                                           progress=ctx.progress, doit_arreter=ctx.doit_arreter)
     except Exception as e:
         raise _echec("Métadonnées", e)
-    _compter_activite("metadonnees", res.get("medias", 0))
+    _compter_activite("metadonnees",
+                      _lister_medias(dossier, fichiers, unicite.EXT_IMAGES | unicite.EXT_VIDEOS),
+                      res.get("medias", 0))
     bilan = bilan_fin("Métadonnées changées", res, sortie, "média(s)", res.get("dossiers"))
     return {"traites": res.get("medias", 0), "echecs": res.get("echecs") or [],
             "arrete": bool(res.get("arrete")), "dossiers": res.get("dossiers", 0),

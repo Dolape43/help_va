@@ -205,7 +205,8 @@ class TestProtocole(unittest.TestCase):
         cls.images = os.path.join(cls.tmp, "Images été")
         os.makedirs(cls.images)
         for i in (1, 2, 3):
-            ffmpeg("-f", "lavfi", "-i", f"testsrc=size=96x64:rate=1:duration=1",
+            # Tailles différentes : 3 images DIFFÉRENTES (le compteur d'activité ignore les doublons).
+            ffmpeg("-f", "lavfi", "-i", f"testsrc=size=96x{62 + i * 2}:rate=1:duration=1",
                    "-frames:v", "1", os.path.join(cls.images, f"{i} photo ☀.png"))
         cls.vide = os.path.join(cls.tmp, "Dossier vide")
         os.makedirs(cls.vide)
@@ -628,7 +629,7 @@ class TestProtocole(unittest.TestCase):
         c = self.moteur(appdata=appdata, home=home)
         # Profil neuf : tout à zéro, rien n'est partagé (pas de licence -> aucun envoi).
         d = self.assertResultat(c.appeler("activite_lire"))
-        zero = {"images": 0, "videos": 0, "metadonnees": 0, "ranges": 0, "total": 0}
+        zero = {"images": 0, "videos": 0, "metadonnees": 0, "total": 0}
         for bloc in ("aujourd_hui", "semaine", "mois", "total"):
             self.assertEqual(d[bloc], zero)
         self.assertIsNone(d["depuis"])
@@ -638,9 +639,15 @@ class TestProtocole(unittest.TestCase):
             "source": {"type": "dossier", "chemin": self.images}, "format": "png"}, 120))
         self.assertEqual(r["traites"], 3)
         d = self.assertResultat(c.appeler("activite_lire"))
-        trois = {"images": 3, "videos": 0, "metadonnees": 0, "ranges": 0, "total": 3}
+        trois = {"images": 3, "videos": 0, "metadonnees": 0, "total": 3}
         for bloc in ("aujourd_hui", "semaine", "mois", "total"):
             self.assertEqual(d[bloc], trois, bloc)
+        # Les MÊMES images reconverties (autre format) : déjà comptées, le compteur ne bouge pas.
+        r = self.assertResultat(c.appeler("conversion_images", {
+            "source": {"type": "dossier", "chemin": self.images}, "format": "jpg"}, 120))
+        self.assertEqual(r["traites"], 3)
+        d = self.assertResultat(c.appeler("activite_lire"))
+        self.assertEqual(d["aujourd_hui"], trois)
         aujourd_hui = date.today().isoformat()
         self.assertEqual(d["depuis"], aujourd_hui)
         self.assertFalse(d["partage"])
@@ -1374,7 +1381,34 @@ class TestActivite(unittest.TestCase):
         self.assertFalse(self.activite.partage())
         r = self.activite.resume()
         self.assertEqual(r["aujourd_hui"], {"images": 4, "videos": 0, "metadonnees": 0,
-                                            "ranges": 0, "total": 4})
+                                            "total": 4})
+
+    def test_memes_medias_comptes_une_seule_fois(self):
+        src = os.path.join(self.dossier, "src")
+        os.makedirs(src)
+        chemins = []
+        for i in range(3):
+            p = os.path.join(src, f"{i}.jpg")
+            with open(p, "wb") as f:
+                f.write(bytes([i]) * 1000)
+            chemins.append(p)
+        copie = os.path.join(src, "copie renommée.jpg")      # doublon de 0.jpg
+        with open(copie, "wb") as f:
+            f.write(bytes([0]) * 1000)
+        self.assertEqual(self.activite.ajouter_medias("images", chemins + [copie], 4), 3)
+        self.assertEqual(self.activite.ajouter_medias("images", chemins, 3), 0)
+        # Autre catégorie : comptée à part (le même média peut être converti PUIS modifié).
+        self.assertEqual(self.activite.ajouter_medias("metadonnees", chemins, 3), 3)
+        # Arrêt en cours de route : seuls les n premiers nouveaux sont comptés et marqués.
+        autres = []
+        for i in range(3, 6):
+            p = os.path.join(src, f"{i}.jpg")
+            with open(p, "wb") as f:
+                f.write(bytes([i]) * 1000)
+            autres.append(p)
+        self.assertEqual(self.activite.ajouter_medias("images", autres, 1), 1)
+        self.assertEqual(self.activite.ajouter_medias("images", autres, 3), 2)
+        self.assertEqual(self.activite.resume()["aujourd_hui"]["images"], 6)
 
     def test_envoi_avec_licence_seulement_ce_qui_a_change(self):
         from datetime import date
@@ -1382,7 +1416,7 @@ class TestActivite(unittest.TestCase):
             f.write("LICENCE-DE-TEST.signature\n")
         self.assertTrue(self.activite.partage())
         self.activite.ajouter("metadonnees", 5)
-        self.activite.ajouter("ranges", 2)
+        self.activite.ajouter("videos", 2)
         self.assertTrue(self.activite.envoyer())
         self.assertEqual(len(self.appels), 1)
         url, kw = self.appels[0]
@@ -1390,8 +1424,8 @@ class TestActivite(unittest.TestCase):
         self.assertEqual(kw["timeout"], 8)
         aujourd_hui = date.today().isoformat()
         self.assertEqual(kw["json"], {"action": "activite", "licence": "LICENCE-DE-TEST.signature",
-                                      "jours": [{"jour": aujourd_hui, "images": 0, "videos": 0,
-                                                 "metadonnees": 5, "ranges": 2}]})
+                                      "jours": [{"jour": aujourd_hui, "images": 0, "videos": 2,
+                                                 "metadonnees": 5}]})
         self.assertEqual(self.fichier()["envoye"][aujourd_hui]["metadonnees"], 5)
         # Rien de nouveau : aucun appel.
         self.assertTrue(self.activite.envoyer())

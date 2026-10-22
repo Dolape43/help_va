@@ -71,7 +71,6 @@ export default function ConvertirImages({
         ),
       },
       bouton: "Convertir",
-      dossierResultat: `images (${format})`,
       progression: {
         titre: "Conversion des images…",
         enAttente: `Conversion en .${format}`,

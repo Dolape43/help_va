@@ -21,7 +21,6 @@ const REPARTITION: { cle: Exclude<keyof Compteurs, "total">; libelle: string }[]
   { cle: "images", libelle: "Images" },
   { cle: "videos", libelle: "Vidéos" },
   { cle: "metadonnees", libelle: "Métadonnées" },
-  { cle: "ranges", libelle: "Rangés" },
 ];
 
 /**

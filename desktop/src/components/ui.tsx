@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 /** Petit titre en majuscules (« DOSSIER DE SORTIE », « SOURCE SÉLECTIONNÉE »…). */
 export function Surtitre({ children, accent = false }: { children: ReactNode; accent?: boolean }) {
@@ -229,52 +229,5 @@ export function Chiffre3D({ n, taille = 44, fonce, clair }: { n: number; taille?
       <Icone3D src={fonce} taille={taille} className="dark:hidden" />
       <Icone3D src={clair} taille={taille} className="hidden dark:block" />
     </span>
-  );
-}
-
-/** Joint un dossier et un nom avec le séparateur du chemin (« \\ » sous Windows). */
-export function joindre(dossier: string, nom: string) {
-  const sep = dossier.includes("\\") ? "\\" : "/";
-  return dossier.replace(/[\\/]+$/, "") + sep + nom;
-}
-
-/**
- * Un petit bouton « Ouvrir le dossier du résultat » (le chemin complet en bulle au survol).
- * Affiché SEULEMENT quand le dossier contient au moins un élément : sinon il n'y a rien à
- * ouvrir (et Windows afficherait « Emplacement non disponible »). On revérifie quand le chemin
- * change, quand `cle` change (fin d'un traitement) et quand la fenêtre revient au premier plan.
- */
-export function LienDossier({
-  chemin,
-  ouvrir,
-  existe: verifier,
-  cle,
-  libelle = "Ouvrir le dossier du résultat",
-}: {
-  chemin: string;
-  ouvrir: () => void;
-  existe: (chemin: string) => Promise<boolean>;
-  cle?: unknown;
-  libelle?: string;
-}) {
-  const [existe, setExiste] = useState(false);
-  useEffect(() => {
-    let actif = true;
-    const controler = () =>
-      verifier(chemin)
-        .then((oui) => actif && setExiste(oui))
-        .catch(() => actif && setExiste(false));
-    void controler();
-    window.addEventListener("focus", controler);
-    return () => {
-      actif = false;
-      window.removeEventListener("focus", controler);
-    };
-  }, [chemin, cle, verifier]);
-  if (!existe) return null;
-  return (
-    <Bouton taille="sm" className="mt-2" onClick={ouvrir} title={chemin}>
-      {libelle}
-    </Bouton>
   );
 }
