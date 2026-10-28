@@ -347,7 +347,10 @@ class TestProtocole(unittest.TestCase):
         c = self.moteur(sans_licence=False)
         st = self.assertResultat(c.appeler("licence_statut"))
         self.assertFalse(st["ok"])
-        self.assertEqual(st["raison"], "pas_active")
+        # Pas de licence -> offre gratuite, qui demande le serveur (coupé pendant les tests).
+        self.assertEqual(st["raison"], "pas_internet")
+        self.assertEqual(st["type"], "gratuit")
+        self.assertIsNone(st["essai"])
         self.assertRegex(st["empreinte"], r"^[A-Z2-7]{4}(-[A-Z2-7]{4}){3}$")
         self.assertErreur(c.appeler("conversion_mp4", {"source": {"type": "dossier",
                                                                   "chemin": self.videos}}),
@@ -1425,6 +1428,128 @@ class TestProtocole(unittest.TestCase):
         self.assertEqual(d["details2"]["groupe"], {"mot": "Dossier", "index": 1, "total": 1,
                                                    "nom": None})
         self.assertEqual(d["details2"]["element"]["nom"], "x.png")
+
+    def test_licence_revérifiée_avant_chaque_traitement(self):
+        """Avant un traitement : licence revérifiée en ligne (sauf confirmée il y a < 1 min).
+        Refusée -> LICENCE_REFUSEE et licence_ok repasse à False. Tolérance hors-ligne : 6 h.
+        Réseau simulé, APPDATA temporaire."""
+        code = (
+            "import sys, json; sys.path[:0] = [%r, %r]\n"
+            "import commandes\n"
+            "from agent import licence\n"
+            "class M:\n"
+            "    maj = []\n"
+            "    def generation_licence(self): return 0\n"
+            "    def licence_maj(self, ok, g): self.maj.append(ok); return True\n"
+            "class C:\n"
+            "    moteur = M(); textes = []\n"
+            "    def progress(self, t, f=None): self.textes.append(t)\n"
+            "appels = []\n"
+            "def verifier(st):\n"
+            "    def f(): appels.append(1); return st\n"
+            "    return f\n"
+            "out = {'grace': licence.GRACE_HORS_LIGNE_H}\n"
+            "licence.chemin_licence = lambda: sys.executable\n"   # un fichier qui existe
+            "licence.confirmee_recemment = lambda s: True\n"
+            "licence.verifier = verifier({'ok': False, 'raison': 'revoquee'})\n"
+            "commandes.controler_licence_avant_operation(C(), {}); out['recent_appels'] = len(appels)\n"
+            "licence.confirmee_recemment = lambda s: False\n"
+            "licence.verifier = verifier({'ok': True, 'raison': 'actif'})\n"
+            "commandes.controler_licence_avant_operation(C(), {})\n"
+            "licence.verifier = verifier({'ok': False, 'raison': 'pas_internet'})\n"
+            "try:\n"
+            "    commandes.controler_licence_avant_operation(C(), {}); out['code'] = None\n"
+            "except commandes.ErreurCommande as e:\n"
+            "    out['code'] = e.code; out['raison'] = e.details['statut']['raison']\n"
+            "out['appels'] = len(appels); out['maj'] = M.maj; out['textes'] = C.textes\n"
+            "print(json.dumps(out))\n"
+        ) % (DOSSIER_ENGINE, os.path.dirname(DOSSIER_ENGINE))
+        r = subprocess.run([sys.executable, "-c", code], env=self.env(), cwd=self.tmp,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+        d = json.loads(r.stdout.decode("utf-8").strip().splitlines()[-1])
+        self.assertEqual(d["grace"], 6)
+        self.assertEqual(d["recent_appels"], 0, "confirmée il y a < 1 min : pas d'appel réseau")
+        self.assertEqual(d["appels"], 2)
+        self.assertEqual(d["maj"], [True, False])
+        self.assertEqual(d["code"], "LICENCE_REFUSEE")
+        self.assertEqual(d["raison"], "pas_internet")
+        self.assertEqual(d["textes"], ["Vérification de la licence…"] * 2)
+
+    def test_offre_gratuite(self):
+        """Sans licence : offre gratuite comptée par le serveur (simulé ici, quota 5).
+        Mêmes médias -> pas recomptés ; trop de nouveaux -> refusé AVANT de démarrer ;
+        quota atteint -> « essai_fini » ; serveur injoignable -> « pas_internet »."""
+        dossier = os.path.join(self.tmp, "essai")
+        os.makedirs(dossier)
+        code = (
+            "import sys, os, json; sys.path[:0] = [%r, %r]\n"
+            "import commandes\n"
+            "from agent import licence, essai\n"
+            "D = %r\n"
+            "def image(nom):\n"
+            "    open(os.path.join(D, nom), 'wb').write(nom.encode() * 50)\n"
+            "QUOTA = 5; essai.QUOTA = QUOTA; base = set(); joignable = [True]\n"
+            "def rpc(f, corps):\n"
+            "    if not joignable[0]: return None\n"
+            "    n = len(base)\n"
+            "    if f == 'essai_statut':\n"
+            "        return {'quota': QUOTA, 'utilises': n, 'restant': QUOTA - n}\n"
+            "    neufs = set(corps['p_medias']) - base\n"
+            "    if n + len(neufs) > QUOTA:\n"
+            "        return {'ok': False, 'quota': QUOTA, 'utilises': n, 'restant': QUOTA - n,"
+            " 'nouveaux': len(neufs)}\n"
+            "    base.update(neufs)\n"
+            "    return {'ok': True, 'quota': QUOTA, 'utilises': len(base),"
+            " 'restant': QUOTA - len(base), 'nouveaux': len(neufs)}\n"
+            "essai._rpc = rpc\n"
+            "licence.verifier = lambda: {'ok': False, 'raison': 'pas_active', 'type': None,"
+            " 'expire_le': None, 'jours_restants': None}\n"
+            "class M:\n"
+            "    maj = []\n"
+            "    def generation_licence(self): return 0\n"
+            "    def licence_maj(self, ok, g): self.maj.append(ok); return True\n"
+            "class C:\n"
+            "    moteur = M(); cmd = 'metadonnees'\n"
+            "    def progress(self, t, f=None): pass\n"
+            "ARGS = {'source': {'type': 'dossier', 'chemin': D}}\n"
+            "def lancer():\n"
+            "    try:\n"
+            "        commandes.controler_licence_avant_operation(C(), ARGS)\n"
+            "        return ['ok', len(base)]\n"
+            "    except commandes.ErreurCommande as e:\n"
+            "        return [e.code, e.details and e.details.get('restant'),"
+            " e.details and e.details.get('nouveaux'), len(base)]\n"
+            "def statut():\n"
+            "    st = commandes._avec_essai(licence.verifier())\n"
+            "    return [st['ok'], st['raison'], st['type'], (st['essai'] or {}).get('restant')]\n"
+            "out = {'debut': statut()}\n"
+            "for n in ('a', 'b', 'c'): image(n + '.png')\n"
+            "out['trois'] = lancer(); out['memes'] = lancer()\n"
+            "for n in ('d', 'e', 'f'): image(n + '.png')\n"
+            "out['six'] = lancer()\n"
+            "os.remove(os.path.join(D, 'f.png'))\n"
+            "out['cinq'] = lancer(); out['fini'] = statut()\n"
+            "for n in 'abcde': os.remove(os.path.join(D, n + '.png'))\n"
+            "image('g.png'); out['apres'] = lancer(); out['maj'] = M.maj\n"
+            "joignable[0] = False; out['hors_ligne'] = statut()\n"
+            "print(json.dumps(out))\n"
+        ) % (DOSSIER_ENGINE, os.path.dirname(DOSSIER_ENGINE), dossier)
+        r = subprocess.run([sys.executable, "-c", code], env=self.env(), cwd=self.tmp,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+        d = json.loads(r.stdout.decode("utf-8").strip().splitlines()[-1])
+        self.assertEqual(d["debut"], [True, "essai_gratuit", "gratuit", 5])
+        self.assertEqual(d["trois"], ["ok", 3])
+        self.assertEqual(d["memes"], ["ok", 3], "les mêmes médias ne recomptent pas")
+        self.assertEqual(d["six"], ["ESSAI_INSUFFISANT", 2, 3, 3], "refusé, rien de réservé")
+        self.assertEqual(d["cinq"], ["ok", 5])
+        self.assertEqual(d["fini"], [False, "essai_fini", "gratuit", 0])
+        self.assertEqual(d["apres"], ["LICENCE_REFUSEE", None, None, 5])
+        self.assertEqual(d["hors_ligne"], [False, "pas_internet", "gratuit", None])
+        self.assertEqual(d["maj"], [True, True, True, False])
 
 
 # ═══════════════════════════════════════════════════════════════════════════

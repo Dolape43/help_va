@@ -15,6 +15,11 @@ export function messageErreur(e: unknown): string {
       return import.meta.env.DEV
         ? "Licence non vérifiée par le moteur : patientez, ou lancez le pont avec --sans-licence."
         : "Votre licence est en cours de vérification. Réessayez dans un instant.";
+    case "ESSAI_INSUFFISANT":
+    case "ESSAI_HORS_LIGNE":
+      return e.message; // phrase déjà claire, écrite par le moteur
+    case "LICENCE_REFUSEE":
+      return "Votre licence n'a pas pu être confirmée en ligne : le traitement n'a pas démarré. Vérifiez votre connexion internet.";
     case "DELAI_DEPASSE":
       // Seules les commandes de licence passent par internet : ailleurs, ce n'est pas le réseau.
       return commandeDe(e).startsWith("licence_")

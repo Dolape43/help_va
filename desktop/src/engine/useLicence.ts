@@ -9,7 +9,7 @@
  * C'est App.tsx qui choisit l'écran à montrer à partir de ces infos (licence.ts > ecranLicence).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Moteur, ResultatActivation, StatutLicence } from "./api";
+import { EV_TRAITEMENT_FINI, type Moteur, type ResultatActivation, type StatutLicence } from "./api";
 import { ErreurMoteur } from "./protocole";
 import type { EtatConnexion } from "./useMoteur";
 import { messageErreur } from "../erreurs";
@@ -76,9 +76,21 @@ export function useLicence(moteur: Moteur, connexion: EtatConnexion) {
     void verifier();
   }, [moteur, connexion, verifier]);
 
+  // Fin d'un traitement : refusé à cause de la licence -> on revérifie tout de suite ;
+  // offre gratuite -> on revérifie aussi, pour afficher les médias restants à jour.
+  const gratuit = statut?.type === "gratuit";
+  useEffect(() => {
+    const revoir = (e: Event) => {
+      const refus = (e as CustomEvent<{ refus?: boolean }>).detail?.refus === true;
+      if (refus || gratuit) void verifier();
+    };
+    window.addEventListener(EV_TRAITEMENT_FINI, revoir);
+    return () => window.removeEventListener(EV_TRAITEMENT_FINI, revoir);
+  }, [verifier, gratuit]);
+
   // Contrôle périodique : toutes les heures pour un abonnement ou un essai. Hors-ligne, toutes les
   // 5 minutes et pour TOUS les types (à vie compris) : le bandeau disparaît dès le retour du réseau,
-  // et la règle des 3 jours (agent/licence.py, GRACE_HORS_LIGNE_H) s'applique à tous. Au-delà,
+  // et la règle des 6 heures (agent/licence.py, GRACE_HORS_LIGNE_H) s'applique à tous. Au-delà,
   // l'écran « Connexion internet requise » remplace l'app, même en cours de session (voulu).
   useEffect(() => {
     if (!statut?.ok) return;

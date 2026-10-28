@@ -677,7 +677,7 @@ def _verifier_licence_partage(moteur):
                                           "generation": moteur.generation_licence()}
     if chef:
         try:
-            partage["res"] = licence.verifier()
+            partage["res"] = _avec_essai(licence.verifier())
         except BaseException as e:
             partage["exc"] = e
         finally:
@@ -689,6 +689,112 @@ def _verifier_licence_partage(moteur):
     if partage["exc"] is not None:
         raise partage["exc"]
     return partage["res"], partage["generation"]
+
+
+# Confirmée par le serveur il y a moins d'une minute : inutile de redemander (deux
+# opérations lancées coup sur coup ne font qu'un seul appel réseau).
+CONTROLE_RECENT_S = 60
+
+
+def controler_licence_avant_operation(ctx, args) -> None:
+    """Revérifie la licence EN LIGNE avant chaque traitement (conversion, métadonnées,
+    rangement). Résiliée, suspendue, expirée ou hors-ligne depuis plus de 6 h : le
+    traitement ne démarre pas (erreur LICENCE_REFUSEE, avec le statut pour l'interface).
+
+    Sans licence (offre gratuite) : les médias du traitement sont réservés sur le serveur
+    AVANT de démarrer ; s'il n'en reste pas assez, le traitement ne démarre pas (ESSAI_INSUFFISANT)."""
+    from agent import licence
+    if os.path.isfile(licence.chemin_licence()) and licence.confirmee_recemment(CONTROLE_RECENT_S):
+        return
+    ctx.progress("Vérification de la licence…")
+    st, generation = _verifier_licence_partage(ctx.moteur)
+    ok = bool(st.get("ok"))
+    if ok and st.get("raison") == "essai_gratuit":
+        try:
+            _reserver_essai(ctx, args)
+        except ErreurCommande as e:
+            if (e.details or {}).get("restant") == 0:
+                ctx.moteur.licence_maj(False, generation)   # essai fini : écran du code
+            raise
+    ctx.moteur.licence_maj(ok, generation)
+    if not ok:
+        raise ErreurCommande("LICENCE_REFUSEE", "Licence refusée : le traitement n'a pas démarré.",
+                             {"statut": _statut_json(st)})
+
+
+def _medias_du_traitement(cmd: str, args: dict) -> list:
+    """Les médias qu'un traitement va utiliser (pour l'offre gratuite).
+
+    Ranger : TOUS les médias des dossiers choisis pour les types cochés (on ne sait pas
+    d'avance lesquels le tirage au hasard prendra). Arguments invalides : liste vide, la
+    commande elle-même renverra la bonne erreur juste après."""
+    from agent import conversion, unicite
+    try:
+        if cmd == "conversion_mp4":
+            p = _plan_conversion_mp4(args)
+            return _lister_medias(p["dossier"], p["fichiers"], conversion.EXT_VIDEOS)
+        if cmd == "conversion_images":
+            p = _plan_conversion_images(args)
+            return _lister_medias(p["dossier"], p["fichiers"], unicite.EXT_IMAGES)
+        if cmd == "metadonnees":
+            p = _plan_metadonnees(args)
+            return _lister_medias(p["dossier"], p["fichiers"],
+                                  unicite.EXT_IMAGES | unicite.EXT_VIDEOS)
+        if cmd == "ranger_lancer":
+            from agent import ranger as rangement
+            coches, medias = _types_coches(args), []
+            for c in _comptes_ranger(args):
+                for t in _types_actifs(coches, c["n"]):
+                    for f in rangement.analyser_dossier(c["sources"].get(t), t)["fichiers"]:
+                        if f not in medias:
+                            medias.append(f)
+            return medias
+    except ErreurCommande:
+        pass
+    return []
+
+
+def _reserver_essai(ctx, args) -> None:
+    """Offre gratuite : réserve les médias du traitement, ou lève une erreur claire."""
+    from agent import essai
+    medias = _medias_du_traitement(ctx.cmd, args)
+    if not medias:
+        return
+    res = essai.reserver(medias)
+    if res is None:
+        raise ErreurCommande("ESSAI_HORS_LIGNE",
+                             "L'essai gratuit demande une connexion internet. Vérifiez votre "
+                             "connexion, puis réessayez.")
+    if res.get("ok"):
+        return
+    quota, restant, nouveaux = res["quota"], res["restant"], res.get("nouveaux", len(medias))
+    if restant == 0:
+        message = (f"Votre essai gratuit de {quota} médias est terminé. Entrez un code "
+                   "d'activation pour continuer.")
+    else:
+        message = (f"Ce traitement compte {nouveaux} nouveaux médias, mais il ne vous en reste "
+                   f"que {restant} sur {quota} dans l'essai gratuit.\n\nChoisissez moins de "
+                   "médias, ou entrez un code d'activation.")
+    raise ErreurCommande("ESSAI_INSUFFISANT", message,
+                         {"quota": quota, "restant": restant, "nouveaux": nouveaux,
+                          "utilises": res.get("utilises")})
+
+
+def _avec_essai(st: dict) -> dict:
+    """Pas de licence sur ce PC -> statut de l'offre gratuite (type « gratuit ») :
+      - il reste des médias -> ok, raison « essai_gratuit » ;
+      - plus rien          -> refusé, raison « essai_fini » (écran du code) ;
+      - serveur injoignable -> refusé, raison « pas_internet » (l'essai demande internet)."""
+    if st.get("raison") != "pas_active":
+        return st
+    from agent import essai
+    e = essai.statut()
+    base = {**st, "type": "gratuit", "essai": e}
+    if e is None:
+        return {**base, "ok": False, "raison": "pas_internet"}
+    if e["restant"] > 0:
+        return {**base, "ok": True, "raison": "essai_gratuit"}
+    return {**base, "ok": False, "raison": "essai_fini"}
 
 
 @commande("licence_statut", RESEAU)

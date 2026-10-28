@@ -21,6 +21,7 @@ export default function Parametres({
   reinitialiserSortie,
   ouvrirSortie,
   resilier,
+  saisirCode,
   prefs,
   changerPref,
   bandeau,
@@ -37,6 +38,8 @@ export default function Parametres({
   ouvrirSortie: () => void;
   /** supprime la licence de ce PC ; l'écran d'activation prend alors le relais */
   resilier: () => Promise<void>;
+  /** offre gratuite : ouvre l'écran du code d'activation */
+  saisirCode: () => void;
   /** choix par défaut et fin de traitement (enregistrés dans parametres.json par App) */
   prefs: Preferences;
   changerPref: <K extends keyof Preferences>(cle: K, valeur: Preferences[K]) => void;
@@ -62,7 +65,8 @@ export default function Parametres({
     }
   };
 
-  const aVie = licence?.ok && (licence.type === "vie" || !licence.expire_le);
+  const gratuit = licence?.type === "gratuit"; // offre gratuite : pas de licence à résilier
+  const aVie = licence?.ok && !gratuit && (licence.type === "vie" || !licence.expire_le);
   const debut = dateLongue(licence?.debut_le);
   const fin = dateLongue(licence?.expire_le);
 
@@ -218,9 +222,15 @@ export default function Parametres({
                 </>
               )}
             </dl>
-            <Bouton taille="sm" variante="danger" className="mt-4" onClick={ouvrirConfirmation}>
-              Résilier / changer de licence
-            </Bouton>
+            {gratuit ? (
+              <Bouton taille="sm" variante="primaire" className="mt-4" onClick={saisirCode}>
+                J'ai déjà une licence
+              </Bouton>
+            ) : (
+              <Bouton taille="sm" variante="danger" className="mt-4" onClick={ouvrirConfirmation}>
+                Résilier / changer de licence
+              </Bouton>
+            )}
           </div>
         </div>
       </Carte>

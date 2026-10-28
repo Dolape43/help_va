@@ -342,6 +342,13 @@ export default function App() {
   });
   const ecranLRef = useRef(ecranL);
   ecranLRef.current = ecranL;
+  // Offre gratuite : « J'ai déjà une licence » ouvre l'écran du code par-dessus l'app.
+  const enEssai = lic.statut?.ok === true && lic.statut.type === "gratuit";
+  const [saisirCode, setSaisirCode] = useState(false);
+  useEffect(() => {
+    if (!enEssai) setSaisirCode(false);
+  }, [enEssai]);
+  const codeVolontaire = saisirCode && enEssai && ecranL === "app";
 
   const ouvrirLienExterne = useCallback(
     (url: string) => {
@@ -431,13 +438,22 @@ export default function App() {
   const formule = contournee && !lic.statut?.ok ? "Licence non exigée (dev)" : libelleFormule(lic.statut);
 
   /* ---------- Portail : tant que la licence n'est pas réglée, pas d'application ---------- */
-  if (ecranL !== "app") {
+  if (ecranL !== "app" || codeVolontaire) {
     const st = lic.statut;
     const contenuPortail =
-      ecranL === "activation" && st ? (
+      codeVolontaire && st ? (
+        <Activation
+          key="essai_gratuit"
+          statut={st}
+          activer={lic.activer}
+          verifier={lic.verifier}
+          ouvrirLien={ouvrirLienExterne}
+          retour={() => setSaisirCode(false)}
+        />
+      ) : ecranL === "activation" && st ? (
         <Activation key={st.raison} statut={st} activer={lic.activer} verifier={lic.verifier} ouvrirLien={ouvrirLienExterne} />
       ) : ecranL === "connexion" ? (
-        <ConnexionRequise verifier={lic.verifier} enCours={lic.enCours} />
+        <ConnexionRequise verifier={lic.verifier} enCours={lic.enCours} gratuit={st?.type === "gratuit"} />
       ) : ecranL === "panne" ? (
         <Panne erreur={lic.erreur ?? ""} reessayer={reessayerLicence} enCours={lic.enCours || m.connexion === "connexion"} />
       ) : ecranL === "bienvenue" && st ? (
@@ -448,7 +464,7 @@ export default function App() {
     return (
       <>
         <Portail
-          ecran={ecranL === "activation" ? `activation-${st?.raison}` : ecranL}
+          ecran={codeVolontaire ? "activation-essai_gratuit" : ecranL === "activation" ? `activation-${st?.raison}` : ecranL}
           theme={theme}
           setTheme={setTheme}
           marque={ecranL !== "verification" && ecranL !== "bienvenue"}
@@ -491,6 +507,7 @@ export default function App() {
           reinitialiserSortie={reinitialiserSortie}
           ouvrirSortie={ouvrirSortieGenerale}
           resilier={lic.resilier}
+          saisirCode={() => setSaisirCode(true)}
           prefs={prefs}
           changerPref={changerPref}
           bandeau={bandeau}
@@ -533,6 +550,8 @@ export default function App() {
         formule={formule}
         licenceOk={contournee ? true : lic.statut ? lic.statut.ok : null}
         horsLigne={!!lic.statut?.ok && !!lic.statut.hors_ligne}
+        essai={enEssai ? (lic.statut?.essai ?? null) : null}
+        saisirCode={() => setSaisirCode(true)}
         connexion={m.connexion}
         transport={moteur.transport}
         raison={m.raison}

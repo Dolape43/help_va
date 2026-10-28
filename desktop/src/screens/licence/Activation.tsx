@@ -30,6 +30,7 @@ const ICONES: Record<string, ReactNode> = {
 const IMAGES_3D: Record<string, string> = {
   pas_active: ICONES_3D.cle,
   expire: ICONES_3D.expire,
+  essai_fini: ICONES_3D.expire,
   revoquee: ICONES_3D.bloque,
   suspendu: ICONES_3D.bloque,
   mauvais_pc: ICONES_3D.ordinateur,
@@ -48,11 +49,14 @@ export default function Activation({
   activer,
   verifier,
   ouvrirLien,
+  retour,
 }: {
   statut: StatutLicence;
   activer: (code: string) => Promise<ResultatActivation>;
   verifier: () => Promise<StatutLicence | null>;
   ouvrirLien: (url: string) => void;
+  /** offre gratuite en cours : bouton pour revenir à l'app sans entrer de code */
+  retour?: () => void;
 }) {
   const b = blocage(statut.raison, statut.type);
   const [code, setCode] = useState("");
@@ -209,6 +213,11 @@ export default function Activation({
             "Activer HelpVA"
           )}
         </Bouton>
+        {retour && (
+          <Bouton className="mt-2.5 w-full" onClick={retour} disabled={envoi}>
+            Revenir à l'essai gratuit
+          </Bouton>
+        )}
         {b.reessayer && (
           <Bouton className="mt-2.5 w-full" onClick={reverifier} aria-disabled={occupe || undefined}>
             {reverif ? (
@@ -233,7 +242,7 @@ export default function Activation({
           className="inline-flex items-center gap-1.5 rounded-md text-13 font-medium text-brand-text hover:underline"
         >
           <img src={ICONES_3D.telegram} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
-          {statut.raison === "pas_active" ? fr("Pas encore de code ? Contacter le vendeur") : "Contacter le vendeur"}
+          {statut.raison === "pas_active" || statut.raison === "essai_fini" ? fr("Pas encore de code ? Contacter le vendeur") : "Contacter le vendeur"}
         </button>
       </div>
     </CartePortail>

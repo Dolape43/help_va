@@ -132,6 +132,15 @@ conversion en cours est refusé : sinon la conversion aurait deux événements f
 - **Licence** : une tâche longue est refusée (`LICENCE_REQUISE`) tant que `licence_statut`
   n'a pas répondu `ok: true` pendant la session. Défense en profondeur : l'écran
   d'activation, lui, reste dans l'interface.
+- **Licence revérifiée à chaque traitement** : avant de démarrer, une tâche longue redemande
+  le statut au serveur (sauf s'il a confirmé il y a moins d'une minute). Refusée — résiliée,
+  suspendue, expirée, ou hors-ligne depuis plus de 6 h (`HELPVA_GRACE_H`) — : erreur
+  `LICENCE_REFUSEE` (`details.statut` = le statut), et `licence_ok` repasse à false.
+- **Offre gratuite** (pas de licence) : `licence_statut` renvoie `type: "gratuit"` et
+  `essai: {quota, utilises, restant}` (raison `essai_gratuit` ; `essai_fini` quand il ne reste
+  rien ; `pas_internet` si le serveur ne répond pas). Avant chaque traitement, les médias sont
+  réservés sur le serveur (`agent/essai.py`, SQL `20261028_essai_gratuit.sql`) : trop de
+  nouveaux médias -> le traitement ne démarre pas. Pendant les tests, aucun appel au serveur.
 
 ### stdout est réservé au protocole (le point délicat)
 Au tout début de `helpva_engine.py`, **avant** d'importer `agent` :
@@ -179,6 +188,9 @@ fd 1, sous-processus qui écrit et qui lit).
 | `OCCUPE` | tâche longue déjà active (`details.tache`) |
 | `ARRET_EN_COURS` | requête reçue après `quitter` |
 | `LICENCE_REQUISE` | tâche longue sans licence valide |
+| `LICENCE_REFUSEE` | le contrôle en ligne d'avant traitement a refusé la licence |
+| `ESSAI_INSUFFISANT` | offre gratuite : plus assez de médias pour ce traitement (`details` : quota, restant, nouveaux) |
+| `ESSAI_HORS_LIGNE` | offre gratuite : le serveur n'a pas pu réserver les médias (pas d'internet) |
 | `SOURCE_INTROUVABLE` | dossier/fichier absent (`details.chemins` ; pour ranger : `details.types` et `details.compte` = id du compte concerné) |
 | `SOURCE_VIDE` | aucune vidéo / image utile (vérifié **avant** d'appeler `agent/`) |
 | `SOURCE_DANS_SORTIE` | la source est la sortie ou dedans (sinon `rmtree` la détruirait ; pour ranger : `details.types`, `details.compte`) |

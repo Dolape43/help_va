@@ -6,6 +6,7 @@ import logo from "../assets/logo.png";
 import type { Activite, Page, Theme } from "../App";
 import { versionApp } from "../plateforme";
 import type { EtatConnexion } from "../engine/useMoteur";
+import type { EssaiGratuit } from "../engine/api";
 import { initiales } from "../licence";
 
 function Lien({
@@ -51,6 +52,8 @@ export default function Sidebar({
   formule,
   licenceOk,
   horsLigne,
+  essai,
+  saisirCode,
   connexion,
   transport,
   raison,
@@ -66,8 +69,12 @@ export default function Sidebar({
   formule: string;
   /** null = vérification en cours */
   licenceOk: boolean | null;
-  /** licence valide, mais le serveur n'a pas pu la confirmer (toléré 3 jours) */
+  /** licence valide, mais le serveur n'a pas pu la confirmer (toléré 6 heures) */
   horsLigne: boolean;
+  /** offre gratuite en cours (null sinon) */
+  essai: EssaiGratuit | null;
+  /** ouvre l'écran du code d'activation */
+  saisirCode: () => void;
   connexion: EtatConnexion;
   /** « pont de dev », « sidecar »… */
   transport: string;
@@ -115,6 +122,36 @@ export default function Sidebar({
 
 
       <div className="flex-1" />
+
+      {/* Offre gratuite : médias restants + « J'ai déjà une licence » */}
+      {essai && (
+        <div className="mb-2 rounded-xl border border-line bg-brand-soft/60 p-3">
+          <p className="text-13 font-medium text-fg">Essai gratuit</p>
+          <p className="tabular mt-0.5 text-12 text-fg-2">
+            {essai.restant} sur {essai.quota} médias restants
+          </p>
+          <div
+            className="mt-2 h-1.5 overflow-hidden rounded-full bg-fg/10"
+            role="progressbar"
+            aria-label="Médias gratuits restants"
+            aria-valuemin={0}
+            aria-valuemax={essai.quota}
+            aria-valuenow={essai.restant}
+          >
+            <div
+              className="h-full rounded-full bg-brand transition-[width] duration-300"
+              style={{ width: `${essai.quota ? (100 * essai.restant) / essai.quota : 0}%` }}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={saisirCode}
+            className="mt-2 text-12 font-medium text-brand-text hover:underline"
+          >
+            J'ai déjà une licence
+          </button>
+        </div>
+      )}
 
       {/* Support : toujours là, en cas de blocage ou de problème */}
       <div className="mb-2">

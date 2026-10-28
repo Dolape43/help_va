@@ -9,15 +9,18 @@ import type { StatutLicence } from "../../engine/api";
 const DELAI_S = 20;
 
 /**
- * Hors-ligne depuis plus de 3 jours : HelpVA doit revoir le serveur avant de continuer.
+ * Hors-ligne depuis plus de 6 heures : HelpVA doit revoir le serveur avant de continuer.
  * Au démarrage du PC, internet met parfois quelques secondes : on réessaie tout seul,
  * avec un décompte visible, sans que l'utilisateur ait à cliquer.
  */
 export default function ConnexionRequise({
   verifier,
   enCours,
+  gratuit = false,
 }: {
   verifier: () => Promise<StatutLicence | null>;
+  /** pas de licence : c'est l'offre gratuite qui demande internet */
+  gratuit?: boolean;
   /** une vérification est en cours (la nôtre, ou celle du démarrage) */
   enCours: boolean;
 }) {
@@ -52,8 +55,10 @@ export default function ConnexionRequise({
       <p className="mt-6 flex gap-2.5 rounded-xl border border-line bg-surface-2 px-4 py-3 text-13 leading-relaxed text-fg-2">
         <Info weight="fill" className="mt-0.5 h-4 w-4 shrink-0 text-brand-text" aria-hidden="true" />
         <span>
-          HelpVA confirme votre licence en ligne au moins une fois tous les 3 jours. Vos fichiers et vos réglages
-          sont conservés.
+          {gratuit
+            ? "L'essai gratuit est compté en ligne : HelpVA doit joindre son serveur pour continuer."
+            : "HelpVA confirme votre licence en ligne au moins une fois toutes les 6 heures."}{" "}
+          Vos fichiers et vos réglages sont conservés.
         </span>
       </p>
 

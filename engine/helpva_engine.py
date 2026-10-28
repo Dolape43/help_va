@@ -575,6 +575,9 @@ class Moteur:
         try:
             ctx = Contexte(self, rid, cmd, tache)
             try:
+                # Chaque traitement revérifie la licence en ligne avant de démarrer.
+                if tache is not None and not self.sans_licence:
+                    commandes.controler_licence_avant_operation(ctx, args)
                 data = fonction(ctx, args)
                 final = {"id": rid, "type": "result", "data": {} if data is None else data}
             except ErreurCommande as e:

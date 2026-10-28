@@ -32,8 +32,9 @@ export type EcranLicence = "verification" | "panne" | "activation" | "connexion"
  * Le « portail » d'entrée de l'app (même ordre que app_ctk.py > _router_licence) :
  *   licence pas encore connue      → « Vérification de votre licence… »
  *   vérification impossible        → « HelpVA n'a pas pu vérifier votre licence » + Réessayer
- *   hors-ligne depuis plus de 3 j. → « Connexion internet requise »
- *   licence absente ou bloquée     → écran d'activation (titre selon la raison)
+ *   hors-ligne depuis plus de 6 h  → « Connexion internet requise »
+ *   pas de licence, essai restant  → l'application (offre gratuite)
+ *   essai fini, licence bloquée    → écran d'activation (titre selon la raison)
  *   tout premier lancement         → « Bienvenue sur HelpVA »
  *   sinon                          → l'application
  */
@@ -120,6 +121,23 @@ export function blocage(raison: string, type: string | null = null): Blocage {
         titre: "Licence illisible",
         texte: "Le fichier de licence de ce PC est abîmé. Entrez un code d'activation fourni par le vendeur.",
         ton: "danger",
+        reessayer: false,
+        message: MESSAGES_VENDEUR.code,
+      };
+    case "essai_fini":
+      return {
+        titre: "Essai gratuit terminé",
+        texte: "Vos médias gratuits sont utilisés. Entrez un code d'activation pour continuer.",
+        ton: "warning",
+        reessayer: false,
+        message: MESSAGES_VENDEUR.essai,
+      };
+    case "essai_gratuit":
+      // « J'ai déjà une licence » pendant l'offre gratuite.
+      return {
+        titre: "Entrer un code d'activation",
+        texte: "Vous avez déjà une licence ? Entrez votre code : elle remplace l'essai gratuit.",
+        ton: "brand",
         reessayer: false,
         message: MESSAGES_VENDEUR.code,
       };
@@ -229,10 +247,18 @@ export function libelleFormule(l: StatutLicence | null): string {
         invalide: "Licence illisible",
         revoquee: "Licence résiliée",
         suspendu: "Licence suspendue",
+        essai_fini: "Essai gratuit terminé",
       }[l.raison] ?? "Licence non valide"
     );
   }
+  if (l.type === "gratuit") return `Essai gratuit · ${restantEssai(l)}`;
   return FORMULES[l.type ?? "vie"] ?? "Licence active";
+}
+
+/** « 12 médias restants » (offre gratuite). */
+export function restantEssai(l: StatutLicence): string {
+  const n = l.essai?.restant ?? 0;
+  return n > 1 ? `${n} médias restants` : `${n} média restant`;
 }
 
 /** « Licence à vie » · « Abonnement mensuel, jusqu'au 7 novembre 2026 » (écran de bienvenue). */

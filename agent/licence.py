@@ -103,7 +103,7 @@ def est_revoquee(licence_txt: str) -> bool:
 # L'app confirme l'accès auprès du serveur régulièrement. Si elle ne peut PAS
 # joindre le serveur (hors-ligne), elle tolère quelques heures grâce à la
 # dernière confirmation, puis se bloque tant qu'une connexion n'est pas revenue.
-GRACE_HORS_LIGNE_H = float(os.environ.get("HELPVA_GRACE_H", "72"))  # 3 jours
+GRACE_HORS_LIGNE_H = float(os.environ.get("HELPVA_GRACE_H", "6"))  # 6 heures
 NOM_FICHIER_CONFIRM = "derniere_verif.txt"
 
 
@@ -120,17 +120,25 @@ def _marquer_confirmation() -> None:
         pass
 
 
-def _confirmation_recente() -> bool:
-    """Vrai si le serveur a confirmé l'accès il y a moins de GRACE_HORS_LIGNE_H h."""
+def _confirmation_recente(fenetre_s: float = None) -> bool:
+    """Vrai si le serveur a confirmé l'accès il y a moins de fenetre_s secondes
+    (par défaut : GRACE_HORS_LIGNE_H heures)."""
+    if fenetre_s is None:
+        fenetre_s = GRACE_HORS_LIGNE_H * 3600
     try:
         with open(_fichier_confirmation(), encoding="utf-8") as f:
             t = datetime.fromisoformat(f.read().strip())
         if t.tzinfo is None:
             t = t.replace(tzinfo=timezone.utc)
         ecoule = (datetime.now(timezone.utc) - t).total_seconds()
-        return 0 <= ecoule < GRACE_HORS_LIGNE_H * 3600
+        return 0 <= ecoule < fenetre_s
     except Exception:
         return False
+
+
+def confirmee_recemment(secondes: float) -> bool:
+    """Vrai si le serveur a confirmé la licence il y a moins de `secondes`."""
+    return _confirmation_recente(secondes)
 
 
 def _statut_serveur(empreinte: str, cle_hash: str):

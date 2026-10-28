@@ -10,7 +10,7 @@ import { fr } from "../fr";
  * Les rappels de licence, en bas à droite, qui ne BLOQUENT jamais l'app :
  *  - fin d'abonnement (ou d'essai) demain / aujourd'hui, avec « Renouveler » (Telegram) ;
  *  - « Hors-ligne — reconnexion en cours… » quand le serveur n'a pas pu confirmer la licence
- *    (toléré 3 jours ; l'app revérifie toute seule toutes les 5 minutes).
+ *    (toléré 6 heures ; l'app revérifie toute seule toutes les 5 minutes).
  * Comme dans l'ancienne app (_montrer_rappel_fin, _montrer_bandeau_horsligne).
  */
 export default function RappelsLicence({

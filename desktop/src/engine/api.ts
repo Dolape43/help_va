@@ -10,7 +10,21 @@
  */
 import { DANS_TAURI } from "../plateforme";
 import type { ClientMoteur, Ecouteurs } from "./client";
-import type { EvLog, EvProgress } from "./protocole";
+import { ErreurMoteur, type EvLog, type EvProgress } from "./protocole";
+
+/**
+ * Événement de la fenêtre, à la fin de chaque traitement. useLicence l'écoute :
+ *   - detail.refus = vrai : le moteur a refusé le traitement à cause de la licence (résiliée,
+ *     expirée, hors-ligne depuis plus de 6 h, essai gratuit épuisé) -> on revérifie tout de suite,
+ *     l'écran de licence remplace alors l'app ;
+ *   - offre gratuite : on revérifie aussi, pour mettre à jour les médias restants.
+ */
+export const EV_TRAITEMENT_FINI = "helpva:traitement-fini";
+const CODES_REFUS = ["LICENCE_REFUSEE", "ESSAI_INSUFFISANT", "ESSAI_HORS_LIGNE"];
+
+function signalerFin(refus: boolean) {
+  window.dispatchEvent(new CustomEvent(EV_TRAITEMENT_FINI, { detail: { refus } }));
+}
 
 /* ---------- Types communs ---------- */
 
@@ -45,21 +59,27 @@ export type InfoMoteur = {
 
 /* ---------- Licence ---------- */
 
-export type TypeLicence = "vie" | "mois" | "an" | "essai";
+/** "gratuit" = offre gratuite (pas de licence, un nombre de médias offerts) ; "essai" = licence d'essai par code. */
+export type TypeLicence = "vie" | "mois" | "an" | "essai" | "gratuit";
+
+/** Offre gratuite : compté par le serveur, par PC. */
+export type EssaiGratuit = { quota: number; utilises: number; restant: number };
 
 export type StatutLicence = {
   ok: boolean;
-  raison: "actif" | "pas_active" | "invalide" | "mauvais_pc" | "expire" | "pas_internet" | "revoquee" | "suspendu" | string;
+  raison: "actif" | "pas_active" | "invalide" | "mauvais_pc" | "expire" | "pas_internet" | "revoquee" | "suspendu" | "essai_gratuit" | "essai_fini" | string;
   type: TypeLicence | null;
   /** "AAAA-MM-JJ" */
   expire_le: string | null;
   debut_le?: string | null;
   jours_restants: number | null;
   nom?: string | null;
-  /** vrai = le serveur n'a pas pu être joint, mais on tolère (moins de 3 jours sans confirmation) */
+  /** vrai = le serveur n'a pas pu être joint, mais on tolère (moins de 6 heures sans confirmation) */
   hors_ligne?: boolean;
   /** identifiant de ce PC (« XXXX-XXXX-XXXX-XXXX »), renvoyé par licence_statut */
   empreinte?: string;
+  /** offre gratuite (type "gratuit") : médias restants ; null = serveur injoignable */
+  essai?: EssaiGratuit | null;
 };
 
 /** Réponse de licence_activer. Un refus (code faux, pas de réseau) n'est PAS une erreur : ok = false + message. */
@@ -544,7 +564,16 @@ export class MoteurReel implements Moteur {
     const ecouteurs: Ecouteurs = { onProgress: ev.onProgress, onLog: ev.onLog };
     const { id, resultat } = this.client.requete<T>(cmd, args as Record<string, unknown>, ecouteurs, 0, true);
     return {
-      resultat,
+      resultat: resultat.then(
+        (r) => {
+          signalerFin(false);
+          return r;
+        },
+        (e: unknown) => {
+          signalerFin(e instanceof ErreurMoteur && CODES_REFUS.includes(e.code));
+          throw e;
+        },
+      ),
       annuler: async () => {
         await this.client.annuler(id);
       },
