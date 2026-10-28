@@ -153,38 +153,19 @@ export default function Sidebar({
         </span>
       </button>
 
-      {/* Version, état du moteur, thème */}
+      {/* Version et thème. L'état du moteur n'apparaît QUE s'il y a un problème : quand tout va
+          bien, ce détail technique ne dit rien à l'utilisateur. */}
       <div className="mt-3 flex items-center justify-between px-1">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="tabular text-12 text-fg-3">v{version}</span>
-          <span
-            id="etat-moteur"
-            data-etat={connexion}
-            title={
-              connexion === "connecte"
-                ? `Moteur Python connecté (${transport})`
-                : connexion === "connexion"
-                    ? "Connexion au moteur…"
-                    : `Moteur non connecté : ${raison ?? "inconnu"}`
-            }
-            className="flex items-center gap-1 text-11 text-fg-3"
-          >
-            <span
-              aria-hidden="true"
-              className={`h-1.5 w-1.5 rounded-full ${
-                connexion === "connecte"
-                  ? "bg-success"
-                  : connexion === "connexion"
-                      ? "point-actif bg-fg-3"
-                      : "bg-danger"
-              }`}
-            />
-            {connexion === "connecte"
-              ? "Moteur"
-              : connexion === "connexion"
-                  ? "…"
-                  : "Arrêté"}
+          <span className="tabular text-12 text-fg-3" title={connexion === "connecte" ? `Connecté (${transport})` : undefined}>
+            v{version}
           </span>
+          {connexion === "non_connecte" && (
+            <span title={`Moteur non connecté : ${raison ?? "inconnu"}`} className="flex items-center gap-1 text-11 text-danger">
+              <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-danger" />
+              Arrêté
+            </span>
+          )}
         </div>
         <SelecteurTheme theme={theme} setTheme={setTheme} />
       </div>

@@ -225,10 +225,11 @@ Une annulation reçue avant ce moment ne supprime **rien** (`result` avec `arret
 | `comptes_lire` | R | — | `{comptes: [{id, nom, sources, calendrier, vue}], max: 50}` (voir « Ranger : plusieurs comptes ») |
 | `comptes_sauver` | R | `{comptes: [{id, nom, sources, calendrier}]}` (la liste COMPLÈTE, tout est vérifié avant d'écrire) | comme `comptes_lire` + `message: "Enregistré."` |
 | `ranger_analyser` | R | `{comptes?: [...], sources?:{type:dossier}, types?}` | `{types{…}, actifs, sortie, existe, manquants, source_dans_sortie, doublons, incomplet, calendrier_erreur, pret, message_confirmation, comptes[…], partages[…]}` |
+| `carrousels_preparer` | R | `{source}` (images posées directement dedans, au moins 3) | `{sortie, carrousels, images, en_trop}` → `<sortie>/carrousels` (ou `carrousels (2)`… : jamais remplacé) avec `carrousel-1`, `carrousel-2`… de 3 images dans l'ordre 1, 2, 3 ; les images en trop ne sont pas copiées. Ce dossier sert de source « Carrousels » : un sous-dossier = un carrousel, rangé tel quel (`ranger_analyser` renvoie alors `types.carousel.carrousels`) |
 | `conversion_mp4` | L | `{source, renommer?=false}` (1.mp4, 2.mp4… par dossier, à la suite de l'existant) | `{traites, echecs, arrete, dossiers, sortie, duree_s, bilan}` → `<sortie>/media (mp4)` (rien n'est supprimé, comme avant) |
 | `conversion_images` | L | `{source, format:"jpg"\|"png" (défaut jpg), renommer?=false (1, 2, 3… à la suite), remplacer?: chemin}` | idem → `images (jpg)` / `images (png)` |
 | `metadonnees` | L | `{source, renommer?=true, remplacer?: chemin}` | idem → `<nom> (métadonnées changées)` ou `media (métadonnées changées)` |
-| `ranger_lancer` | L | `{comptes?, sources?, types?, aleatoire?=true, remplacer?: chemin}` | résultat de `ranger()` (totaux) + `sortie, duree_s, bilan, comptes[…]` → `ranger` |
+| `ranger_lancer` | L | `{comptes?, sources?, types?, aleatoire?=true, completer?=false, remplacer?: chemin}` (`completer` : pas assez de médias → réutiliser ceux qui sont là pour remplir TOUS les créneaux ; choix de l'utilisateur) | résultat de `ranger()` (totaux, dont `reutilises`) + `sortie, duree_s, bilan, comptes[…]` → `ranger` |
 
 Valeurs par défaut (comme les cases de l'ancienne app) : `renommer = true` (« recommandé »),
 `aleatoire = true`, `format = "jpg"`.

@@ -236,6 +236,19 @@ export type AnalyseTypeRanger = {
   trouves: number;
   ignores: number;
   manque: number;
+  /** dossier vide : ses sous-dossiers qui contiennent des médias (le bon dossier est sans doute l'un d'eux) */
+  sous_dossiers?: string[];
+  /** Carrousels : nombre de carrousels déjà préparés (un sous-dossier = un carrousel), sinon null */
+  carrousels?: number | null;
+};
+
+/** Le résultat de « Préparer les carrousels » (carrousels_preparer). */
+export type CarrouselsPrepares = {
+  sortie: string;
+  carrousels: number;
+  images: number;
+  /** images restées hors carrousel (moins de 3 à la fin), non copiées */
+  en_trop: number;
 };
 
 export type AnalyseRanger = {
@@ -287,6 +300,8 @@ export type ArgsRanger = {
   /** types à ranger (sinon : ceux cochés dans les paramètres) */
   types?: TypePost[];
   aleatoire?: boolean;
+  /** médias manquants : réutiliser ceux qui sont là pour remplir TOUS les créneaux (choix de l'utilisateur) */
+  completer?: boolean;
   remplacer?: string;
 };
 
@@ -315,6 +330,8 @@ export type ResultatRanger = {
   places?: Partial<Record<TypePost, number>>;
   manques?: Partial<Record<TypePost, number>>;
   surplus?: Partial<Record<TypePost, number>>;
+  /** médias placés une 2e fois (ou plus) pour compléter */
+  reutilises?: Partial<Record<TypePost, number>>;
   sortie: string;
   duree_s: number;
   bilan: Bilan;
@@ -378,6 +395,8 @@ export interface Moteur {
   /** Tout ce qu'il faut savoir avant de ranger (dossiers trouvés, manques, « Remplacer ? »). */
   rangerAnalyser(args: Omit<ArgsRanger, "aleatoire" | "remplacer">): Promise<AnalyseRanger>;
   rangerLancer(args: ArgsRanger, ev: EcouteursTache): TacheEnCours<ResultatRanger>;
+  /** Range les images d'un dossier en carrousel-1, carrousel-2… dans un nouveau dossier. */
+  carrouselsPreparer(source: string): Promise<CarrouselsPrepares>;
 
   /** Journal sans propriétaire (plantage dur du moteur…). */
   surLogLibre(f: ((ev: EvLog) => void) | null): void;
@@ -438,6 +457,14 @@ export class MoteurReel implements Moteur {
     // C'est le MOTEUR qui ouvre l'Explorateur : il vérifie que c'est bien un dossier existant
     // (jamais un .exe). Ça marche pareil avec le pont de dev et dans Tauri, sans donner à
     // l'interface la permission d'ouvrir n'importe quel chemin.
+    // Dans Tauri, c'est la fenêtre HelpVA qui ouvre (commande Rust « ouvrir_dossier », qui ne prend
+    // elle aussi qu'un dossier existant) : ouvert par le moteur, en arrière-plan, l'Explorateur
+    // apparaissait DERRIÈRE HelpVA (voir src-tauri/src/lib.rs).
+    if (DANS_TAURI) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("ouvrir_dossier", { chemin });
+      return;
+    }
     await this.client.appeler("ouvrir_dans_explorateur", { chemin });
   }
   async dossierExiste(chemin: string) {
@@ -503,6 +530,10 @@ export class MoteurReel implements Moteur {
   }
   rangerLancer(args: ArgsRanger, ev: EcouteursTache) {
     return this.longue<ResultatRanger>("ranger_lancer", args, ev);
+  }
+  carrouselsPreparer(source: string) {
+    // Copie des images : jusqu'à quelques minutes pour des milliers de photos sur un disque lent.
+    return this.client.appeler<CarrouselsPrepares>("carrousels_preparer", { source }, {}, 600_000);
   }
 
   /**

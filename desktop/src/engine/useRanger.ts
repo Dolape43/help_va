@@ -20,6 +20,7 @@ import {
   TYPES_POST,
   type AnalyseRanger,
   type Calendrier,
+  type CarrouselsPrepares,
   type CompteRanger,
   type Moteur,
   type ResultatRanger,
@@ -159,6 +160,8 @@ export function useRanger(p: {
   /** récapitulatif à confirmer avant de ranger, avec les comptes EXACTS qui ont été analysés */
   const [confirmation, setConfirmation] = useState<AnalyseRanger | null>(null);
   const argsConfirmes = useRef<{ comptes: CompteRanger[]; types: TypePost[] }>({ comptes: [], types: [] });
+  /** il manque des médias : true = réutiliser ceux qui sont là, false = laisser vide, null = pas encore choisi */
+  const [completer, setCompleter] = useState<boolean | null>(null);
   /** cases cochées tout de suite à l'écran, sans attendre l'aller-retour avec le moteur */
   const [cochesLocales, setCochesLocales] = useState<Record<TypePost, boolean> | null>(null);
 
@@ -337,6 +340,29 @@ export function useRanger(p: {
     [changerSources],
   );
 
+  /** Les dossiers choisis d'un compte (types `types`), recopiés sur d'autres comptes (remplacés). */
+  const copierDossiers = useCallback(
+    async (idSource: string, cibles: string[], types: TypePost[]) => {
+      try {
+        await modifier((liste) => {
+          const src = liste.find((c) => c.id === idSource);
+          if (!src) return null;
+          return liste.map((c) => {
+            if (!cibles.includes(c.id) || c.id === idSource) return c;
+            const sources = { ...c.sources };
+            for (const t of types) if (src.sources[t]) sources[t] = src.sources[t];
+            return { ...c, sources };
+          });
+        });
+        return true;
+      } catch (e) {
+        ref.current.erreur("Dossiers non appliqués", e);
+        return false;
+      }
+    },
+    [modifier],
+  );
+
   const retirerDossier = useCallback(
     (id: string, t: TypePost) =>
       changerSources(id, (s) => {
@@ -354,6 +380,33 @@ export function useRanger(p: {
         if (d) await definirDossier(id, t, d);
       } catch (e) {
         ref.current.erreur("Fenêtre de choix", e);
+      }
+    },
+    [definirDossier],
+  );
+
+  /**
+   * « Préparer les carrousels » : le moteur range les images d'un dossier en carrousel-1,
+   * carrousel-2… (3 images chacun) dans un nouveau dossier, qui devient la source « Carrousels »
+   * du compte. On l'ouvre aussitôt : l'utilisateur vérifie et retouche AVANT de ranger.
+   */
+  const [preparationCarrousels, setPreparationCarrousels] = useState(false);
+  const [carrouselsPrets, setCarrouselsPrets] = useState<CarrouselsPrepares | null>(null);
+  const preparerCarrousels = useCallback(
+    async (id: string) => {
+      try {
+        const src = await ref.current.moteur.choisirDossier("Choisir le dossier des images à mettre en carrousels");
+        if (!src) return;
+        setPreparationCarrousels(true);
+        setCarrouselsPrets(null);
+        const res = await ref.current.moteur.carrouselsPreparer(src);
+        await definirDossier(id, "carousel", res.sortie);
+        setCarrouselsPrets(res);
+        void ref.current.moteur.ouvrirDossier(res.sortie).catch(() => {});
+      } catch (e) {
+        ref.current.erreur("Préparer les carrousels", e);
+      } finally {
+        setPreparationCarrousels(false);
       }
     },
     [definirDossier],
@@ -485,6 +538,7 @@ export function useRanger(p: {
       return;
     }
     argsConfirmes.current = r.args;
+    setCompleter(null);   // médias manquants : l'utilisateur choisit à CHAQUE rangement
     setConfirmation(a);
   }, [suivi.occupe, analyser]);
 
@@ -514,7 +568,7 @@ export function useRanger(p: {
     const quoi = a.actifs.map((t) => LIBELLES_TYPES[t]).join(", ");
     try {
       const res = await suivi.demarrer(
-        (ev) => moteur.rangerLancer({ comptes: liste, types, aleatoire, remplacer: a.existe ? a.sortie : undefined }, ev),
+        (ev) => moteur.rangerLancer({ comptes: liste, types, aleatoire, completer: completer === true, remplacer: a.existe ? a.sortie : undefined }, ev),
         { total, intro: ranges > 1 ? `Rangement de ${pluriel(ranges, "compte")} (${quoi}) → ${a.sortie}` : `Rangement de ${quoi} → ${a.sortie}` },
       );
       surFin(res);
@@ -533,7 +587,7 @@ export function useRanger(p: {
     } finally {
       void analyser(); // la sortie existe maintenant : l'analyse le dira au prochain rangement
     }
-  }, [confirmation, aleatoire, suivi, analyser, lancer]);
+  }, [confirmation, aleatoire, completer, suivi, analyser, lancer]);
 
   const annuler = useCallback(() => suivi.annuler((e) => ref.current.erreur("Annulation", e)), [suivi]);
 
@@ -562,13 +616,21 @@ export function useRanger(p: {
     renommer,
     definirDossier,
     retirerDossier,
+    copierDossiers,
     choisirDossier,
+    preparerCarrousels,
+    preparationCarrousels,
+    carrouselsPrets,
+    oublierCarrouselsPrets: () => setCarrouselsPrets(null),
+    ouvrirDossierSource: (d: string) => ref.current.moteur.ouvrirDossier(d).catch((e) => ref.current.erreur("Ouvrir le dossier", e)),
     enregistrerCalendrier,
     lancer,
     annuler,
     confirmation,
     confirmer,
     refuserConfirmation: () => setConfirmation(null),
+    completer,
+    setCompleter,
   };
 }
 

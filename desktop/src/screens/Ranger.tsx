@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowRight, CalendarBlank, Check, FolderOpen, Package, Warning, X } from "@phosphor-icons/react";
+import { ArrowRight, CalendarBlank, Check, Copy, FolderOpen, Package, Warning, X } from "@phosphor-icons/react";
 import { Bouton, Case, Icone3D, Rouage, Surtitre } from "../components/ui";
 import { ICONES_3D } from "../icones3d";
 import EnteteModule from "../components/EnteteModule";
@@ -30,7 +30,7 @@ const unite = (t: TypePost, n: number) => pluriel(n, t === "reel" ? "vidéo" : "
 /** La règle de chaque type, comme l'ancienne app (_contenu_onglet_ranger). */
 function regle(t: TypePost, parCarrousel: number) {
   if (t === "carousel")
-    return `Photos nommées 1, 2, 3… : rangées dans l'ordre par groupes de ${parCarrousel} (1-2-3 → 1er carrousel, etc.).`;
+    return `Photos nommées 1, 2, 3… : rangées dans l'ordre par groupes de ${parCarrousel} (1-2-3 → 1er carrousel, etc.). Ou bien préparez d'abord vos carrousels (un sous-dossier par carrousel) pour les vérifier avant de ranger.`;
   if (t === "reel") return "Uniquement des vidéos (.mp4, .mov…) : les images sont ignorées.";
   return "Uniquement des images (.jpg, .png…) : les vidéos sont ignorées.";
 }
@@ -121,8 +121,14 @@ function LignesAnalyse({ types, actifs }: { types: Record<TypePost, AnalyseTypeR
         return (
           <li key={t}>
             • <span className="font-medium text-fg">{LIBELLES_TYPES[t]}</span>
-            {fr(` : ${unite(t, x.trouves)} pour ${x.requis} requise${x.requis > 1 ? "s" : ""}`)}
-            {x.manque > 0 && <span className="text-warning">{fr(` · il en manque ${x.manque}`)}</span>}
+            {x.carrousels != null
+              ? fr(` : ${pluriel(x.carrousels, "carrousel")} préparé${x.carrousels > 1 ? "s" : ""} pour ${x.creneaux} requis`)
+              : fr(` : ${unite(t, x.trouves)} pour ${x.requis} requise${x.requis > 1 ? "s" : ""}`)}
+            {x.trouves === 0 && x.requis > 0 ? (
+              <span className="font-semibold text-danger">{fr(` · aucun créneau « ${LIBELLES_TYPES[t]} » ne sera rempli`)}</span>
+            ) : (
+              x.manque > 0 && <span className="text-warning">{fr(` · il en manque ${x.manque}`)}</span>
+            )}
           </li>
         );
       })}
@@ -180,7 +186,7 @@ function Recapitulatif({ a }: { a: AnalyseRanger }) {
                 )}
                 {(c.incomplet || c.doublons.length > 0) && (
                   <ul className="mt-1 space-y-1 text-13">
-                    {c.incomplet && <Alerte>Certains créneaux resteront incomplets.</Alerte>}
+                    {c.incomplet && <Alerte>Il manque des médias pour certains créneaux.</Alerte>}
                     {c.doublons.map(([x, y]) => (
                       <Alerte key={`${x}-${y}`}>{texteDoublon(x, y)}</Alerte>
                     ))}
@@ -212,7 +218,7 @@ function Recapitulatif({ a }: { a: AnalyseRanger }) {
       {plusieurs && <p className="mt-1 text-12 text-fg-3">Un sous-dossier par compte, à son nom.</p>}
       {alertesTete && (
         <ul className="mt-3 space-y-1.5 text-13">
-          {!plusieurs && a.incomplet && <Alerte>Certains créneaux resteront incomplets.</Alerte>}
+          {!plusieurs && a.incomplet && <Alerte>Il manque des médias pour certains créneaux.</Alerte>}
           {!plusieurs &&
             a.doublons.map(([x, y]) => (
               <Alerte key={`${x}-${y}`}>{texteDoublon(x, y)}</Alerte>
@@ -375,6 +381,24 @@ export default function Ranger({
     });
   };
 
+  /* « Appliquer les dossiers à d'autres comptes » : le compte source, les comptes cibles et les types */
+  const [copie, setCopie] = useState<{ source: string; cibles: string[]; types: TypePost[] } | null>(null);
+  const sourceCopie = copie ? (r.comptes.find((y) => y.id === copie.source) ?? null) : null;
+  const ouvrirCopie = (id: string) => {
+    const s = r.comptes.find((y) => y.id === id);
+    if (!s) return;
+    setCopie({ source: id, cibles: [], types: TYPES_POST.filter((t) => s.sources[t]) });
+  };
+  const appliquerCopie = async () => {
+    if (!copie || !sourceCopie) return;
+    const ok = await r.copierDossiers(copie.source, copie.cibles, copie.types);
+    if (ok) {
+      const noms = r.comptes.filter((y) => copie.cibles.includes(y.id)).map((y) => `« ${y.nom} »`);
+      info("Dossiers appliqués", fr(`Les dossiers de « ${sourceCopie.nom} » sont maintenant ceux de ${enumerer(noms)}.`));
+      setCopie(null);
+    }
+  };
+
   const compteEdite = editeur ? (r.comptes.find((y) => y.id === editeur) ?? null) : null;
   // Le compte de l'éditeur a disparu (« − » cliqué juste avant « Calendrier ») : on oublie son id,
   // sinon l'éditeur resterait « ouvert » pour un compte qui n'existe plus.
@@ -440,7 +464,39 @@ export default function Ranger({
               <FolderOpen className="h-4 w-4 text-fg-2" aria-hidden="true" />
               Importer le dossier des {NOMS_TYPES[t]}…
             </Bouton>
+            {t === "carousel" && (
+              <Bouton onClick={() => void r.preparerCarrousels(c.id)} disabled={occupe || r.preparationCarrousels}>
+                {r.preparationCarrousels ? <Rouage className="h-4 w-4" /> : <Package className="h-4 w-4 text-fg-2" aria-hidden="true" />}
+                {r.preparationCarrousels ? "Préparation…" : "Préparer les carrousels…"}
+              </Bouton>
+            )}
           </div>
+          {t === "carousel" && r.carrouselsPrets && dossier === r.carrouselsPrets.sortie && (
+            <div role="status" className="mt-3 flex items-start gap-2.5 rounded-xl border border-success/30 bg-success/[0.07] p-3.5 text-13">
+              <Check weight="bold" className="mt-[2px] h-4 w-4 shrink-0 text-success-text" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-success-text">
+                  {fr(`${pluriel(r.carrouselsPrets.carrousels, "carrousel")} préparé${r.carrouselsPrets.carrousels > 1 ? "s" : ""} et importé${r.carrouselsPrets.carrousels > 1 ? "s" : ""}`)}
+                </p>
+                <p className="mt-0.5 text-fg-2">
+                  {fr(
+                    `Le dossier vient de s'ouvrir : vérifiez vos carrousels, déplacez ou remplacez des images si besoin, puis rangez.${
+                      r.carrouselsPrets.en_trop
+                        ? ` ${pluriel(r.carrouselsPrets.en_trop, "image")} en trop (pas assez pour un carrousel complet) ${r.carrouselsPrets.en_trop > 1 ? "n'ont" : "n'a"} pas été copiée${r.carrouselsPrets.en_trop > 1 ? "s" : ""}.`
+                        : ""
+                    }`,
+                  )}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void r.ouvrirDossierSource(r.carrouselsPrets!.sortie)}
+                  className="mt-1.5 text-13 font-medium text-brand-text underline-offset-2 hover:underline"
+                >
+                  Ouvrir le dossier des carrousels
+                </button>
+              </div>
+            </div>
+          )}
           <div
             className={`mt-3 flex items-center gap-3 rounded-xl border p-3.5 ${dossier ? "border-brand/20 bg-brand-soft" : "border-dashed border-line-2"}`}
           >
@@ -467,7 +523,11 @@ export default function Ranger({
                       ) : (
                         <Check weight="bold" className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                       )}
-                      {fr(
+                      {x.carrousels != null ? fr(
+                        `${pluriel(x.carrousels, "carrousel")} préparé${x.carrousels > 1 ? "s" : ""}${
+                          x.manque > 0 ? ` · il en manque ${Math.ceil(x.manque / imagesParCarrousel)}` : ""
+                        }`,
+                      ) : fr(
                         `${unite(t, x.trouves)} trouvée${x.trouves > 1 ? "s" : ""}${x.manque > 0 ? ` · il en manque ${x.manque}` : ""}${
                           x.ignores ? ` · ${pluriel(x.ignores, "fichier")} ignoré${x.ignores > 1 ? "s" : ""}` : ""
                         }`,
@@ -492,6 +552,23 @@ export default function Ranger({
               </button>
             )}
           </div>
+          {/* Dossier choisi mais SANS aucun média : bien visible, sinon le rangement se fait sans
+              ces posts (cas fréquent : le dossier parent choisi au lieu du bon sous-dossier). */}
+          {dossier && x && x.dossier_valide && x.trouves === 0 && !r.analyseEnCours && (
+            <div role="alert" className="mt-3 flex items-start gap-2.5 rounded-xl border border-danger/30 bg-danger/[0.06] p-3.5 text-13">
+              <Warning weight="fill" className="mt-[2px] h-4 w-4 shrink-0 text-danger" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="font-semibold text-danger">{fr(`0 ${t === "reel" ? "vidéo trouvée" : "image trouvée"} dans ce dossier`)}</p>
+                <p className="mt-0.5 text-fg-2">
+                  {x.sous_dossiers?.length
+                    ? fr(
+                        `Il contient des sous-dossiers avec des ${t === "reel" ? "vidéos" : "images"} (${enumerer(x.sous_dossiers)}) : importez directement l'un d'eux.`,
+                      )
+                    : fr(`Sans médias, aucun créneau « ${LIBELLES_TYPES[t]} » ne sera rempli. Choisissez un autre dossier.`)}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </>
@@ -597,6 +674,14 @@ export default function Ranger({
               >
                 {panneauTypes}
               </div>
+              {plusieurs && c && Object.values(c.sources).some(Boolean) && (
+                <div className="mt-4 border-t border-line pt-4">
+                  <Bouton onClick={() => ouvrirCopie(c.id)} disabled={occupe}>
+                    <Copy className="h-4 w-4 text-fg-2" aria-hidden="true" />
+                    {fr(`Appliquer les dossiers de « ${c.nom} » à d'autres comptes…`)}
+                  </Bouton>
+                </div>
+              )}
             </>
           )}
         </Etape>
@@ -703,13 +788,44 @@ export default function Ranger({
             <Bouton data-autofocus onClick={r.refuserConfirmation}>
               Annuler
             </Bouton>
-            <Bouton variante="primaire" onClick={() => void r.confirmer()} disabled={!!occupeAilleurs}>
+            <Bouton
+              variante="primaire"
+              onClick={() => void r.confirmer()}
+              disabled={!!occupeAilleurs || (!!r.confirmation?.incomplet && r.completer === null)}
+            >
               {r.confirmation?.existe ? "Remplacer et ranger" : "Ranger les médias"}
             </Bouton>
           </>
         }
       >
         {r.confirmation && <Recapitulatif a={r.confirmation} />}
+        {/* Il manque des médias : c'est à l'utilisateur de décider, pas au logiciel. « Ranger »
+            reste grisé tant qu'il n'a pas choisi. */}
+        {r.confirmation?.incomplet && (
+          <fieldset className="mt-3 rounded-xl border border-warning/40 bg-warning/[0.06] p-3">
+            <legend className="px-1 text-13 font-semibold text-fg">Il manque des médias. Que faire ?</legend>
+            {(
+              [
+                [true, "Compléter avec les médias déjà là", "Tous les créneaux seront remplis : certains médias seront utilisés plusieurs fois."],
+                [false, "Laisser ces créneaux vides", "Les derniers créneaux resteront sans média : vous les remplirez vous-même."],
+              ] as const
+            ).map(([v, titre, aide]) => (
+              <label key={String(v)} className="mt-1.5 flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-fg/[0.04]">
+                <input
+                  type="radio"
+                  name="completer"
+                  checked={r.completer === v}
+                  onChange={() => r.setCompleter(v)}
+                  className="mt-[3px] h-4 w-4 shrink-0 accent-[var(--brand)]"
+                />
+                <span className="min-w-0">
+                  <span className="block text-13 font-medium text-fg">{titre}</span>
+                  <span className="block text-12 text-fg-2">{aide}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
       </Dialogue>
 
       {/* « Supprimer ce compte ? » / « Retirer 2 comptes ? » */}
@@ -738,6 +854,67 @@ export default function Ranger({
         }
       >
         <p>{aConfirmer ? fr(aConfirmer.texte) : ""}</p>
+      </Dialogue>
+
+      {/* « Appliquer les dossiers de … à d'autres comptes » */}
+      <Dialogue
+        ouvert={!!copie && !!sourceCopie}
+        fermer={() => setCopie(null)}
+        ton="brand"
+        icone={<Copy weight="duotone" className="h-6 w-6" />}
+        image={ICONES_3D.dossier}
+        titre="Appliquer à d'autres comptes"
+        actions={
+          <>
+            <Bouton data-autofocus onClick={() => setCopie(null)}>
+              Annuler
+            </Bouton>
+            <Bouton variante="primaire" onClick={() => void appliquerCopie()} disabled={!copie?.cibles.length || !copie?.types.length}>
+              Appliquer
+            </Bouton>
+          </>
+        }
+      >
+        {copie && sourceCopie && (
+          <div className="scroll-fin -mx-1 max-h-[calc(100vh-260px)] overflow-y-auto px-1">
+            <p>{fr(`Les dossiers choisis pour « ${sourceCopie.nom} » remplaceront ceux des comptes cochés.`)}</p>
+            <p className="mt-3 font-medium text-fg">Dossiers à appliquer</p>
+            <div className="mt-1.5 space-y-2">
+              {TYPES_POST.filter((t) => sourceCopie.sources[t]).map((t) => (
+                <Case
+                  key={t}
+                  coche={copie.types.includes(t)}
+                  onChange={(v) => setCopie({ ...copie, types: v ? [...copie.types, t] : copie.types.filter((x) => x !== t) })}
+                  aide={<span className="selectable font-mono text-11 [overflow-wrap:anywhere]">{sourceCopie.sources[t]}</span>}
+                >
+                  {LIBELLES_TYPES[t]}
+                </Case>
+              ))}
+            </div>
+            <p className="mt-4 font-medium text-fg">Comptes</p>
+            {(() => {
+              const autres = r.comptes.filter((y) => y.id !== sourceCopie.id);
+              const tous = autres.length > 0 && autres.every((y) => copie.cibles.includes(y.id));
+              return (
+                <div className="mt-1.5 space-y-2">
+                  <Case coche={tous} onChange={(v) => setCopie({ ...copie, cibles: v ? autres.map((y) => y.id) : [] })}>
+                    <span className="font-semibold">Tous les autres comptes</span>
+                  </Case>
+                  {autres.map((y) => (
+                    <Case
+                      key={y.id}
+                      className="pl-4"
+                      coche={copie.cibles.includes(y.id)}
+                      onChange={(v) => setCopie({ ...copie, cibles: v ? [...copie.cibles, y.id] : copie.cibles.filter((x) => x !== y.id) })}
+                    >
+                      {y.nom}
+                    </Case>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </Dialogue>
 
       <EditeurCalendrier

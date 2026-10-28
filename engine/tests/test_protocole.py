@@ -1116,6 +1116,110 @@ class TestProtocole(unittest.TestCase):
         self.assertEqual([(x["id"], x["sortie"]) for x in a["comptes"]], [("c1", sortie)])
         self.assertEqual(a["partages"], [])
 
+    def test_carrousels_prepares(self):
+        appdata, home = self.profil_isole("Profil carrousels")
+        c = self.moteur(appdata=appdata, home=home)
+        base = self.nouvelle_sortie(c, "Sortie carrousels")
+        # 8 images nommées 1…8 (dans le désordre du disque) : 2 carrousels complets + 2 en trop.
+        src = os.path.join(appdata, "photos carrousels")
+        os.makedirs(src)
+        modele = sorted(f for f in os.listdir(self.images) if f.endswith(".png"))[0]
+        for i in (3, 1, 10, 2, 5, 4, 6, 7):
+            shutil.copy(os.path.join(self.images, modele), os.path.join(src, f"{i}.png"))
+        d = self.assertResultat(c.appeler("carrousels_preparer", {"source": src}))
+        self.assertEqual(d["sortie"], os.path.join(base, "carrousels"))
+        self.assertEqual((d["carrousels"], d["images"], d["en_trop"]), (2, 8, 2))
+        self.assertEqual(sorted(os.listdir(os.path.join(d["sortie"], "carrousel-1"))),
+                         ["1.png", "2.png", "3.png"])
+        self.assertEqual(sorted(os.listdir(os.path.join(d["sortie"], "carrousel-2"))),
+                         ["4.png", "5.png", "6.png"])
+        # Un 2e passage ne remplace JAMAIS les carrousels retouchés : « carrousels (2) ».
+        d2 = self.assertResultat(c.appeler("carrousels_preparer", {"source": src}))
+        self.assertEqual(d2["sortie"], os.path.join(base, "carrousels (2)"))
+        e = c.appeler("carrousels_preparer", {"source": os.path.join(d["sortie"], "carrousel-1", "x")})
+        self.assertEqual(e["type"], "error")
+        # Retouche à la main : un carrousel de 2 images, et un 10e (tri numérique) en plus.
+        os.remove(os.path.join(d["sortie"], "carrousel-2", "6.png"))
+        shutil.copytree(os.path.join(d["sortie"], "carrousel-1"), os.path.join(d["sortie"], "carrousel-10"))
+        cal = {"semaine-01": {"jour-1": [{"heure": "12h00", "type": "carousel"},
+                                         {"heure": "19h00", "type": "carousel"}]}}
+        comptes = [{"id": "c1", "nom": "@c", "sources": {"carousel": d["sortie"]}, "calendrier": cal}]
+        a = self.assertResultat(c.appeler("ranger_analyser", {"comptes": comptes, "types": ["carousel"]}))
+        x = a["types"]["carousel"]
+        self.assertEqual((x["carrousels"], x["manque"], x["trouves"]), (3, 0, 8))
+        self.assertIn("• Carrousels : 3 carrousel(s) préparé(s) pour 2 requis", a["message_confirmation"])
+        rid = c.envoyer("ranger_lancer", {"comptes": comptes, "types": ["carousel"], "aleatoire": False})
+        r = self.assertResultat(c.fin(rid, 120))
+        jour = os.path.join(base, "ranger", "semaine-01", "jour-1")
+        self.assertEqual(sorted(os.listdir(os.path.join(jour, "1_12h00_carousel"))),
+                         ["1.png", "2.png", "3.png"])
+        self.assertEqual(sorted(os.listdir(os.path.join(jour, "2_19h00_carousel"))),
+                         ["4.png", "5.png"])
+        self.assertEqual(os.listdir(os.path.join(base, "ranger", "surplus", "Carrousels")), ["carrousel-10"])
+        self.assertEqual((r["places"], r["manques"], r["surplus"]), ({"carousel": 5}, {"carousel": 0},
+                                                                     {"carousel": 1}))
+        # Pas assez de carrousels : il en manque, compté en carrousels × 3.
+        comptes[0]["calendrier"] = {"semaine-01": {"jour-1": [{"heure": f"1{i}h00", "type": "carousel"}
+                                                              for i in range(5)]}}
+        a = self.assertResultat(c.appeler("ranger_analyser", {"comptes": comptes, "types": ["carousel"]}))
+        self.assertEqual(a["types"]["carousel"]["manque"], 6)
+        self.assertTrue(a["incomplet"])
+        # Au hasard + compléter : 3 carrousels pour 3 jours de 2 créneaux. Chaque jour reçoit
+        # 2 carrousels DIFFÉRENTS (jamais le même carrousel posté deux fois le même jour), et pas
+        # de legende.txt dans les créneaux. (carrousel-10 = copie de carrousel-1 : mêmes noms de
+        # fichiers, on le retire pour pouvoir comparer les contenus.)
+        shutil.rmtree(os.path.join(d["sortie"], "carrousel-10"))
+        comptes[0]["calendrier"] = {"semaine-01": {f"jour-{j}": [{"heure": "12h00", "type": "carousel"},
+                                                                 {"heure": "19h00", "type": "carousel"}]
+                                                   for j in (1, 2, 3)}}
+        for essai in range(5):     # le hasard : plusieurs tirages
+            rid = c.envoyer("ranger_lancer", {"comptes": comptes, "types": ["carousel"], "aleatoire": True,
+                                              "completer": True, "remplacer": os.path.join(base, "ranger")})
+            self.assertResultat(c.fin(rid, 120))
+            for j in (1, 2, 3):
+                jour = os.path.join(base, "ranger", "semaine-01", f"jour-{j}")
+                a_, b_ = (sorted(os.listdir(os.path.join(jour, n)))
+                          for n in ("1_12h00_carousel", "2_19h00_carousel"))
+                self.assertNotIn("legende.txt", a_ + b_)
+                self.assertNotEqual(a_, b_, f"jour-{j}, tirage {essai}")
+
+    def test_ranger_completer(self):
+        """Pas assez de médias + completer : TOUS les créneaux sont remplis avec ceux qui sont là ;
+        sans completer, comme avant, les derniers restent vides."""
+        appdata, home = self.profil_isole("Profil completer")
+        c = self.moteur(appdata=appdata, home=home)
+        base = self.nouvelle_sortie(c, "Sortie completer")
+        caro = os.path.join(appdata, "caro")
+        os.makedirs(caro)
+        modele = sorted(f for f in os.listdir(self.images) if f.endswith(".png"))[0]
+        for i in range(1, 8):          # 7 images : 2 carrousels complets + 1 image seule
+            shutil.copy(os.path.join(self.images, modele), os.path.join(caro, f"{i}.png"))
+        jour = [{"heure": f"1{i}h00", "type": "story"} for i in range(5)]
+        jour += [{"heure": f"2{i}h00", "type": "carousel"} for i in range(3)]
+        comptes = [{"id": "c1", "nom": "@c", "sources": {"story": self.images, "carousel": caro},
+                    "calendrier": {"semaine-01": {"jour-1": jour}}}]
+        args = {"comptes": comptes, "types": ["story", "carousel"], "aleatoire": True}
+        sortie = os.path.join(base, "ranger", "semaine-01", "jour-1")
+
+        r = self.assertResultat(c.fin(c.envoyer("ranger_lancer", args), 120))
+        self.assertEqual(r["incomplets"], {"story": 2, "carousel": 1})
+        self.assertEqual(r["reutilises"], {"story": 0, "carousel": 0})
+
+        r = self.assertResultat(c.fin(c.envoyer("ranger_lancer", dict(args, completer=True,
+                                                                        remplacer=os.path.join(base, "ranger"))), 120))
+        self.assertEqual(r["incomplets"], {"story": 0, "carousel": 0})
+        self.assertEqual(r["manques"], {"story": 0, "carousel": 0})
+        self.assertEqual(r["reutilises"], {"story": 2, "carousel": 3})
+        # Le 3e carrousel repart du début (1-2-3) plutôt que de mélanger « 7 » avec « 1, 2 » ;
+        # la 7e image, jamais placée, va dans « surplus ».
+        self.assertEqual(sorted(os.listdir(os.path.join(sortie, "8_22h00_carousel"))),
+                         ["1.png", "2.png", "3.png"])
+        self.assertEqual(os.listdir(os.path.join(base, "ranger", "surplus", "Carrousels")), ["7.png"])
+        for i in range(5):
+            self.assertEqual(len([f for f in os.listdir(os.path.join(sortie, f"{i + 1}_1{i}h00_story"))
+                                  if f.endswith(".png")]), 1)
+        self.assertIn("♻️ 5 média(s) réutilisé(s)", r["bilan"]["message"])
+
     def test_ranger_plusieurs_comptes_erreurs(self):
         appdata, home = self.profil_isole("Profil erreurs comptes")
         c = self.moteur(appdata=appdata, home=home)

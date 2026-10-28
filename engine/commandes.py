@@ -1172,11 +1172,28 @@ def _analyser_compte(compte: dict, coches: list, sortie: str, sortie_compte: str
         valide = bool(d and os.path.isdir(d))
         a = rangement.analyser_dossier(d, t) if valide else {"fichiers": [], "ignores": 0}
         k = len(a["fichiers"])
+        groupes = a.get("groupes")
+        # Carrousels déjà préparés (un sous-dossier = un carrousel) : ce qui manque se compte en
+        # carrousels, même si l'utilisateur a mis 2 ou 4 images dans l'un d'eux.
+        manque = (max(0, n[t] - len(groupes)) * rangement.medias_par_creneau(t)
+                  if groupes is not None else max(0, requis - k))
+        # Dossier vide : souvent, l'utilisateur a choisi le dossier PARENT (ex. « Vidéos » au lieu
+        # de « Vidéos\US »). On cherche les sous-dossiers qui contiennent des médias pour le lui dire.
+        sous = []
+        if valide and k == 0:
+            try:
+                for nom in sorted(os.listdir(d)):
+                    p = os.path.join(d, nom)
+                    if os.path.isdir(p) and rangement.analyser_dossier(p, t)["fichiers"]:
+                        sous.append(nom)
+            except OSError:
+                pass
         types[t] = {"libelle": rangement.LIBELLES[t], "est_video": video, "unite": unite,
                     "creneaux": n[t], "medias_par_creneau": rangement.medias_par_creneau(t),
                     "requis": requis, "actif": t in actifs, "dossier": d,
                     "dossier_valide": valide, "trouves": k, "ignores": a["ignores"],
-                    "manque": max(0, requis - k)}
+                    "manque": manque, "sous_dossiers": sous[:6],
+                    "carrousels": len(groupes) if groupes is not None else None}
         if t not in actifs:
             continue
         if not valide:
@@ -1190,9 +1207,12 @@ def _analyser_compte(compte: dict, coches: list, sortie: str, sortie_compte: str
                 doublons.append([vus[cle], t])
             else:
                 vus[cle] = t
-        txt = f"• {rangement.LIBELLES[t]} : {k} {unite} pour {requis} requise(s)"
-        if k < requis:
-            txt += f"  ⚠️ il en manque {requis - k}"
+        if groupes is not None:
+            txt = f"• {rangement.LIBELLES[t]} : {len(groupes)} carrousel(s) préparé(s) pour {n[t]} requis"
+        else:
+            txt = f"• {rangement.LIBELLES[t]} : {k} {unite} pour {requis} requise(s)"
+        if manque:
+            txt += f"  ⚠️ il en manque {manque if groupes is None else n[t] - len(groupes)}"
             incomplet = True
         lignes.append(txt)
     return {"id": compte["id"], "nom": compte["nom"], "sortie": sortie_compte, "types": types,
@@ -1346,12 +1366,43 @@ def _somme_par_type(resultats: list, cle: str) -> dict:
     return {t: total[t] for t in rangement.TYPES if t in total}
 
 
+@commande("carrousels_preparer")
+def carrousels_preparer(ctx, args):
+    """Range les images d'un dossier en carrousel-1, carrousel-2… (3 images chacun, dans l'ordre),
+    dans un NOUVEAU dossier « carrousels » du dossier de sortie (jamais un dossier remplacé :
+    l'utilisateur va les retoucher). Ce dossier sert ensuite de source « Carrousels » au Ranger.
+    Hors de « ranger » : ranger_lancer remplace ce dossier-là en entier."""
+    from agent import ranger as rangement
+    source = _chemin_absolu(args.get("source"), "source")
+    if not os.path.isdir(source):
+        raise ErreurCommande("SOURCE_INTROUVABLE", "Ce dossier est introuvable.", {"chemins": [source]})
+    images = rangement.analyser_dossier(source, "image")["fichiers"]
+    par = rangement.medias_par_creneau("carousel")
+    if len(images) < par:
+        raise ErreurCommande("SOURCE_VIDE",
+                             f"Il faut au moins {par} images dans ce dossier "
+                             f"({len(images)} trouvée(s)), posées directement dedans.",
+                             {"chemins": [source], "images": len(images)})
+    base = os.path.join(dossier_sortie(), "carrousels")
+    sortie, i = base, 2
+    while os.path.exists(sortie):          # « carrousels (2) »… : on n'écrase jamais
+        sortie, i = f"{base} ({i})", i + 1
+    if est_dans(source, sortie):
+        raise _invalide("source", "Le dossier source est dans le dossier des carrousels.")
+    try:
+        res = rangement.preparer_carrousels(source, sortie)
+    except Exception as e:
+        raise _echec("Préparer les carrousels", e)
+    return res
+
+
 @commande("ranger_lancer", LONGUE)
 def ranger_lancer(ctx, args):
     """Copie de App._lancer_ranger + message « fini_ranger », compte par compte."""
     from agent import ranger as rangement
     comptes = _comptes_ranger(args)
     aleatoire = _booleen(args, "aleatoire", True)
+    completer = _booleen(args, "completer", False)   # médias manquants : réutiliser ceux qui sont là
     confirme = _confirmation(args)
     plusieurs = len(comptes) > 1
     # Tout est vérifié AVANT de toucher à l'ancienne sortie, pour TOUS les comptes
@@ -1404,7 +1455,7 @@ def ranger_lancer(ctx, args):
     for c in comptes:
         base = {"id": c["id"], "nom": c["nom"], "sortie": _sortie_compte(sortie, c, plusieurs)}
         vide = dict(base, types=[], besoins={}, fournis={}, places={}, manques={},
-                    incomplets={}, surplus={}, ignores={}, creneaux=0)
+                    incomplets={}, surplus={}, ignores={}, reutilises={}, creneaux=0)
         if not c["actifs"]:
             print(f"⏭ {c['nom']} : ignoré (aucun type coché dans son calendrier).", flush=True)
             resultats.append(dict(vide, arrete=False, aucun_type=True))
@@ -1423,7 +1474,8 @@ def ranger_lancer(ctx, args):
         try:
             res = rangement.ranger({t: c["sources"][t] for t in c["actifs"]}, base["sortie"],
                                    c["actifs"], aleatoire=aleatoire, progress=progress,
-                                   doit_arreter=ctx.doit_arreter, calendrier=c["calendrier"])
+                                   doit_arreter=ctx.doit_arreter, calendrier=c["calendrier"],
+                                   completer=completer)
         except Exception as e:
             raise _echec("Ranger", e)
         avant += creneaux[c["id"]]
@@ -1436,7 +1488,8 @@ def ranger_lancer(ctx, args):
     # Champs de tête : même forme qu'avant (1 compte : le résultat de ranger() tel quel).
     if plusieurs:
         out = {"types": [t for t in rangement.TYPES if any(t in r["types"] for r in resultats)]}
-        for cle in ("besoins", "fournis", "places", "manques", "incomplets", "surplus", "ignores"):
+        for cle in ("besoins", "fournis", "places", "manques", "incomplets", "surplus", "ignores",
+                    "reutilises"):
             out[cle] = _somme_par_type(resultats, cle)
         out.update({"creneaux": sum(r["creneaux"] for r in resultats), "arrete": arrete})
     else:
@@ -1464,6 +1517,9 @@ def ranger_lancer(ctx, args):
         if en_trop:
             txt += (f"\n\n📦 {en_trop} média(s) en trop → dossiers « surplus » des comptes."
                     if plusieurs else f"\n\n📦 {en_trop} média(s) en trop → dossier « surplus ».")
+        reutil = sum(out.get("reutilises", {}).values())
+        if reutil:
+            txt += f"\n\n♻️ {reutil} média(s) réutilisé(s) pour remplir tous les créneaux."
         bilan = {"titre": "Ranger", "message": txt, "erreur": alerte}
     out.update({"sortie": sortie, "duree_s": round(time.monotonic() - debut, 1),
                 "bilan": bilan, "comptes": resultats})

@@ -47,6 +47,7 @@ export class MoteurIndisponible implements Moteur {
   comptesSauver() { return this.erreur(); }
   rangerAnalyser() { return this.erreur(); }
   rangerLancer() { return this.tache(); }
+  carrouselsPreparer() { return this.erreur(); }
   surLogLibre(_f: ((ev: EvLog) => void) | null): void {}
   surDeconnexion(_f: ((raison: string) => void) | null): void {}
   async fermer(): Promise<void> {}

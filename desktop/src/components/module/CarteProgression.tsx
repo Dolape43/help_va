@@ -4,6 +4,53 @@ import { lignesProgression, type Progression } from "../../engine/affichage";
 import { fr } from "../../fr";
 import { Bouton } from "../ui";
 
+/** 75 -> « 1 min 15 s » ; arrondi=true (une estimation) -> « 2 min », « moins d'une minute », « 1 h 20 ». */
+function duree(s: number, arrondi = false): string {
+  s = Math.max(0, Math.round(s));
+  if (arrondi) {
+    if (s < 60) return "moins d'une minute";
+    const min = Math.round(s / 60);
+    return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")}`;
+  }
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h) return `${h} h ${String(m).padStart(2, "0")}`;
+  return m ? `${m} min ${String(s % 60).padStart(2, "0")} s` : `${s} s`;
+}
+
+const heure = (ms: number) => new Date(ms).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }).replace(":", "h");
+
+/**
+ * Temps écoulé et temps restant estimé, d'après la vitesse moyenne depuis le début :
+ * reste = écoulé × (1 − fraction) / fraction. Pas d'estimation trop tôt (moins de 3 % ou de
+ * 4 s : elle serait fausse), puis lissée pour ne pas sauter de 2 à 9 min d'une seconde à l'autre.
+ * Le départ = l'apparition de la carte (elle apparaît au lancement de l'opération).
+ */
+function useTempsRestant(fraction: number, arret: boolean): { ecoule: number; reste: number | null } {
+  const debut = useRef(Date.now());
+  const frac = useRef(fraction);
+  frac.current = fraction;
+  const [etat, setEtat] = useState<{ ecoule: number; reste: number | null }>({ ecoule: 0, reste: null });
+  // Recalculé UNE fois par seconde (et non à chaque nouvelle du moteur) : le lissage reste régulier.
+  useEffect(() => {
+    if (arret) return;
+    const id = window.setInterval(() => {
+      const ecoule = (Date.now() - debut.current) / 1000;
+      const f = frac.current;
+      setEtat((avant) => {
+        if (f >= 1) return { ecoule, reste: 0 };
+        if (f < 0.03 || ecoule < 4) return { ecoule, reste: null };
+        const brut = (ecoule * (1 - f)) / f;
+        // 80 % de l'estimation précédente (qui a « vieilli » d'une seconde) + 20 % de la nouvelle.
+        const reste = avant.reste === null ? brut : 0.8 * Math.max(0, avant.reste - 1) + 0.2 * brut;
+        return { ecoule, reste };
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [arret]);
+  return etat;
+}
+
 /**
  * Progression NON bloquante, à la place du bouton « Lancer » (pour les 4 modules).
  *
@@ -58,6 +105,7 @@ export default function CarteProgression({
 
   const p = progression;
   const pct = p ? Math.round(p.fraction * 100) : 0;
+  const restant = useTempsRestant(p?.fraction ?? 0, annulation);
   const [l1, l2] = p ? lignesProgression(p) : ["", ""];
   const ligne1 = p ? l1 || enAttente : "Préparation…";
   const ligne2 = p ? fr(l2) : "";
@@ -123,6 +171,17 @@ export default function CarteProgression({
             </p>
             <p className="mt-1 text-12 text-fg-3">{total !== null ? `${faites} / ${total} ${unite}` : " "}</p>
           </div>
+        </div>
+        {/* Temps restant : visible aussi des lecteurs d'écran, mais sans annonce à chaque seconde. */}
+        <div className="tabular mt-2 flex items-center justify-between gap-3 text-12 text-fg-2">
+          <span>{fr(`Écoulé : ${duree(restant.ecoule)}`)}</span>
+          <span className="font-medium text-fg">
+            {annulation
+              ? " "
+              : restant.reste === null
+                ? "Estimation du temps restant…"
+                : fr(`Reste environ ${duree(restant.reste, true)} · fin vers ${heure(Date.now() + restant.reste * 1000)}`)}
+          </span>
         </div>
 
         <div
